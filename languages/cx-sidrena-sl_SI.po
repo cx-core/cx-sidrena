@@ -1,0 +1,1393 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: CX Sidrena\n"
+"Report-Msgid-Bugs-To: https://github.com/cx-core/cx-sidrena/issues\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: sl_SI\n"
+"Plural-Forms: nplurals=4; plural=(n%100==1 ? 0 : n%100==2 ? 1 : n%100==3 || n%100==4 ? 2 : 3);\n"
+"X-Domain: cx-sidrena\n"
+
+#: includes/admin/tab-javni-xml.php:14
+msgid "Open CSV"
+msgstr "Odpri CSV"
+
+#: includes/admin/tab-javni-xml.php:14
+msgid "Open XML"
+msgstr "Odpri XML"
+
+#: includes/admin/tab-javni-xml.php:22
+#: includes/class-admin.php:287
+msgid "Public price list"
+msgstr "Javni cenik"
+
+#: includes/admin/tab-javni-xml.php:27
+msgid "The webshop has its own public price list (XML or CSV) and a 30-day archive. Each outlet has a separate file: the Woo products you add to it, plus manual rows (services, shipping) with its label. A daily cron after 00:00 regenerates the webshop and the outlets. The outlet type, address, label and storage number are entered on the Outlets tab."
+msgstr "Spletna trgovina ima lasten javni cenik (XML ali CSV) in 30-dnevni arhiv. Vsaka poslovalnica ima ločeno datoteko: Woo izdelke, ki jih ji dodate, plus ročne vrstice (storitve, dostava) s to oznako. Dnevni cron po 00:00 regenerira spletno trgovino in poslovalnice. Obliko, naslov, oznako in številko hrambe vnesete na zavihku Poslovalnice."
+
+#: includes/admin/tab-javni-xml.php:28
+msgid "The price list of published products and variations is public at a fixed address (XML or CSV). A daily cron after 00:00 regenerates the file and stores it in a 30-day archive under the official name, so it is available before 08:00. The outlet type, address, label and storage number of the webshop are entered on the Outlets tab. Barcode (GTIN/UPC/EAN/ISBN) and availability (dostupno/nedostupno, from stock) are always exported with the prices."
+msgstr "Cenik objavljenih izdelkov in variacij je javno na voljo na fiksni naslov (XML ali CSV). Dnevni cron po 00:00 regenerira datoteko in jo shrani v 30-dnevni arhiv pod uradnim imenom, da je na voljo pred 08:00. Obliko, naslov, oznako in številko hrambe spletne trgovine vnesete na zavihku Poslovalnice. Ob cenah se vedno izvozita barkod (GTIN/UPC/EAN/ISBN) in na voljo/ni na voljo glede na zalogo."
+
+#: includes/admin/tab-javni-xml.php:37
+#: includes/admin/tab-poslovnice.php:32
+#: includes/admin/tab-proizvodi.php:82
+#: includes/admin/tab-uvoz-izvoz.php:115
+#: includes/class-admin.php:823
+msgid "Webshop"
+msgstr "Webshop"
+
+#: includes/admin/tab-javni-xml.php:37
+msgid "Address"
+msgstr "Naslov"
+
+#: includes/admin/tab-javni-xml.php:48
+msgid "HTML price list"
+msgstr "HTML cenik"
+
+#: includes/admin/tab-javni-xml.php:51
+msgid "Open price list"
+msgstr "Odpri cenik"
+
+#: includes/admin/tab-javni-xml.php:58
+#: includes/class-feed-routes.php:778
+msgid "Archive"
+msgstr "Arhiv"
+
+#: includes/admin/tab-javni-xml.php:61
+msgid "Open archive"
+msgstr "Odpri arhiv"
+
+#: includes/admin/tab-javni-xml.php:86
+#. translators: 1: datetime, 2: product count
+#, php-format
+msgid "Last generation: %1$s (%2$d products/variations)."
+msgstr "Zadnje generiranje: %1$s (%2$d izdelkov/variacij)."
+
+#: includes/admin/tab-javni-xml.php:94
+msgid "The file has not been generated yet. Click the button or open the public URL—the price list will then be created."
+msgstr "Datoteka še ni generirana. Kliknite gumb ali odprite javni naslov – cenik se bo nato ustvaril."
+
+#: includes/admin/tab-javni-xml.php:100
+msgid "Export format"
+msgstr "Format izvoza"
+
+#: includes/admin/tab-javni-xml.php:114
+msgid "Changes only the current public link and new generations. Files in the archive remain in the format they were created in."
+msgstr "Spremeni le trenutno javno povezavo in nova generiranja. Datoteke v arhivu ostanejo v formatu, v katerem so nastale."
+
+#: includes/admin/tab-javni-xml.php:118
+msgid "The outlet type, address, label and storage number for the webshop and additional outlets are entered on the Outlets tab."
+msgstr "Obliko, naslov, oznako in številko hrambe za spletno trgovino in dodatne poslovalnice vnesete na zavihku Poslovalnice."
+
+#: includes/admin/tab-javni-xml.php:121
+msgid "Open the Outlets tab."
+msgstr "Odpri zavihek Poslovalnice."
+
+#: includes/admin/tab-javni-xml.php:130
+msgid "Regenerate public price list daily after 00:00"
+msgstr "Regeneriraj javni cenik dnevno po 00:00"
+
+#: includes/admin/tab-javni-xml.php:136
+msgid "Daily generation at 00:05 depends on WordPress cron. It runs only on the next request that loads PHP, so on a low-traffic store or behind full-page cache the feed may be delayed after 08:00. In wp-config.php set DISABLE_WP_CRON to true and from system cron call wp-cron.php every 5 to 15 minutes."
+msgstr "Dnevno generiranje ob 00:05 je odvisno od WordPress cron-a. Zažene se šele ob naslednji zahtevi, ki naloži PHP, zato lahko na trgovini z malo prometa ali za cacheom celotne strani feed zamudi po 08:00. V wp-config.php nastavite DISABLE_WP_CRON na true in iz sistemskega cron-a vsakih 5 do 15 minut pokličite wp-cron.php."
+
+#: includes/admin/tab-javni-xml.php:151
+#. translators: %s: datetime
+#, php-format
+msgid "Last successful generation (%s) is more than 26 hours old. The public price list may not be ready before 08:00."
+msgstr "Zadnje uspešno generiranje (%s) je starejše od 26 ur. Javni cenik morda ne bo pripravljen pred 08:00."
+
+#: includes/admin/tab-javni-xml.php:156
+msgid "The public price list has not been generated yet. Until the file exists, the HTML page and shortcode show that the price list is being prepared."
+msgstr "Javni cenik še ni generiran. Dok datoteka ne obstaja, HTML stran in shortcode prikažeta, da se cenik pripravlja."
+
+#: includes/admin/tab-javni-xml.php:167
+#. translators: %s: datetime
+#, php-format
+msgid "Last successful generation: %s."
+msgstr "Zadnje uspešno generiranje: %s."
+
+#: includes/admin/tab-javni-xml.php:176
+msgid "Enabled by default. After 00:05 (WordPress timezone) the public price list is regenerated so it is available before the legal deadline of 08:00, and stored in the archive under the official name (max 30 files)."
+msgstr "Privzeto vključeno. Po 00:05 (časovni pas WordPressa) se regenerira javni cenik, da je na voljo pred zakonskim rokom 08:00, in se shrani v arhiv pod uradnim imenom (največ 30 datotek)."
+
+#: includes/admin/tab-javni-xml.php:179
+msgid "DISABLE_WP_CRON is enabled, so system cron at 00:05 calls wp-cron.php."
+msgstr "DISABLE_WP_CRON je vključen, zato ob 00:05 sistemski cron kliče wp-cron.php."
+
+#: includes/admin/tab-javni-xml.php:181
+msgid "WordPress cron runs that job only on the next PHP request."
+msgstr "WordPress cron to opravilo zažene šele ob naslednji PHP zahtevi."
+
+#: includes/admin/tab-javni-xml.php:191
+#. translators: %s: datetime
+#, php-format
+msgid "Next automatic generation: %s."
+msgstr "Naslednje samodejno generiranje: %s."
+
+#: includes/admin/tab-javni-xml.php:201
+msgid "Save"
+msgstr "Shrani"
+
+#: includes/admin/tab-javni-xml.php:205
+msgid "Generate public price list"
+msgstr "Generiraj javni cenik"
+
+#: includes/admin/tab-poslovnice.php:22
+msgid "The webshop is the default outlet: its type, address, label and storage number go into the official file name (NN 101/2026). Add more outlets below. Each one gets its own public XML or CSV and a 30-day archive. Assign manual items (services, shipping) on the first tab by choosing an outlet above the table. Deleting an outlet also deletes those items."
+msgstr "Spletna trgovina je privzeta poslovalnica: oblika, naslov, oznaka in številka hrambe vstopijo v uradno ime datoteke (UL 101/2026). Dodatne poslovalnice dodajte spodaj. Vsaka dobi lasten javni XML ali CSV in 30-dnevni arhiv. Ročne postavke (storitve, dostava) dodelite na prvem zavihku z izbiro poslovalnice nad tabelo. Brisanje poslovalnice izbriše tudi te postavke."
+
+#: includes/admin/tab-poslovnice.php:33
+msgid "Webshop public price list: /sidrena-cijena.xml (or .csv). All published products and manual rows without an outlet label."
+msgstr "Javni cenik spletne trgovine: /sidrena-cijena.xml (ali .csv). Vsi objavljeni izdelki in ročne vrstice brez oznake poslovalnice."
+
+#: includes/admin/tab-poslovnice.php:39
+#: includes/class-admin.php:827
+msgid "Outlet type"
+msgstr "Oblika prodajnega objekta"
+
+#: includes/admin/tab-poslovnice.php:41
+msgid "Written exactly as it should appear, e.g. webshop or prodavaonica."
+msgstr "Kakor je napisano, npr. spletna trgovina ali prodajalna."
+
+#: includes/admin/tab-poslovnice.php:44
+#: includes/class-admin.php:829
+msgid "Outlet address"
+msgstr "Naslov prodajnega objekta"
+
+#: includes/admin/tab-poslovnice.php:46
+#: includes/class-admin.php:830
+msgid "Street and city remain in the name, e.g. Ilica 150 Zagreb."
+msgstr "Ulica in kraj ostane v imenu, npr. Ilica 150 Zagreb."
+
+#: includes/admin/tab-poslovnice.php:49
+#: includes/class-admin.php:831
+msgid "Outlet label"
+msgstr "Oznaka prodajnega objekta"
+
+#: includes/admin/tab-poslovnice.php:51
+msgid "Internal label, e.g. WEB or 001. The hyphen is kept."
+msgstr "Notranja oznaka, npr. WEB ali 001. Pomišljaj ostane."
+
+#: includes/admin/tab-poslovnice.php:54
+#: includes/class-admin.php:833
+msgid "Next storage number"
+msgstr "Naslednja številka hrambe"
+
+#: includes/admin/tab-poslovnice.php:56
+#: includes/class-admin.php:834
+msgid "Increases once per day. Regenerating on the same day does not increase the number. The name uses what you enter, e.g. 104."
+msgstr "Raste enkrat na dan. Ponovno generiranje istega dne ne poveča števila. V ime gre, kakor je vpisano, npr. 104."
+
+#: includes/admin/tab-poslovnice.php:64
+#. translators: %s: example filename
+#, php-format
+msgid "Next official name: %s (Ministry example: prodavaonica_Ilica 150 Zagreb_P-01_104_01.10.2026_07:45). On a Windows server the time uses a hyphen, 07-45."
+msgstr "Naslednje uradno ime: %s (primer ministrstva: prodavaonica_Ilica 150 Zagreb_P-01_104_01.10.2026_07:45). Na strežniku Windows gre čas s pomišljajem, 07-45."
+
+#: includes/admin/tab-poslovnice.php:73
+msgid "Additional outlets"
+msgstr "Dodatne poslovalnice"
+
+#: includes/admin/tab-poslovnice.php:76
+msgid "Add outlet"
+msgstr "Dodaj poslovalnico"
+
+#: includes/admin/tab-poslovnice.php:79
+msgid "Each outlet gets the URL /sidrena-cijena-LABEL.xml (or .csv) and its own archive of 30 files."
+msgstr "Vsaka poslovalnica dobi naslov /sidrena-cijena-OZNAKA.xml (ali .csv) in lasten arhiv 30 datotek."
+
+#: includes/admin/tab-poslovnice.php:85
+msgid "Save outlets"
+msgstr "Shrani poslovalnice"
+
+#: includes/admin/tab-postavke.php:18
+msgid "The bazna cijena is shown next to the current price (in the Government decisions: dodatna or sidrena cijena), clearly and separately from the price the customer pays. The default label is Bazna cijena. The plugin can show it automatically below the price, or only through the shortcode [sidrena-cijena]."
+msgstr "Ob aktualni ceni se izpostavi bazna cena (v odločbah Vlade: dodatna ali sidrna cena), jasno in ločeno od cene, ki jo kupec plača. Privzeti napis je Bazna cena. Vtičnik jo lahko prikaže samodejno pod ceno ali le prek shortcode-a [sidrena-cijena]."
+
+#: includes/admin/tab-postavke.php:19
+msgid "The bazna cijena is shown next to the current price (in the Government decisions: dodatna or sidrena cijena). The default label is Bazna cijena. Enter items on the Products tab; the public HTML page is /sidrena-cjenik, and the XML/CSV feed stays at /sidrena-cijena.xml or .csv."
+msgstr "Ob aktualni ceni se izpostavi bazna cena (v odločbah Vlade: dodatna ali sidrna cena). Privzeti napis je Bazna cena. Vnesite postavke na zavihku Izdelki; javna HTML stran je /sidrena-cjenik, XML/CSV feed pa ostane na /sidrena-cijena.xml ali .csv."
+
+#: includes/admin/tab-postavke.php:32
+#. translators: %s detected 30-day lowest price plugin name
+#, php-format
+msgid "%s was detected. This plugin works with it: one sidrena cijena row, between the current price and the “Lowest price in the last 30 days” row."
+msgstr "Zaznan je %s. Sidrna cena deluje z njim: ena vrstica sidrne cene med aktualno ceno in vrstico „Najnižja cena v zadnjih 30 dneh“."
+
+#: includes/admin/tab-postavke.php:43
+msgid "Storefront display"
+msgstr "Prikaz v trgovini"
+
+#: includes/admin/tab-postavke.php:44
+msgid "Text, date, and how it is highlighted next to the product price."
+msgstr "Besedilo, datum in način izpostavitve ob ceni izdelka."
+
+#: includes/admin/tab-postavke.php:54
+#: includes/admin/tab-postavke.php:61
+msgid "Automatic display of sidrena cijena"
+msgstr "Samodejni prikaz sidrnih cen"
+
+#: includes/admin/tab-postavke.php:64
+msgid "The plugin automatically shows the sidrena cijena below the current price. If this is off, use the shortcode [sidrena-cijena] or [sidrena-cijena id=\"x\"] to show it outside product loops. For a single amount add prikaz=\"redovna\", prikaz=\"akcijska\" or prikaz=\"sidrena\"."
+msgstr "Vtičnik samodejno prikaže sidrne cene pod aktualnimi cenami. Če je izključeno, uporabite shortcode [sidrena-cijena] ali [sidrena-cijena id=\"x\"] za prikaz zunaj zank. Za samo en znesek dodajte prikaz=\"redovna\", prikaz=\"akcijska\" ali prikaz=\"sidrena\"."
+
+#: includes/admin/tab-postavke.php:68
+msgid "Automatic fill for new products"
+msgstr "Samodejno polnjenje novih izdelkov"
+
+#: includes/admin/tab-postavke.php:75
+msgid "Fill an empty sidrena cijena and date on save"
+msgstr "Ob shranjevanju zapolni prazno sidrno ceno in datum"
+
+#: includes/admin/tab-postavke.php:78
+msgid "For products and variations added after the plugin was activated. If the fields are empty, the current regular price and today's date are entered (WordPress timezone). A sidrena cijena and date that are already entered are not overwritten."
+msgstr "Za izdelke in variacije, dodane po aktivaciji vtičnika. Če so polja prazna, se zapiše trenutna redna cena in današnji datum (časovni pas WordPressa). Že vneseni sidrni ceni in datuma se ne prepišejo."
+
+#: includes/admin/tab-postavke.php:83
+msgid "Prefix"
+msgstr "Predpona"
+
+#: includes/admin/tab-postavke.php:87
+msgid "Words only, no date. Preview:"
+msgstr "Samo besede, brez datuma. Predogled:"
+
+#: includes/admin/tab-postavke.php:93
+msgid "Date format"
+msgstr "Format datuma"
+
+#: includes/admin/tab-postavke.php:98
+msgid "Prefix (date)"
+msgstr "Predpona (datum)"
+
+#: includes/admin/tab-postavke.php:102
+msgid "Prefix date"
+msgstr "Predpona datum"
+
+#: includes/admin/tab-postavke.php:105
+msgid "Examples: Bazna cijena (10.09.2026.) or Bazna cijena 10.09.2026. If the prefix ends with “na”, you get Bazna cijena na 10.09.2026. You can also enter Sidrena cijena. An empty prefix with “Prefix date” shows only the date and the amount."
+msgstr "Primeri: Bazna cena (10.09.2026.) ali Bazna cena 10.09.2026. Če predpona konča z „na“, dobite Bazna cena na 10.09.2026. Lahko vpišete tudi Sidrna cena. Prazna predpona z „Predpona datum“ izpiše le datum in znesek."
+
+#: includes/admin/tab-postavke.php:109
+msgid "Default reference date"
+msgstr "Privzeti referenčni datum"
+
+#: includes/admin/tab-postavke.php:112
+msgid "Used in the selected format on the storefront. For FMCG (food, beverages, cosmetics…) enter 02.05.2025 on the product."
+msgstr "Uporabi se v izbranem formatu na vitrini. Za FMCG (hrana, pijača, kozmetika …) pri izdelku vpišite 02.05.2025."
+
+#: includes/admin/tab-postavke.php:116
+msgid "Tooltip"
+msgstr "Tooltip"
+
+#: includes/admin/tab-postavke.php:123
+msgid "Show tooltip on storefront"
+msgstr "Prikaži tooltip na vitrini"
+
+#: includes/admin/tab-postavke.php:126
+msgid "On mouse hover over the sidrena cijena."
+msgstr "Ob prehodu miške čez sidrno ceno."
+
+#: includes/admin/tab-postavke.php:130
+msgid "Tooltip text"
+msgstr "Besedilo tooltipa"
+
+#: includes/admin/tab-postavke.php:133
+msgid "Shown on mouse hover over the sidrena cijena."
+msgstr "Prikaže se ob prehodu miške čez sidrno ceno."
+
+#: includes/admin/tab-postavke.php:137
+msgid "Unit price (CJM)"
+msgstr "Cena na enoto mere (CJM)"
+
+#: includes/admin/tab-postavke.php:144
+msgid "Enable unit of measure next to the sidrena cijena"
+msgstr "Omogoči mersko enoto ob sidrni ceni"
+
+#: includes/admin/tab-postavke.php:147
+msgid "When this is on, the unit price (CJM) appears next to the sidrena cijena: on the Woo product and variation, and on every row of the Products or Additional items tab. Turn it on for the row and enter a suffix (e.g. \"za kg/l\"), and the shop shows \"Cijena za kg/l (10.09.2026.)\". The same unit of measure goes into the public XML/CSV and the HTML table."
+msgstr "Ko je vključeno, ob sidrni ceni se prikaže CJM: na Woo izdelku in variaciji ter v vsaki vrstici zavihka Izdelki ali Dodatne postavke. Vključite ga v vrstici in vpišite nadaljevanje (npr. \"za kg/l\"), nato se prikaže \"Cena za kg/l (10.09.2026.)\". Ista merska enota gre v javni XML/CSV in v HTML tabelo."
+
+#: includes/admin/tab-postavke.php:151
+#: includes/admin/tab-proizvodi.php:105
+#: includes/admin/tab-uvoz-izvoz.php:84
+#: includes/class-feed-files.php:891
+msgid "Brand"
+msgstr "Znamka"
+
+#: includes/admin/tab-postavke.php:155
+msgid "No taxonomy"
+msgstr "Brez taksonomije"
+
+#: includes/admin/tab-postavke.php:160
+msgid "For WooCommerce products, the brand in the price list is the name of the term from the selected taxonomy (e.g. product_brand or pa_marka). A variation without a term takes the parent's brand."
+msgstr "Za WooCommerce izdelke je znamka v ceniku ime pojma iz izbrane taksonomije (npr. product_brand ali pa_marka). Variacija brez pojma prevzame znamko starša."
+
+#: includes/admin/tab-postavke.php:163
+msgid "Manual brand"
+msgstr "Ročna znamka"
+
+#: includes/admin/tab-postavke.php:166
+msgid "Used when the product has no term in the taxonomy, and when the Brand field on a manual row is empty. Manual rows (Products or Additional items) have their own field."
+msgstr "Uporabi se, ko izdelek nima pojma v taksonomiji in ko je polje Znamka v ročni vrstici prazno. Ročne vrstice (Izdelki ali Dodatne postavke) imajo lastno polje."
+
+#: includes/admin/tab-postavke.php:171
+msgid "Public price list (XML/CSV)"
+msgstr "Javni cenik (XML/CSV)"
+
+#: includes/admin/tab-postavke.php:173
+msgid "Availability (dostupno/nedostupno) and barcode are always exported. On the webshop, availability follows the WooCommerce stock status. On other outlets, availability is the one imported for that outlet, not the webshop stock. The barcode is read from the GTIN, UPC, EAN or ISBN field. If the product has no barcode, the field stays empty."
+msgstr "Na voljo/ni na voljo in barkod se vedno izvozita. Na spletni trgovini razpoložljivost sledi stanju zaloge WooCommerce. Na drugih poslovalnicah je razpoložljivost tista, uvožena v to poslovalnico, ne zaloga spletne trgovine. Barkod se prebere iz polj GTIN, UPC, EAN ali ISBN. Če izdelek nima barkoda, polje ostane prazno."
+
+#: includes/admin/tab-postavke.php:179
+msgid "Save settings"
+msgstr "Shrani nastavitve"
+
+#: includes/admin/tab-postavke.php:186
+msgid "Filling empty fields"
+msgstr "Polnjenje praznih polj"
+
+#: includes/admin/tab-postavke.php:187
+msgid "Only empty fields are filled with the current regular price. A sidrena cijena that is already entered is never overwritten. New products can be filled automatically on save if this is on in the settings."
+msgstr "Le prazna polja se napolnijo s trenutno redno ceno. Že vnesene sidrne cene se nikoli ne prepišejo. Nove izdelke lahko ob shranjevanju samodejno napolnite, če je to vključeno v nastavitvah."
+
+#: includes/admin/tab-postavke.php:192
+msgid "Fill empty fields from regular price"
+msgstr "Zapolni prazna polja iz redne cene"
+
+#: includes/admin/tab-postavke.php:196
+msgid "For products that were in the assortment on the default reference day. The date stays the default from settings (e.g. 10.09.2026.)."
+msgstr "Za izdelke, ki so bili v asortimentu na privzeti referenčni dan. Datum ostane privzeti iz nastavitev (npr. 10.09.2026.)."
+
+#: includes/admin/tab-postavke.php:201
+msgid "Fill empty sidrena cijena fields with today's date"
+msgstr "Zapolni prazne sidrne cene z današnjim datumom"
+
+#: includes/admin/tab-postavke.php:205
+msgid "For products put on sale after the reference day. Enters the regular price and today's date (WordPress timezone). An existing date on the product is not overwritten."
+msgstr "Za izdelke, postavljene v prodajo po referenčnem dnevu. Zapiše redno ceno in današnji datum (časovni pas WordPressa). Obstoječi datum pri izdelku se ne prepiše."
+
+#: includes/admin/tab-postavke.php:214
+msgid "Filling runs in short steps with a progress bar. If the server stops the request, the plugin continues on its own. A sidrena cijena that is already entered is not overwritten, so you can press the button again for the remaining items. You can also enter a single price and date by hand on the product, below the sale price."
+msgstr "Polnjenje poteka v kratkih korakih s trakom napredka. Če strežnik prekine zahtevo, vtičnik nadaljuje sam. Že vnesene sidrne cene se ne prepišejo, gumb pa lahko ponovno pritisnete za preostale artikle. Posamezno ceno in datum lahko ročno vpišete tudi pri izdelku, pod akcijsko ceno."
+
+#: includes/admin/tab-postavke.php:217
+msgid "For large catalogs use WP-CLI (much faster than this button): wp cx-sidrena fill --dry-run then wp cx-sidrena fill. New products: wp cx-sidrena fill --today"
+msgstr "Za velike kataloge uporabite WP-CLI (precej hitreje od tega gumba): wp cx-sidrena fill --dry-run  nato  wp cx-sidrena fill. Novi izdelki: wp cx-sidrena fill --today"
+
+#: includes/admin/tab-proizvodi.php:31
+msgid "Services and products that are not in WooCommerce (e.g. made to order, or a shipping class). Name, regular price and sidrena cijena are required. The type sets the columns of the public price list. Leave the date empty for the default reference day, or enter the day the item was first listed. If you have several outlets, choose the webshop or an outlet above the table - the rows go only into that price list. Availability is a dropdown: in stock or out of stock. The shortcode [sidrena-cijena id=\"dX\"] shows the prices of that row on a page. For a single amount add prikaz=\"redovna\", prikaz=\"akcijska\" or prikaz=\"sidrena\"."
+msgstr "Storitve in izdelki, ki niso v WooCommerce (npr. po naročilu ali razred dostave). Ime, redna cena in sidrna cena so obvezni. Vrsta določi stolpce javnega cenika. Datum pustite prazen za privzeti referenčni dan ali vpišite dan prve uvrstitve. Če imate več poslovalnic, nad tabelo izberite spletno trgovino ali poslovalnico – vrstice gredo le v ta cenik. Razpoložljivost je spustni seznam: na voljo ali ni na voljo. Shortcode [sidrena-cijena id=\"dX\"] prikaže cene te vrstice na strani. Za samo en znesek dodajte prikaz=\"redovna\", prikaz=\"akcijska\" ali prikaz=\"sidrena\"."
+
+#: includes/admin/tab-proizvodi.php:32
+msgid "Each row becomes an item of the public price list (XML/CSV and HTML). Name, regular price and sidrena cijena are required. The type sets the columns: product or service. Leave the date empty for the default reference day, or enter the day the item was first listed. If you have several outlets, choose the webshop or an outlet above the table. Availability is a dropdown: in stock or out of stock. Empty rows are not saved. The shortcode [sidrena-cijena id=\"x\"] shows the prices of this row on any page. For a single amount add prikaz=\"redovna\", prikaz=\"akcijska\" or prikaz=\"sidrena\". Insert the whole table with the shortcode [sidrena-cjenik]."
+msgstr "Vsaka vrstica postane postavka javnega cenika (XML/CSV in HTML). Ime, redna cena in sidrna cena so obvezni. Vrsta določi stolpce: izdelek ali storitev. Datum pustite prazen za privzeti referenčni dan ali vpišite dan prve uvrstitve. Če imate več poslovalnic, nad tabelo izberite spletno trgovino ali poslovalnico. Razpoložljivost je spustni seznam: na voljo ali ni na voljo. Prazne vrstice se ne shranijo. Shortcode [sidrena-cijena id=\"x\"] na kateri koli strani prikaže cene iz te vrstice. Za samo en znesek dodajte prikaz=\"redovna\", prikaz=\"akcijska\" ali prikaz=\"sidrena\". Celotno tabelo vstavite s shortcode-om [sidrena-cjenik]."
+
+#: includes/admin/tab-proizvodi.php:40
+#: includes/class-admin.php:273
+msgid "Additional items"
+msgstr "Dodatne postavke"
+
+#: includes/admin/tab-proizvodi.php:40
+#: includes/class-admin.php:274
+#: includes/class-admin.php:835
+msgid "Products"
+msgstr "Izdelki"
+
+#: includes/admin/tab-proizvodi.php:47
+#. translators: %d row count
+#, php-format
+msgid "Currently %d items. They are appended to the public price list."
+msgstr "Trenutno %d postavk. Dodajo se na konec javnega cenika."
+
+#: includes/admin/tab-proizvodi.php:55
+#. translators: %d product count
+#, php-format
+msgid "Currently %d products. Public page:"
+msgstr "Trenutno %d izdelkov. Javna stran:"
+
+#: includes/admin/tab-proizvodi.php:62
+msgid "HTML:"
+msgstr "HTML:"
+
+#: includes/admin/tab-proizvodi.php:80
+#: includes/admin/tab-uvoz-izvoz.php:72
+msgid "Outlet"
+msgstr "Poslovalnica"
+
+#: includes/admin/tab-proizvodi.php:92
+#: includes/admin/tab-proizvodi.php:138
+msgid "Add item"
+msgstr "Dodaj postavko"
+
+#: includes/admin/tab-proizvodi.php:92
+#: includes/class-admin.php:808
+msgid "Add product"
+msgstr "Dodaj izdelek"
+
+#: includes/admin/tab-proizvodi.php:102
+#: includes/admin/tab-proizvodi.php:145
+#: includes/admin/tab-uvoz-izvoz.php:44
+#: includes/class-admin.php:825
+#: includes/class-feed-files.php:729
+#: includes/class-feed-files.php:888
+msgid "Name"
+msgstr "Ime"
+
+#: includes/admin/tab-proizvodi.php:103
+#: includes/admin/tab-uvoz-izvoz.php:68
+#: includes/class-feed-files.php:889
+msgid "Type"
+msgstr "Vrsta"
+
+#: includes/admin/tab-proizvodi.php:104
+#: includes/admin/tab-uvoz-izvoz.php:36
+#: includes/class-feed-files.php:890
+msgid "SKU"
+msgstr "SKU"
+
+#: includes/admin/tab-proizvodi.php:106
+#: includes/admin/tab-uvoz-izvoz.php:48
+msgid "URL"
+msgstr "URL"
+
+#: includes/admin/tab-proizvodi.php:107
+#: includes/admin/tab-uvoz-izvoz.php:52
+msgid "Regular price"
+msgstr "Redna cena"
+
+#: includes/admin/tab-proizvodi.php:108
+#: includes/admin/tab-uvoz-izvoz.php:56
+msgid "Sale price"
+msgstr "Akcijska cena"
+
+#: includes/admin/tab-proizvodi.php:109
+#: includes/admin/tab-uvoz-izvoz.php:88
+msgid "Special form"
+msgstr "Posebna oblika"
+
+#: includes/admin/tab-proizvodi.php:110
+#: includes/admin/tab-uvoz-izvoz.php:76
+#: includes/class-feed-files.php:893
+#: includes/class-import-export.php:63
+#: includes/class-import-export.php:157
+#: includes/class-import-export.php:178
+#: includes/class-product-fields.php:99
+#: includes/class-product-fields.php:178
+#: includes/class-product-fields.php:197
+msgid "Unit of measure"
+msgstr "Merska enota"
+
+#: includes/admin/tab-proizvodi.php:111
+#: includes/admin/tab-uvoz-izvoz.php:80
+msgid "Price per unit"
+msgstr "Cena na enoto"
+
+#: includes/admin/tab-proizvodi.php:112
+#: includes/admin/tab-uvoz-izvoz.php:60
+#: includes/class-admin.php:130
+#: includes/class-admin.php:176
+#: includes/class-admin.php:179
+#: includes/class-admin.php:921
+#: includes/class-feed-files.php:897
+#: includes/class-import-export.php:58
+#: includes/class-import-export.php:152
+#: includes/class-import-export.php:169
+#: includes/class-product-fields.php:50
+#: includes/class-product-fields.php:167
+msgid "Sidrena cijena"
+msgstr "Sidrna cena"
+
+#: includes/admin/tab-proizvodi.php:113
+#: includes/class-feed-files.php:898
+msgid "Date of sidrena cijena"
+msgstr "Datum sidrne"
+
+#: includes/admin/tab-proizvodi.php:115
+msgid "CJM unit"
+msgstr "Merska enota"
+
+#: includes/admin/tab-proizvodi.php:117
+#: includes/admin/tab-uvoz-izvoz.php:100
+#: includes/class-feed-files.php:899
+msgid "Availability"
+msgstr "Razpoložljivost"
+
+#: includes/admin/tab-proizvodi.php:118
+msgid "Shortcode"
+msgstr "Shortcode"
+
+#: includes/admin/tab-proizvodi.php:119
+#: includes/admin/tab-proizvodi.php:147
+msgid "Actions"
+msgstr "Dejanja"
+
+#: includes/admin/tab-proizvodi.php:127
+msgid "Previous"
+msgstr "Prejšnja"
+
+#: includes/admin/tab-proizvodi.php:129
+msgid "Next"
+msgstr "Naslednja"
+
+#: includes/admin/tab-proizvodi.php:133
+#: includes/class-feed-files.php:732
+#: includes/class-feed-files.php:734
+msgid "Price on request"
+msgstr "Cena po povpraševanju"
+
+#: includes/admin/tab-proizvodi.php:134
+msgid "These rows are printed at the bottom of the HTML price list."
+msgstr "Te vrstice se izpišejo na dnu HTML cenika."
+
+#: includes/admin/tab-proizvodi.php:146
+#: includes/class-feed-files.php:730
+msgid "Criteria"
+msgstr "Merila"
+
+#: includes/admin/tab-proizvodi.php:155
+msgid "Save items"
+msgstr "Shrani postavke"
+
+#: includes/admin/tab-proizvodi.php:155
+msgid "Save price list"
+msgstr "Shrani cenik"
+
+#: includes/admin/tab-uvoz-izvoz.php:13
+msgid "Bulk import"
+msgstr "Množični uvoz"
+
+#: includes/admin/tab-uvoz-izvoz.php:14
+msgid "Upload CSV or XML. Rows are matched first by SKU; if SKU does not find a product, then by the existing ID column. Import to the webshop updates the Woo product, including stock. Import to another outlet writes availability only for that outlet. If neither SKU nor ID matches an existing product, the row becomes a manual item for that outlet."
+msgstr "Naložite CSV ali XML. Vrstice se združijo najprej po SKU, če SKU ne najde izdelka, pa po obstoječem stolpcu ID. Uvoz v spletno trgovino posodobi Woo izdelek, vključno z zalogo. Uvoz v drugo poslovalnico zapiše razpoložljivost le v to poslovalnico. Če ne ujema ne SKU ne ID obstoječega izdelka, vrstica postane ročna postavka te poslovalnice."
+
+#: includes/admin/tab-uvoz-izvoz.php:14
+msgid "Upload a CSV or XML file. Rows are matched first by SKU in the selected outlet, then by ID. Other rows are added to that price list. Name, regular price and sidrena cijena are required for new rows. Empty fields do not delete existing values."
+msgstr "Naložite CSV ali XML. Vrstice se združijo najprej po SKU v izbrani poslovalnici, nato po ID. Ostale se dodajo v ta cenik. Ime, redna in sidrna cena so obvezni za nove vrstice. Prazna polja ne izbrišejo obstoječih vrednosti."
+
+#: includes/admin/tab-uvoz-izvoz.php:21
+msgid "Select CSV or XML"
+msgstr "Izberite CSV ali XML"
+
+#: includes/admin/tab-uvoz-izvoz.php:22
+msgid "or drop the file here"
+msgstr "ali spustite datoteko sem"
+
+#: includes/admin/tab-uvoz-izvoz.php:28
+msgid "Upload and map fields"
+msgstr "Naloži in preslikaj polja"
+
+#: includes/admin/tab-uvoz-izvoz.php:40
+msgid "ID"
+msgstr "ID"
+
+#: includes/admin/tab-uvoz-izvoz.php:64
+#: includes/class-import-export.php:59
+#: includes/class-import-export.php:153
+#: includes/class-import-export.php:170
+msgid "Sidrena cijena date"
+msgstr "Sidrna cena datum"
+
+#: includes/admin/tab-uvoz-izvoz.php:92
+#: includes/class-admin.php:816
+#: includes/class-product-fields.php:134
+#: includes/class-product-fields.php:172
+msgid "CJM"
+msgstr "CJM"
+
+#: includes/admin/tab-uvoz-izvoz.php:96
+msgid "CJM suffix"
+msgstr "Dodatek CJM"
+
+#: includes/admin/tab-uvoz-izvoz.php:106
+msgid "Preview"
+msgstr "Pregled"
+
+#: includes/admin/tab-uvoz-izvoz.php:112
+msgid "Import to outlet"
+msgstr "Uvozi v poslovalnico"
+
+#: includes/admin/tab-uvoz-izvoz.php:114
+msgid "Select outlet"
+msgstr "Izberite poslovalnico"
+
+#: includes/admin/tab-uvoz-izvoz.php:124
+msgid "Start import"
+msgstr "Zaženi uvoz"
+
+#: includes/admin/tab-uvoz-izvoz.php:141
+msgid "Price list export"
+msgstr "Izvoz cenika"
+
+#: includes/admin/tab-uvoz-izvoz.php:142
+msgid "The price list export is the same public CSV or XML: type, date, retail price, brand, name of the special form of sale, unit of measure, unit price, sidrena cijena, barcode and availability. Only published products are included. Variations are separate rows, and additional items go at the end. The export without sidrena cijena stays an internal list (name, SKU, regular, sale and sidrena cijena)."
+msgstr "Izvoz cenika je isti javni CSV ali XML: vrsta, datum, maloprodajna cena, znamka, ime posebne oblike, merska enota, cena na enoto mere, sidrna cena, barkod in razpoložljivost. Vključeni so samo objavljeni izdelki. Variacije so ločene vrstice, dodatne postavke pa na koncu. Izvoz brez sidrne cene ostane notranji seznam (ime, SKU, redna, akcijska in sidrna cena)."
+
+#: includes/admin/tab-uvoz-izvoz.php:147
+msgid "Format"
+msgstr "Format"
+
+#: includes/admin/tab-uvoz-izvoz.php:156
+msgid "Export price list"
+msgstr "Izvozi cenik"
+
+#: includes/admin/tab-uvoz-izvoz.php:160
+msgid "Export products without sidrena cijena"
+msgstr "Izvozi izdelke brez sidrne cene"
+
+#: includes/admin/tab-uvoz-izvoz.php:164
+msgid "Download CSV template"
+msgstr "Prenesi CSV predlogo"
+
+#: includes/admin/tab-uvoz-izvoz.php:167
+msgid "The template has a header, one sample product, and one sample service (type, date, outlet)."
+msgstr "Predloga ima glavo, en primer izdelka in en primer storitve (vrsta, datum, poslovalnica)."
+
+#: includes/check.php:23
+msgid "WooCommerce is not active."
+msgstr ""
+
+#: includes/check.php:86
+msgid "no file"
+msgstr ""
+
+#: includes/check.php:89
+msgid "WP-Cron is disabled in wp-config.php (a server cron job is required)"
+msgstr ""
+
+#: includes/check.php:90
+msgid "WP-Cron runs on site visits (recommended: a server cron job every 15 minutes)"
+msgstr ""
+
+#: includes/check.php:96
+#, php-format
+msgid "version %s available"
+msgstr ""
+
+#: includes/check.php:100
+#, php-format
+msgid "last checked %s"
+msgstr ""
+
+#: includes/check.php:124
+#: includes/check.php:134
+msgid "Bazna cijena: check"
+msgstr ""
+
+#: includes/check.php:143
+msgid "Everything is in order: every product has a bazna cijena."
+msgstr ""
+
+#: includes/check.php:143
+msgid "Some products need attention (list below)."
+msgstr ""
+
+#: includes/check.php:147
+msgid "Products and variations with a price"
+msgstr ""
+
+#: includes/check.php:148
+#: includes/check.php:160
+msgid "Without bazna cijena"
+msgstr ""
+
+#: includes/check.php:150
+#, php-format
+msgid "Existed on %s, but the bazna cijena has a later date"
+msgstr ""
+
+#: includes/check.php:151
+msgid "Public price list last generated"
+msgstr ""
+
+#: includes/check.php:152
+msgid "CX Sidrena version"
+msgstr ""
+
+#: includes/check.php:153
+msgid "Updates"
+msgstr ""
+
+#: includes/check.php:154
+msgid "Scheduled tasks"
+msgstr ""
+
+#: includes/check.php:161
+msgid "Existed on the reference day, bazna cijena with a later date"
+msgstr ""
+
+#: includes/check.php:167
+#: includes/class-admin.php:821
+#: includes/class-feed-files.php:670
+msgid "Product"
+msgstr "Izdelek"
+
+#: includes/check.php:167
+msgid "Regular"
+msgstr ""
+
+#: includes/check.php:168
+msgid "Bazna"
+msgstr ""
+
+#: includes/check.php:168
+msgid "Bazna cijena date"
+msgstr ""
+
+#: includes/check.php:169
+msgid "Added"
+msgstr ""
+
+#: includes/class-admin-save.php:227
+msgid "Price snapshot failed. Details are in the server log."
+msgstr "Posnetek cen ni uspel. Podrobnosti so v dnevniku strežnika."
+
+#: includes/class-admin.php:192
+msgid "Settings saved."
+msgstr "Nastavitve so shranjene."
+
+#: includes/class-admin.php:199
+msgid "Public outlet price lists have been generated."
+msgstr "Javni ceniki poslovalnic so generirani."
+
+#: includes/class-admin.php:201
+msgid "The public price list has been generated."
+msgstr "Javni cenik je generiran."
+
+#: includes/class-admin.php:209
+msgid "No outlet has products added. Add products on the Outlets tab."
+msgstr "Nobena poslovalnica nima dodanih izdelkov. Dodajte izdelke na zavihku Poslovalnice."
+
+#: includes/class-admin.php:213
+msgid "The public price list could not be generated. Check uploads folder permissions."
+msgstr "Javnega cenika ni bilo mogoče generirati. Preverite dovoljenja mape uploads."
+
+#: includes/class-admin.php:241
+#. translators: %s: developer website URL
+#, php-format
+msgid "Developed by <a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">Jure Zadravec / MJDD</a>"
+msgstr "Developed by <a href=\"%s\" target=\"_blank\" rel=\"noopener noreferrer\">Jure Zadravec / MJDD</a>"
+
+#: includes/class-admin.php:279
+msgid "Settings"
+msgstr "Nastavitve"
+
+#: includes/class-admin.php:283
+msgid "Import/Export"
+msgstr "Uvoz/Izvoz"
+
+#: includes/class-admin.php:291
+msgid "Outlets"
+msgstr "Poslovalnice"
+
+#: includes/class-admin.php:449
+msgid "Copy"
+msgstr "Kopiraj"
+
+#: includes/class-admin.php:482
+msgid "Archive shortcode"
+msgstr "Shortcode arhiva"
+
+#: includes/class-admin.php:503
+msgid "Table shortcode"
+msgstr "Shortcode tabele"
+
+#: includes/class-admin.php:577
+msgid "The plugin does not write prices on activation. You can fill empty fields on the Settings tab: from the regular price (the date stays the default) or with today's date."
+msgstr "Sidrna cena ob aktivaciji ne zapisuje cen. Prazna polja lahko zapolnite na zavihku Nastavitve: iz redne cene (datum ostane privzeti) ali z današnjim datumom."
+
+#: includes/class-admin.php:578
+msgid "Open settings"
+msgstr "Odpri nastavitve"
+
+#: includes/class-admin.php:579
+#: includes/class-admin.php:672
+msgid "Hide"
+msgstr "Skrij"
+
+#: includes/class-admin.php:641
+#. translators: 1: current prefix, 2: suggested prefix
+#, php-format
+msgid "The label next to the price is “%1$s”. Customers may confuse it with the price they pay. The legal name is bazna cijena. Suggested label: %2$s."
+msgstr "Napis ob ceni je „%1$s”. Kupec ga lahko zamenja s ceno, ki jo plača. Zakonsko ime je bazna cena. Predlagan napis: %2$s."
+
+#: includes/class-admin.php:646
+#. translators: %s: prefix
+#, php-format
+msgid "Set “%s”"
+msgstr "Nastavi „%s”"
+
+#: includes/class-admin.php:647
+msgid "Keep current label"
+msgstr "Obdrži trenutni napis"
+
+#: includes/class-admin.php:671
+msgid "The draft regulations on bazna cijena and on publishing price lists are open for consultation until 13 November 2026. The next version, after publication in Narodne novine, adds net quantity, a bazna_cijena column, exceptions, and publishing the price list only when a price changes. Until then, the daily generation after 00:05 stays, and the file is refreshed about a minute after a price, sale or stock change."
+msgstr "Načrti pravilnika o bazni ceni in objavi cenika v posvetovanju so do 13. novembra 2026. Naslednja različica po objavi v Uradnem listu doda neto količino, stolpec bazna_cijena, izjeme in objavo cenika le, ko se cena spremeni. Do takrat ostane dnevno generiranje po 00:05 in osvežitev datoteke približno minuto po spremembi cene, akcije ali zaloge."
+
+#: includes/class-admin.php:708
+msgid "CX Sidrena: saving the regular prices of products and variations is in progress. Sidrena cijena values that are already entered will not be overwritten."
+msgstr "Sidrna cena: poteka shranjevanje rednih cen izdelkov in variacij. Že vnesene sidrne cene se ne bodo prepisale."
+
+#: includes/class-admin.php:780
+#: includes/class-i18n.php:469
+#: includes/class-settings.php:738
+msgid "Bazna cijena"
+msgstr "Bazna cena"
+
+#: includes/class-admin.php:785
+msgid "Processing…"
+msgstr "Obdelava…"
+
+#: includes/class-admin.php:786
+#, php-format
+msgid "Processing… %1$s / %2$s"
+msgstr "Obdelava… %1$s / %2$s"
+
+#: includes/class-admin.php:787
+msgid "Connection lost. Continuing automatically…"
+msgstr "Povezava je prekinjena. Nadaljujem samodejno…"
+
+#: includes/class-admin.php:788
+msgid "Processing stopped. Press the button again to continue from the same place. Already entered prices are not overwritten."
+msgstr "Obdelava se je ustavila. Ponovno pritisnite gumb za nadaljevanje na istem mestu. Že vpisane cene se ne prepišejo."
+
+#: includes/class-admin.php:789
+msgid "Done. Empty fields were filled."
+msgstr "Končano. Prazna polja so zapolnjena."
+
+#: includes/class-admin.php:790
+msgid "Done. Empty fields were filled with today's date."
+msgstr "Končano. Prazna polja so zapolnjena z današnjim datumom."
+
+#: includes/class-admin.php:791
+msgid "This fills empty sidrena cijena fields with the current regular price and sets today's date as the reference date (only if no date is entered yet). Products that existed on 10.09.2026. should keep the default date. Continue?"
+msgstr "To zapolni prazne sidrne cene s trenutno redno ceno in vpisuje današnji datum kot referenčnega (le če datum še ni vnesen). Izdelki, ki so obstajali 10.09.2026., morajo ostati na privzetem datumu. Nadaljevati?"
+
+#: includes/class-admin.php:792
+msgid "An error occurred. Please try again."
+msgstr "Prišlo je do napake. Poskusite znova."
+
+#: includes/class-admin.php:793
+msgid "Copied"
+msgstr "Kopirano"
+
+#: includes/class-admin.php:794
+#: includes/class-bulk-import.php:61
+msgid "Select a CSV or XML file."
+msgstr "Izberite datoteko CSV ali XML."
+
+#: includes/class-admin.php:795
+msgid "Reading file…"
+msgstr "Branje datoteke…"
+
+#: includes/class-admin.php:796
+msgid "Select the column/node that contains SKU."
+msgstr "Izberite stolpec/vozlišče, ki vsebuje SKU."
+
+#: includes/class-admin.php:797
+#: includes/class-bulk-import.php:188
+msgid "Select the column for SKU or ID."
+msgstr "Izberite stolpec za SKU ali ID."
+
+#: includes/class-admin.php:798
+#, php-format
+msgid "Page %1$d of %2$d"
+msgstr "Stran %1$d od %2$d"
+
+#: includes/class-admin.php:799
+msgid "Do not import"
+msgstr "Ne uvaža"
+
+#: includes/class-admin.php:800
+msgid "Select SKU field"
+msgstr "Izberite polje SKU"
+
+#: includes/class-admin.php:801
+msgid "Import in progress…"
+msgstr "Uvoz v teku…"
+
+#: includes/class-admin.php:802
+msgid "Import complete."
+msgstr "Uvoz je končan."
+
+#: includes/class-admin.php:803
+msgid "rows"
+msgstr "vrstic"
+
+#: includes/class-admin.php:804
+msgid "updated"
+msgstr "posodobljeno"
+
+#: includes/class-admin.php:805
+msgid "skipped"
+msgstr "preskočeno"
+
+#: includes/class-admin.php:806
+msgid "SKU not found"
+msgstr "SKU ni bil najden"
+
+#: includes/class-admin.php:807
+msgid "added"
+msgstr "dodano"
+
+#: includes/class-admin.php:809
+msgid "Duplicate"
+msgstr "Podvoji"
+
+#: includes/class-admin.php:810
+msgid "Remove"
+msgstr "Odstrani"
+
+#: includes/class-admin.php:811
+msgid "Add row"
+msgstr "Dodaj vrstico"
+
+#: includes/class-admin.php:812
+msgid "Copy shortcode"
+msgstr "Kopiraj shortcode"
+
+#: includes/class-admin.php:813
+msgid "Save price list for shortcode"
+msgstr "Shrani cenik za shortcode"
+
+#: includes/class-admin.php:814
+#: includes/class-feed-files.php:675
+msgid "In stock"
+msgstr "Na voljo"
+
+#: includes/class-admin.php:815
+#: includes/class-feed-files.php:674
+msgid "Out of stock"
+msgstr "Ni na voljo"
+
+#: includes/class-admin.php:817
+#: includes/class-product-fields.php:145
+#: includes/class-product-fields.php:185
+msgid "per kg/l"
+msgstr "za kg/l"
+
+#: includes/class-admin.php:822
+#: includes/class-feed-files.php:670
+msgid "Service"
+msgstr "Storitev"
+
+#: includes/class-admin.php:824
+#, php-format
+msgid "%d items"
+msgstr "%d postavk"
+
+#: includes/class-admin.php:824
+#, php-format
+msgid "%d products"
+msgstr "%d izdelkov"
+
+#: includes/class-admin.php:826
+msgid "For you in admin only. Not included in the file name."
+msgstr "Samo za vas v administraciji. Ne vstopi v ime datoteke."
+
+#: includes/class-admin.php:828
+msgid "Written exactly as it should appear, e.g. prodavaonica, webshop or servis."
+msgstr "Kakor je napisano, npr. prodajalna, spletna trgovina ali servis."
+
+#: includes/class-admin.php:832
+msgid "Internal label, e.g. P-01 or 001. The hyphen is kept. Used in the price list URL: /sidrena-cijena-P-01.xml."
+msgstr "Notranja oznaka, npr. P-01 ali 001. Pomišljaj ostane. Vstopi v naslov cenika: /sidrena-cijena-P-01.xml."
+
+#: includes/class-admin.php:836
+msgid "Only selected products are included in this outlet's price list."
+msgstr "V cenik te poslovalnice spadajo le izbrani izdelki."
+
+#: includes/class-admin.php:837
+msgid "Search product…"
+msgstr "Išči izdelek…"
+
+#: includes/class-admin.php:838
+msgid "First add products on the Products tab."
+msgstr "Najprej dodajte izdelke na zavihku Izdelki."
+
+#: includes/class-admin.php:839
+#: includes/class-bulk-import.php:193
+msgid "Select the outlet to import into."
+msgstr "Izberite poslovalnico, v katero se uvaža."
+
+#: includes/class-admin.php:840
+msgid "Remove outlet"
+msgstr "Odstrani poslovalnico"
+
+#: includes/class-archive.php:142
+msgid "The public price list does not exist yet."
+msgstr "Javni cenik še ne obstaja."
+
+#: includes/class-archive.php:147
+#: includes/class-archive.php:544
+msgid "The archive folder could not be created."
+msgstr "Mape arhiva ni bilo mogoče ustvariti."
+
+#: includes/class-archive.php:513
+msgid "The archive price list could not be saved."
+msgstr "Arhivskega cenika ni bilo mogoče shraniti."
+
+#: includes/class-archive.php:639
+msgid "The archive is empty."
+msgstr "Arhiv je prazen."
+
+#: includes/class-bulk-import.php:57
+#: includes/class-bulk-import.php:170
+msgid "You do not have permission to import."
+msgstr "Nimate dovoljenja za uvoz."
+
+#: includes/class-bulk-import.php:66
+msgid "File upload failed."
+msgstr "Prenos datoteke ni uspel."
+
+#: includes/class-bulk-import.php:73
+msgid "Only CSV and XML are allowed."
+msgstr "Dovoljena sta samo CSV in XML."
+
+#: includes/class-bulk-import.php:78
+msgid "The file is not valid."
+msgstr "Datoteka ni veljavna."
+
+#: includes/class-bulk-import.php:83
+msgid "The file is larger than 20 MB."
+msgstr "Datoteka je večja od 20 MB."
+
+#: includes/class-bulk-import.php:88
+msgid "The file is empty."
+msgstr "Datoteka je prazna."
+
+#: includes/class-bulk-import.php:101
+msgid "The import folder could not be created."
+msgstr "Mape za uvoz ni bilo mogoče ustvariti."
+
+#: includes/class-bulk-import.php:110
+#: includes/class-bulk-import.php:120
+msgid "The temporary import file could not be saved."
+msgstr "Začasne datoteke uvoza ni bilo mogoče shraniti."
+
+#: includes/class-bulk-import.php:180
+msgid "Import expired. Upload the file again."
+msgstr "Uvoz je potekel. Znova naložite datoteko."
+
+#: includes/class-bulk-import.php:196
+msgid "The selected outlet does not exist."
+msgstr "Izbrana poslovalnica ne obstaja."
+
+#: includes/class-bulk-import.php:201
+msgid "The temporary import file cannot be read."
+msgstr "Začasni uvoz ni berljiv."
+
+#: includes/class-bulk-import.php:206
+msgid "The selected SKU column does not exist in the file."
+msgstr "Izbrani stolpec SKU ne obstaja v datoteki."
+
+#: includes/class-bulk-import.php:209
+msgid "The selected ID column does not exist in the file."
+msgstr "Izbrani stolpec ID ne obstaja v datoteki."
+
+#: includes/class-compat.php:81
+#. translators: %s plugin version
+#, php-format
+msgid "WooCommerce Lowest Price (Media X %s)"
+msgstr "WooCommerce Lowest Price (Media X %s)"
+
+#: includes/class-compat.php:87
+msgid "WooCommerce Lowest Price (Igor Kovačić)"
+msgstr "WooCommerce Lowest Price (Igor Kovačić)"
+
+#: includes/class-compat.php:90
+msgid "WooCommerce Lowest Price"
+msgstr "WooCommerce Lowest Price"
+
+#: includes/class-export.php:509
+msgid "The public price list is already being generated."
+msgstr "Javni cenik se že generira."
+
+#: includes/class-export.php:520
+#: includes/class-export.php:549
+msgid "WooCommerce is not ready to generate the price list."
+msgstr "WooCommerce ni pripravljen za generiranje cenika."
+
+#: includes/class-export.php:606
+#: includes/class-feed-routes.php:343
+msgid "The outlet has no published price list."
+msgstr "Poslovalnica nima objavljenega cenika."
+
+#: includes/class-export.php:639
+msgid "The public price list could not be generated."
+msgstr "Javnega cenika ni bilo mogoče generirati."
+
+#: includes/class-feed-files.php:558
+#: includes/class-feed-files.php:595
+msgid "Uploads folder is not available."
+msgstr "Mapa uploads ni na voljo."
+
+#: includes/class-feed-files.php:562
+#: includes/class-feed-files.php:599
+msgid "The public price list folder could not be created."
+msgstr "Mape za javni cenik ni bilo mogoče ustvariti."
+
+#: includes/class-feed-files.php:569
+msgid "The public price list could not be saved."
+msgstr "Javnega cenika ni bilo mogoče shraniti."
+
+#: includes/class-feed-files.php:613
+msgid "The HTML price list could not be saved."
+msgstr "HTML cenika ni bilo mogoče shraniti."
+
+#: includes/class-feed-files.php:633
+#: includes/class-feed-files.php:965
+#: includes/class-feed-routes.php:889
+msgid "The price list is empty."
+msgstr "Cenik je prazen."
+
+#: includes/class-feed-files.php:639
+msgid "Search price list"
+msgstr "Išči po ceniku"
+
+#: includes/class-feed-files.php:640
+msgid "Search name, SKU, brand, or barcode…"
+msgstr "Išči ime, SKU, znamko ali barkod…"
+
+#: includes/class-feed-files.php:645
+#: includes/class-feed-files.php:711
+msgid "No products match the search."
+msgstr "Ni izdelkov, ki ustrezajo iskanju."
+
+#: includes/class-feed-files.php:709
+msgid "Price list pages"
+msgstr "Strani cenika"
+
+#: includes/class-feed-files.php:731
+msgid "Price"
+msgstr "Cena"
+
+#: includes/class-feed-files.php:892
+msgid "Barcode"
+msgstr "Barkod"
+
+#: includes/class-feed-files.php:894
+#: includes/class-import-export.php:64
+#: includes/class-import-export.php:158
+#: includes/class-import-export.php:179
+#: includes/class-product-fields.php:111
+#: includes/class-product-fields.php:140
+#: includes/class-product-fields.php:201
+msgid "Unit price"
+msgstr "Cena na enoto mere"
+
+#: includes/class-feed-files.php:895
+msgid "Retail price"
+msgstr "Maloprodajna cena"
+
+#: includes/class-feed-files.php:896
+msgid "Special form of sale"
+msgstr "Posebna oblika prodaje"
+
+#: includes/class-feed-files.php:972
+#: includes/class-feed-routes.php:910
+msgid "The price list is being prepared. Refresh the page in a few minutes."
+msgstr "Cenik se pripravlja. Osvežite stran čez nekaj minut."
+
+#: includes/class-feed-routes.php:229
+msgid "The outlet price list is not enabled."
+msgstr "Cenik poslovalnice ni vključen."
+
+#: includes/class-feed-routes.php:255
+msgid "The public price list has not been generated yet."
+msgstr "Javni cenik še ni generiran."
+
+#: includes/class-feed-routes.php:324
+msgid "The price list is published per outlet."
+msgstr "Cenik je objavljen po poslovalnici."
+
+#: includes/class-feed-routes.php:536
+msgid "Archive price list not found."
+msgstr "Arhivski cenik ni bil najden."
+
+#: includes/class-feed-routes.php:549
+msgid "Sidrena cijena archive"
+msgstr "Arhiv sidrne cene"
+
+#: includes/class-feed-routes.php:572
+msgid "Daily price lists (XML or CSV), up to 30 files per outlet."
+msgstr "Dnevni ceniki (XML ali CSV), največ 30 datotek na poslovalnico."
+
+#: includes/class-feed-routes.php:573
+msgid "Daily price lists (XML or CSV), up to the last 30 files."
+msgstr "Dnevni ceniki (XML ali CSV), največ 30 zadnjih datotek."
+
+#: includes/class-feed-routes.php:577
+msgid "The archive is empty. Files are added with each daily generation after 00:00."
+msgstr "Arhiv je prazen. Datoteke se dodajo ob vsakem dnevnem generiranju po 00:00."
+
+#: includes/class-feed-routes.php:590
+#: includes/class-feed-routes.php:788
+#: includes/class-feed-routes.php:914
+#. translators: %s: site title
+#, php-format
+msgid "Back to %s"
+msgstr "Nazaj na %s"
+
+#: includes/class-feed-routes.php:696
+msgid "Older files"
+msgstr "Starejše datoteke"
+
+#: includes/class-feed-routes.php:736
+#: includes/class-feed-routes.php:872
+#: includes/class-feed-routes.php:900
+msgid "Price list - sidrena cijena"
+msgstr "Cenik – sidrna cena"
+
+#: includes/class-feed-routes.php:740
+msgid "Download CSV"
+msgstr "Prenesi CSV"
+
+#: includes/class-feed-routes.php:740
+msgid "Download XML"
+msgstr "Prenesi XML"
+
+#: includes/class-feed-routes.php:752
+#. translators: %s shop name
+#, php-format
+msgid "Current price list with sidrena cijena: %s"
+msgstr "Veljavni cenik s sidrno ceno: %s"
+
+#: includes/class-feed-routes.php:771
+#. translators: 1: datetime, 2: count
+#, php-format
+msgid "Updated %1$s · %2$d products"
+msgstr "Posodobljeno %1$s · %2$d izdelkov"
+
+#: includes/class-feed-routes.php:890
+msgid "Price list"
+msgstr "Cenik"
+
+#: includes/class-frontend.php:581
+#: includes/class-frontend.php:777
+#. translators: %s formatted price
+#, php-format
+msgid "from %s"
+msgstr "od %s"
+
+#: includes/class-i18n.php:473
+msgid "Bazna cijena is the retail price that applied to this product on the stated day. It is shown next to the current price for comparison. It is not a sale price or the lowest price in the last 30 days."
+msgstr "Bazna cena je maloprodajna cena, ki je za ta izdelek veljala na navedeni dan. Izpostavi se ob aktualni ceni za primerjavo. Ni akcijska cena niti najnižja cena v zadnjih 30 dneh."
+
+#: includes/class-import-export.php:60
+#: includes/class-import-export.php:154
+#: includes/class-import-export.php:171
+msgid "Sidrena cijena CJM"
+msgstr "Sidrna cena CJM"
+
+#: includes/class-import-export.php:61
+#: includes/class-import-export.php:155
+#: includes/class-import-export.php:172
+msgid "Sidrena cijena CJM suffix"
+msgstr "Sidrna cena dodatek CJM"
+
+#: includes/class-import-export.php:62
+#: includes/class-import-export.php:156
+#: includes/class-import-export.php:177
+#: includes/class-product-fields.php:87
+#: includes/class-product-fields.php:193
+msgid "Name of special form of sale"
+msgstr "Ime posebne oblike prodaje"
+
+#: includes/class-import-parse.php:43
+msgid "The CSV cannot be read."
+msgstr "CSV ni berljiv."
+
+#: includes/class-import-parse.php:56
+msgid "The CSV must have a header and at least one row."
+msgstr "CSV mora imeti glavo in vsaj eno vrstico."
+
+#: includes/class-import-parse.php:77
+msgid "The CSV has no rows to import."
+msgstr "CSV nima vrstic za uvoz."
+
+#: includes/class-import-parse.php:94
+msgid "PHP SimpleXML is not available on the server."
+msgstr "PHP SimpleXML na strežniku ni na voljo."
+
+#: includes/class-import-parse.php:103
+msgid "The XML is not valid."
+msgstr "XML ni veljaven."
+
+#: includes/class-import-parse.php:108
+msgid "No repeating product records were found in the XML."
+msgstr "V XML-u niso bili najdeni ponavljajoči zapisi izdelkov."
+
+#: includes/class-import-parse.php:136
+msgid "The XML has no nodes that can be mapped."
+msgstr "XML nima vozlišč, ki jih je mogoče preslikati."
+
+#: includes/class-migration.php:142
+#. translators: 1: number of settings, 2: number of files, 3: plugin names or "nothing"
+#, php-format
+msgid "CX Sidrena has taken over the settings (%1$d) and the price list and archive files (%2$d) from the MJDD Sidrena i bazna cijena plugin. Bazna cijena values, dates and price history on products stay as they are. Switched off: %3$s."
+msgstr ""
+
+#: includes/class-migration.php:145
+msgid "nothing"
+msgstr ""
+
+#: includes/class-migration.php:153
+#. translators: %s: plugin names
+#, php-format
+msgid "Switched off: %s. CX Sidrena does the same, and two such plugins switched on together would show prices twice."
+msgstr ""
+
+#: includes/class-product-fields.php:52
+msgid "Regular retail price on the reference day (2 May 2025 for FMCG, 10 September 2026 for everything else). Enter it in the same format as the regular price (with or without VAT, per WooCommerce tax settings). Do not enter the sale price."
+msgstr "Redna maloprodajna cena na referenčni dan (2. 5. 2025 za FMCG, 10. 9. 2026 za ostalo). Vnesite jo v isti obliki kot redno ceno (z ali brez DDV, glede na nastavitev davka WooCommerce). Ne vnašajte akcijske cene."
+
+#: includes/class-product-fields.php:75
+#: includes/class-product-fields.php:189
+msgid "Reference date"
+msgstr "Referenčni datum"
+
+#: includes/class-product-fields.php:78
+msgid "Leave empty for the default date from settings. For food, beverages, cosmetics, and household: 02.05.2025."
+msgstr "Pustite prazno za privzeti datum iz nastavitev. Za hrano, pijačo, kozmetiko in gospodinjstvo: 02.05.2025."
+
+#: includes/class-product-fields.php:90
+msgid "While the sale price is active, the public price list writes “akcija”. Enter another name here (e.g. rasprodaja, sezonsko sniženje) if needed. An empty field means “akcija”. Without an active sale price nothing is published."
+msgstr "Ko je akcijska cena aktivna, javni cenik zapiše akcija. Tukaj vpišite drugo ime (razprodaja, sezonski popust), če je potrebno. Prazno polje pomeni akcija. Brez aktivne akcijske cene se ne objavi."
+
+#: includes/class-product-fields.php:102
+msgid "Unit in the public price list, e.g. kg, l, or pcs. Empty if the product has no unit price."
+msgstr "Enota v javnem ceniku, npr. kg, l ali kom. Prazno, če izdelek nima cene na enoto mere."
+
+#: includes/class-product-fields.php:113
+msgid "Same format as the regular price. Published alongside the retail price. Empty if not applicable."
+msgstr "Ista oblika kot redna cena. Objavi se ob maloprodajni ceni. Prazno, če ni uporabno."
+
+#: includes/class-product-fields.php:146
+msgid "Appended to the prefix: Price per kg/l"
+msgstr "Doda se k predponi: Cena za kg/l"
+
+#: includes/class-product-fields.php:184
+msgid "Prefix CJM suffix"
+msgstr "Dodatek CJM k predponi"
+
+#: includes/class-updates.php:111
+msgid "manual: automatic updates are turned off by the CX_SIDRENA_AUTO_UPDATE constant in wp-config.php"
+msgstr ""
+
+#: includes/class-updates.php:114
+msgid "manual: automatic updates are turned off for the whole site (by the hosting or in wp-config.php)"
+msgstr ""
+
+#: includes/class-updates.php:117
+msgid "automatic, from the releases on GitHub (cx-core/cx-sidrena)"
+msgstr ""
+
+#: includes/lowest-30.php:154
+#: includes/lowest-30.php:213
+msgid "Lowest price in the 30 days before the discount:"
+msgstr ""
+

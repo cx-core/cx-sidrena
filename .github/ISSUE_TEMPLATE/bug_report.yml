@@ -1,0 +1,31 @@
+name: Bug report
+description: Something in CX Sidrena does not work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you saw instead. Please do not paste customers' data.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Versions of CX Sidrena, WordPress, WooCommerce and PHP, and the theme. The "Report a bug" link in the plugin fills this in.
+      placeholder: |
+        CX Sidrena:
+        WordPress:
+        WooCommerce:
+        PHP:
+        Theme:
+    validations:
+      required: true

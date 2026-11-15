@@ -1,0 +1,680 @@
+(function ($) {
+	"use strict";
+
+	function bindCatalogRepeater() {
+		var $form = $("#sidrena-cijena-catalog-form");
+		if (!$form.length) {
+			return;
+		}
+
+		var i18n = typeof sidrenaCijenaAdmin !== "undefined" ? sidrenaCijenaAdmin.i18n || {} : {};
+		var $json = $("#sidrena-cijena-catalog-json");
+		var $tbody = $("#sidrena-cijena-catalog tbody");
+		var $count = $("#sidrena-cijena-catalog-count");
+
+		function escAttr(value) {
+			return $("<div>").text(value == null ? "" : String(value)).html();
+		}
+
+		function emptyRow(partial) {
+			return $.extend(
+				{
+					id: "",
+					naziv: "",
+					sku: "",
+					marka: "",
+					url: "",
+					cijena_redovna: "",
+					cijena_akcijska: "",
+					naziv_posebnog_oblika: "",
+					jedinica_mjere: "",
+					cijena_jedinice_mjere: "",
+					sidrena_cijena: "",
+					sidrena_datum: "",
+					vrsta: "proizvod",
+					poslovnica: "",
+					dostupnost: "dostupno",
+					cjm: "",
+					cjm_suffix: "",
+				},
+				partial || {}
+			);
+		}
+
+		function iconButton(cls, icon, label, extraClass) {
+			return (
+				'<button type="button" class="sidrena-cijena-icon-btn ' +
+				(extraClass || "") +
+				" " +
+				cls +
+				'" title="' +
+				escAttr(label) +
+				'" aria-label="' +
+				escAttr(label) +
+				'">' +
+				'<span class="dashicons ' +
+				icon +
+				'" aria-hidden="true"></span>' +
+				"</button>"
+			);
+		}
+
+		function shortcodeFor(id) {
+			id = $.trim(String(id || ""));
+			if (!id) {
+				return "";
+			}
+			var prefix = typeof sidrenaCijenaAdmin !== "undefined" && sidrenaCijenaAdmin.catalogIdPrefix ? sidrenaCijenaAdmin.catalogIdPrefix : "";
+			return '[sidrena-cijena id="' + prefix + id + '"]';
+		}
+
+		function shortcodeCell(id) {
+			var code = shortcodeFor(id);
+			if (!code) {
+				return (
+					'<td class="sidrena-cijena-catalog-shortcode"><span class="sidrena-cijena-catalog-shortcode__empty">' +
+					escAttr(i18n.saveForCode || "Save price list for shortcode") +
+					"</span></td>"
+				);
+			}
+			return (
+				'<td class="sidrena-cijena-catalog-shortcode">' +
+				'<code class="js-shortcode">' +
+				escAttr(code) +
+				"</code>" +
+				'<button type="button" class="sidrena-cijena-icon-btn sidrena-cijena-copy" data-copy="' +
+				escAttr(code) +
+				'" title="' +
+				escAttr(i18n.copyShortcode || "Copy shortcode") +
+				'" aria-label="' +
+				escAttr(i18n.copyShortcode || "Copy shortcode") +
+				'">' +
+				'<span class="dashicons dashicons-clipboard" aria-hidden="true"></span>' +
+				"</button>" +
+				"</td>"
+			);
+		}
+
+		function cjmStored(row) {
+			if (sidrenaCijenaAdmin && sidrenaCijenaAdmin.cjmEnabled) {
+				return "";
+			}
+			return (
+				'<input type="hidden" class="js-cjm-stored" value="' +
+				escAttr(row.cjm === "yes" ? "yes" : "") +
+				'" />' +
+				'<input type="hidden" class="js-cjm-suffix" value="' +
+				escAttr(row.cjm_suffix) +
+				'" />'
+			);
+		}
+
+		function cjmCell(row) {
+			var enabled = !!(sidrenaCijenaAdmin && sidrenaCijenaAdmin.cjmEnabled);
+			if (!enabled) {
+				return "";
+			}
+			var on = row.cjm === "yes";
+			return (
+				'<td class="sidrena-cijena-cjm">' +
+				'<label class="sidrena-cijena-catalog-cjm"><input type="checkbox" class="js-cjm sidrena-cijena-cjm-toggle" value="yes"' +
+				(on ? " checked" : "") +
+				" /> " +
+				escAttr(i18n.cjm || "CJM") +
+				"</label>" +
+				'<span class="sidrena-cijena-cjm-suffix"' +
+				(on ? "" : " hidden") +
+				"><input type=\"text\" class=\"js-cjm-suffix\" placeholder=\"" +
+				escAttr(i18n.cjmPlaceholder || "per kg/l") +
+				'" value="' +
+				escAttr(row.cjm_suffix) +
+				'" /></span></td>'
+			);
+		}
+
+		function vrstaCell(row) {
+			var vrsta = row.vrsta === "usluga" ? "usluga" : "proizvod";
+			return (
+				'<td><select class="js-vrsta">' +
+				'<option value="proizvod"' +
+				(vrsta === "proizvod" ? " selected" : "") +
+				">" +
+				escAttr(i18n.vrstaProizvod || "Product") +
+				"</option>" +
+				'<option value="usluga"' +
+				(vrsta === "usluga" ? " selected" : "") +
+				">" +
+				escAttr(i18n.vrstaUsluga || "Service") +
+				"</option>" +
+				"</select></td>"
+			);
+		}
+
+		function rowHtml(row) {
+			row = emptyRow(row);
+			return (
+				"<tr>" +
+				'<td><input type="hidden" class="js-id" value="' +
+				escAttr(row.id) +
+				'" />' +
+				'<input type="hidden" class="js-poslovnica" value="' +
+				escAttr(row.poslovnica) +
+				'" />' +
+				cjmStored(row) +
+				'<input type="text" class="js-naziv regular-text" value="' +
+				escAttr(row.naziv) +
+				'" /></td>' +
+				vrstaCell(row) +
+				'<td><input type="text" class="js-sku" value="' +
+				escAttr(row.sku) +
+				'" /></td>' +
+				'<td><input type="text" class="js-marka" value="' +
+				escAttr(row.marka) +
+				'" /></td>' +
+				'<td><input type="url" class="js-url" value="' +
+				escAttr(row.url) +
+				'" /></td>' +
+				'<td><input type="text" class="js-regular" inputmode="decimal" value="' +
+				escAttr(row.cijena_redovna) +
+				'" /></td>' +
+				'<td><input type="text" class="js-sale" inputmode="decimal" value="' +
+				escAttr(row.cijena_akcijska) +
+				'" /></td>' +
+				'<td><input type="text" class="js-oblik" placeholder="' +
+				escAttr(i18n.oblikPlaceholder || "akcija") +
+				'" value="' +
+				escAttr(row.naziv_posebnog_oblika) +
+				'" /></td>' +
+				'<td><input type="text" class="js-jedinica" placeholder="' +
+				escAttr(i18n.jedinicaPlaceholder || "kg") +
+				'" value="' +
+				escAttr(row.jedinica_mjere) +
+				'" /></td>' +
+				'<td><input type="text" class="js-jedinica-cijena" inputmode="decimal" value="' +
+				escAttr(row.cijena_jedinice_mjere) +
+				'" /></td>' +
+				'<td><input type="text" class="js-sidrena" inputmode="decimal" value="' +
+				escAttr(row.sidrena_cijena) +
+				'" /></td>' +
+				'<td><input type="text" class="js-datum" placeholder="' +
+				escAttr(i18n.datePlaceholder || "") +
+				'" value="' +
+				escAttr(row.sidrena_datum) +
+				'" /></td>' +
+				cjmCell(row) +
+				'<td><select class="js-dostupnost">' +
+				'<option value="dostupno"' +
+				(row.dostupnost === "nedostupno" ? "" : " selected") +
+				">" +
+				escAttr(i18n.dostupno || "In stock") +
+				"</option>" +
+				'<option value="nedostupno"' +
+				(row.dostupnost === "nedostupno" ? " selected" : "") +
+				">" +
+				escAttr(i18n.nedostupno || "Out of stock") +
+				"</option>" +
+				"</select></td>" +
+				shortcodeCell(row.id) +
+				'<td class="sidrena-cijena-catalog-actions">' +
+				iconButton("js-add", "dashicons-plus-alt2", i18n.addRow || "Add row") +
+				iconButton("js-dup", "dashicons-admin-page", i18n.duplicate || "Duplicate") +
+				iconButton("js-del", "dashicons-trash", i18n.remove || "Remove", "is-danger") +
+				"</td>" +
+				"</tr>"
+			);
+		}
+
+		function collect() {
+			var rows = [];
+			$tbody.find("tr").each(function () {
+				var $tr = $(this);
+				rows.push({
+					id: $.trim($tr.find(".js-id").val() || ""),
+					naziv: $.trim($tr.find(".js-naziv").val() || ""),
+					sku: $.trim($tr.find(".js-sku").val() || ""),
+					marka: $.trim($tr.find(".js-marka").val() || ""),
+					url: $.trim($tr.find(".js-url").val() || ""),
+					cijena_redovna: $.trim($tr.find(".js-regular").val() || ""),
+					cijena_akcijska: $.trim($tr.find(".js-sale").val() || ""),
+					naziv_posebnog_oblika: $.trim($tr.find(".js-oblik").val() || ""),
+					jedinica_mjere: $.trim($tr.find(".js-jedinica").val() || ""),
+					cijena_jedinice_mjere: $.trim($tr.find(".js-jedinica-cijena").val() || ""),
+					sidrena_cijena: $.trim($tr.find(".js-sidrena").val() || ""),
+					sidrena_datum: $.trim($tr.find(".js-datum").val() || ""),
+					vrsta: $tr.find(".js-vrsta").val() === "usluga" ? "usluga" : "proizvod",
+					poslovnica: $.trim($tr.find(".js-poslovnica").val() || ""),
+					dostupnost: $tr.find(".js-dostupnost").val() === "nedostupno" ? "nedostupno" : "dostupno",
+					cjm: $tr.find(".js-cjm").length
+						? $tr.find(".js-cjm").is(":checked")
+							? "yes"
+							: ""
+						: $.trim($tr.find(".js-cjm-stored").val() || "") === "yes"
+						? "yes"
+						: "",
+					cjm_suffix: $.trim($tr.find(".js-cjm-suffix").val() || ""),
+				});
+			});
+			return rows;
+		}
+
+		var PAGE_SIZE = 50;
+		var $pager = $("#sidrena-cijena-catalog-pager");
+		var $pageLabel = $("#sidrena-cijena-catalog-page");
+		var $prev = $("#sidrena-cijena-catalog-prev");
+		var $next = $("#sidrena-cijena-catalog-next");
+
+		function updateCount() {
+			if (!$count.length) {
+				return;
+			}
+			var tpl = i18n.rowCount || "%d products";
+			$count.text(tpl.replace("%d", String(viewRows.length)));
+		}
+
+		var $scope = $("#sidrena-cijena-catalog-scope");
+		var scoped = $scope.length > 0;
+		var allRows = [];
+		var viewRows = [];
+		var activeScope = "";
+		var page = 1;
+		var pageSlots = 0;
+
+		function currentScope() {
+			return scoped ? String($scope.val() || "") : "";
+		}
+
+		function blankRow() {
+			return emptyRow({ poslovnica: currentScope() });
+		}
+
+		function pageCount() {
+			return Math.max(1, Math.ceil(viewRows.length / PAGE_SIZE));
+		}
+
+		function updatePager() {
+			var pages = pageCount();
+			if (pages < 2) {
+				$pager.attr("hidden", "hidden");
+				return;
+			}
+			var tpl = i18n.pageStatus || "Page %1$d of %2$d";
+			$pageLabel.text(tpl.replace("%1$d", String(page)).replace("%2$d", String(pages)));
+			$prev.prop("disabled", page <= 1);
+			$next.prop("disabled", page >= pages);
+			$pager.removeAttr("hidden");
+		}
+
+		function renderPage() {
+			var pages = pageCount();
+			if (page > pages) {
+				page = pages;
+			}
+			if (page < 1) {
+				page = 1;
+			}
+			var start = (page - 1) * PAGE_SIZE;
+			var slice = viewRows.slice(start, start + PAGE_SIZE);
+			if (!slice.length) {
+				pageSlots = 0;
+				slice = [blankRow()];
+			} else {
+				pageSlots = slice.length;
+			}
+			$tbody.html(slice.map(rowHtml).join(""));
+			updateCount();
+			updatePager();
+		}
+
+		function outletCodes() {
+			var list = (sidrenaCijenaAdmin && sidrenaCijenaAdmin.outlets) || [];
+			return list.map(function (outlet) {
+				return String(outlet.oznaka || "");
+			});
+		}
+
+		function scopeMark(value) {
+			var mark = String(value || "");
+			if (mark.toLowerCase() === "webshop") {
+				return "";
+			}
+			if (mark !== "" && outletCodes().indexOf(mark) === -1) {
+				return "";
+			}
+			return mark;
+		}
+
+		function rowsFor(code) {
+			return allRows.filter(function (row) {
+				return scopeMark(row.poslovnica) === code;
+			});
+		}
+
+		function syncViewFromAll() {
+			var source = scoped ? rowsFor(activeScope) : allRows;
+			viewRows = source.map(function (row) {
+				return $.extend({}, row);
+			});
+		}
+
+		function writeViewToAll() {
+			if (!scoped) {
+				allRows = viewRows.map(function (row) {
+					return $.extend({}, row);
+				});
+				return;
+			}
+			var code = activeScope;
+			var current = viewRows.map(function (row) {
+				var copy = $.extend({}, row);
+				copy.poslovnica = code;
+				return copy;
+			});
+			var next = [];
+			var inserted = false;
+			allRows.forEach(function (row) {
+				if (scopeMark(row.poslovnica) === code) {
+					if (!inserted) {
+						current.forEach(function (item) {
+							next.push(item);
+						});
+						inserted = true;
+					}
+					return;
+				}
+				next.push($.extend({}, row));
+			});
+			if (!inserted) {
+				current.forEach(function (item) {
+					next.push(item);
+				});
+			}
+			allRows = next;
+		}
+
+		function isBlankRow(row) {
+			return (
+				!$.trim(row.naziv) &&
+				!$.trim(row.sku) &&
+				!$.trim(row.marka) &&
+				!$.trim(row.url) &&
+				!$.trim(row.cijena_redovna) &&
+				!$.trim(row.cijena_akcijska) &&
+				!$.trim(row.naziv_posebnog_oblika) &&
+				!$.trim(row.jedinica_mjere) &&
+				!$.trim(row.cijena_jedinice_mjere) &&
+				!$.trim(row.sidrena_cijena) &&
+				!$.trim(row.sidrena_datum) &&
+				row.vrsta !== "usluga" &&
+				row.dostupnost !== "nedostupno" &&
+				row.cjm !== "yes" &&
+				!$.trim(row.cjm_suffix)
+			);
+		}
+
+		function commitPage() {
+			var current = collect();
+			if (scoped) {
+				current = current.map(function (row) {
+					row.poslovnica = activeScope;
+					return row;
+				});
+			}
+			if (!pageSlots) {
+				viewRows = current.filter(function (row) {
+					return !isBlankRow(row);
+				});
+			} else {
+				var start = (page - 1) * PAGE_SIZE;
+				viewRows = viewRows.slice(0, start).concat(current, viewRows.slice(start + pageSlots));
+			}
+			writeViewToAll();
+		}
+
+		function showPageOf(index) {
+			page = Math.floor(index / PAGE_SIZE) + 1;
+			renderPage();
+			var local = index - (page - 1) * PAGE_SIZE;
+			$tbody.find("tr").eq(local).find(".js-naziv").trigger("focus");
+		}
+
+		try {
+			allRows = JSON.parse($json.val() || "[]");
+		} catch (e) {
+			allRows = [];
+		}
+		if (!$.isArray(allRows)) {
+			allRows = [];
+		}
+		activeScope = currentScope();
+		syncViewFromAll();
+		renderPage();
+
+		$("#sidrena-cijena-catalog-add").on("click", function () {
+			commitPage();
+			viewRows.push(blankRow());
+			writeViewToAll();
+			showPageOf(viewRows.length - 1);
+		});
+
+		$tbody.on("click", ".js-add", function () {
+			var index = $tbody.find("tr").index($(this).closest("tr"));
+			commitPage();
+			var at = (page - 1) * PAGE_SIZE + index + 1;
+			viewRows.splice(at, 0, blankRow());
+			writeViewToAll();
+			showPageOf(at);
+		});
+
+		$tbody.on("click", ".js-dup", function () {
+			var $tr = $(this).closest("tr");
+			var index = $tbody.find("tr").index($tr);
+			var copy = emptyRow({
+				naziv: $tr.find(".js-naziv").val(),
+				sku: $tr.find(".js-sku").val(),
+				marka: $tr.find(".js-marka").val(),
+				url: $tr.find(".js-url").val(),
+				cijena_redovna: $tr.find(".js-regular").val(),
+				cijena_akcijska: $tr.find(".js-sale").val(),
+				naziv_posebnog_oblika: $tr.find(".js-oblik").val(),
+				jedinica_mjere: $tr.find(".js-jedinica").val(),
+				cijena_jedinice_mjere: $tr.find(".js-jedinica-cijena").val(),
+				sidrena_cijena: $tr.find(".js-sidrena").val(),
+				sidrena_datum: $tr.find(".js-datum").val(),
+				vrsta: $tr.find(".js-vrsta").val(),
+				poslovnica: currentScope() || $tr.find(".js-poslovnica").val(),
+				dostupnost: $tr.find(".js-dostupnost").val(),
+				cjm: $tr.find(".js-cjm").is(":checked") ? "yes" : $tr.find(".js-cjm-stored").val() || "",
+				cjm_suffix: $tr.find(".js-cjm-suffix").val(),
+			});
+			commitPage();
+			var at = (page - 1) * PAGE_SIZE + index + 1;
+			viewRows.splice(at, 0, copy);
+			writeViewToAll();
+			showPageOf(at);
+		});
+
+		$tbody.on("click", ".js-del", function () {
+			var index = $tbody.find("tr").index($(this).closest("tr"));
+			commitPage();
+			var at = (page - 1) * PAGE_SIZE + index;
+			if (viewRows.length) {
+				viewRows.splice(at, 1);
+			}
+			writeViewToAll();
+			renderPage();
+		});
+
+		$prev.on("click", function () {
+			if (page <= 1) {
+				return;
+			}
+			commitPage();
+			page -= 1;
+			renderPage();
+		});
+
+		$next.on("click", function () {
+			if (page >= pageCount()) {
+				return;
+			}
+			commitPage();
+			page += 1;
+			renderPage();
+		});
+
+		var $upitJson = $("#sidrena-cijena-upit-json");
+		var $upitBody = $("#sidrena-cijena-upit tbody");
+		var upitRows = [];
+
+		function emptyUpit(partial) {
+			return $.extend(
+				{
+					id: "",
+					naziv: "",
+					kriteriji: "",
+					poslovnica: "",
+				},
+				partial || {}
+			);
+		}
+
+		function blankUpit() {
+			return emptyUpit({ poslovnica: currentScope() });
+		}
+
+		function upitHtml(row) {
+			row = emptyUpit(row);
+			return (
+				"<tr>" +
+				'<td><input type="hidden" class="js-id" value="' +
+				escAttr(row.id) +
+				'" />' +
+				'<input type="hidden" class="js-poslovnica" value="' +
+				escAttr(row.poslovnica) +
+				'" />' +
+				'<input type="text" class="js-naziv regular-text" value="' +
+				escAttr(row.naziv) +
+				'" /></td>' +
+				'<td><input type="text" class="js-kriteriji regular-text" value="' +
+				escAttr(row.kriteriji) +
+				'" /></td>' +
+				'<td class="sidrena-cijena-catalog-actions">' +
+				iconButton("js-del", "dashicons-trash", i18n.remove || "Remove", "is-danger") +
+				"</td>" +
+				"</tr>"
+			);
+		}
+
+		function collectUpit() {
+			var rows = [];
+			$upitBody.find("tr").each(function () {
+				var $tr = $(this);
+				rows.push({
+					id: $.trim($tr.find(".js-id").val() || ""),
+					naziv: $.trim($tr.find(".js-naziv").val() || ""),
+					kriteriji: $.trim($tr.find(".js-kriteriji").val() || ""),
+					poslovnica: $.trim($tr.find(".js-poslovnica").val() || ""),
+				});
+			});
+			return rows;
+		}
+
+		function renderUpit(rows) {
+			if (!rows.length) {
+				rows = [blankUpit()];
+			}
+			$upitBody.html(rows.map(upitHtml).join(""));
+		}
+
+		function upitFor(code) {
+			return upitRows.filter(function (row) {
+				return scopeMark(row.poslovnica) === code;
+			});
+		}
+
+		function commitUpit() {
+			if (!scoped) {
+				return;
+			}
+			var code = activeScope;
+			var current = collectUpit().map(function (row) {
+				row.poslovnica = code;
+				return row;
+			});
+			var next = [];
+			var inserted = false;
+			upitRows.forEach(function (row) {
+				if (scopeMark(row.poslovnica) === code) {
+					if (!inserted) {
+						current.forEach(function (item) {
+							next.push(item);
+						});
+						inserted = true;
+					}
+					return;
+				}
+				next.push(row);
+			});
+			if (!inserted) {
+				current.forEach(function (item) {
+					next.push(item);
+				});
+			}
+			upitRows = next;
+		}
+
+		function showUpit() {
+			if (!$upitBody.length) {
+				return;
+			}
+			renderUpit(scoped ? upitFor(activeScope) : upitRows);
+		}
+
+		try {
+			upitRows = JSON.parse($upitJson.val() || "[]");
+		} catch (e) {
+			upitRows = [];
+		}
+		if (!$.isArray(upitRows)) {
+			upitRows = [];
+		}
+		showUpit();
+
+		$("#sidrena-cijena-upit-add").on("click", function () {
+			$upitBody.append(upitHtml(blankUpit()));
+			$upitBody.find("tr:last .js-naziv").trigger("focus");
+		});
+
+		$upitBody.on("click", ".js-del", function () {
+			$(this).closest("tr").remove();
+			if (!$upitBody.find("tr").length) {
+				$upitBody.append(upitHtml(blankUpit()));
+			}
+		});
+
+		$scope.on("change", function () {
+			commitPage();
+			commitUpit();
+			activeScope = currentScope();
+			page = 1;
+			syncViewFromAll();
+			renderPage();
+			showUpit();
+		});
+
+		$form.on("submit", function () {
+			commitPage();
+			if (scoped) {
+				commitUpit();
+				$upitJson.val(JSON.stringify(upitRows));
+			} else {
+				$upitJson.val(JSON.stringify(collectUpit()));
+			}
+			$json.val(JSON.stringify(allRows));
+		});
+	}
+
+	$(function () {
+		bindCatalogRepeater();
+	});
+})(jQuery);

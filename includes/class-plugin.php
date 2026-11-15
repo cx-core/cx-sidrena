@@ -1,0 +1,292 @@
+<?php
+/**
+ * Bootstrap the Sidrena cijena plugin.
+ *
+ * @package CX_Sidrena
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+require_once CX_SIDRENA_PATH . 'includes/class-settings.php';
+require_once CX_SIDRENA_PATH . 'includes/class-i18n.php';
+require_once CX_SIDRENA_PATH . 'includes/class-money.php';
+require_once CX_SIDRENA_PATH . 'includes/class-fields.php';
+require_once CX_SIDRENA_PATH . 'includes/class-catalog.php';
+require_once CX_SIDRENA_PATH . 'includes/class-upit.php';
+require_once CX_SIDRENA_PATH . 'includes/class-poslovnice.php';
+require_once CX_SIDRENA_PATH . 'includes/class-feed-rows.php';
+require_once CX_SIDRENA_PATH . 'includes/class-feed-files.php';
+require_once CX_SIDRENA_PATH . 'includes/class-archive.php';
+require_once CX_SIDRENA_PATH . 'includes/class-feed-routes.php';
+require_once CX_SIDRENA_PATH . 'includes/class-product-fields.php';
+require_once CX_SIDRENA_PATH . 'includes/class-admin-save.php';
+require_once CX_SIDRENA_PATH . 'includes/class-admin.php';
+require_once CX_SIDRENA_PATH . 'includes/class-export.php';
+require_once CX_SIDRENA_PATH . 'includes/class-import-parse.php';
+require_once CX_SIDRENA_PATH . 'includes/class-bulk-import.php';
+
+/**
+ * Main plugin controller.
+ */
+final class CX_Sidrena_Plugin {
+
+	/**
+	 * Singleton instance.
+	 *
+	 * @var self|null
+	 */
+	private static $instance = null;
+
+	/**
+	 * Boot the plugin after plugins_loaded.
+	 */
+	public static function init() {
+		self::load_textdomain();
+
+		require_once CX_SIDRENA_PATH . 'includes/class-frontend.php';
+
+		if ( self::woocommerce_active() ) {
+			require_once CX_SIDRENA_PATH . 'includes/class-product-meta.php';
+			require_once CX_SIDRENA_PATH . 'includes/class-activator.php';
+			require_once CX_SIDRENA_PATH . 'includes/class-compat.php';
+			require_once CX_SIDRENA_PATH . 'includes/class-import-export.php';
+			// From the bazna add-on 1.1.1: lowest price in 30 days before a sale, and the check page.
+			require_once CX_SIDRENA_PATH . 'includes/lowest-30.php';
+			require_once CX_SIDRENA_PATH . 'includes/check.php';
+		}
+
+		self::instance();
+	}
+
+	/**
+	 * Register our translations (languages/cx-sidrena-<locale>.mo).
+	 *
+	 * Also called on its own wherever a text can be translated in a request where init() never ran: activation
+	 * includes this plugin after plugins_loaded, so without this the take-over notice would be English on a Croatian
+	 * shop. Calling it twice is harmless.
+	 */
+	public static function load_textdomain() {
+		load_plugin_textdomain( 'cx-sidrena', false, dirname( plugin_basename( CX_SIDRENA_FILE ) ) . '/languages' );
+	}
+
+	/**
+	 * Run a build of something customers see (the HTML price list) in the shop's language.
+	 *
+	 * The price list is written to a file once and then served to every customer, and the build can be started by an
+	 * admin whose own profile language is English, by cron or by WP-CLI. Its language must be the shop's, never the
+	 * language of whoever started it.
+	 *
+	 * @param callable $build Work that produces customer-facing text.
+	 * @return mixed What $build returns.
+	 */
+	public static function in_shop_locale( $build ) {
+		$switched = switch_to_locale( get_locale() );
+
+		try {
+			return $build();
+		} finally {
+			if ( $switched ) {
+				restore_previous_locale();
+			}
+		}
+	}
+
+	/**
+	 * Whether WooCommerce is loaded.
+	 *
+	 * @return bool
+	 */
+	public static function woocommerce_active() {
+		return class_exists( 'WooCommerce' );
+	}
+
+	/**
+	 * Capability that can manage plugin settings.
+	 *
+	 * @return string
+	 */
+	public static function manage_capability() {
+		return self::woocommerce_active() ? 'manage_woocommerce' : 'manage_options';
+	}
+
+	/**
+	 * Current user may manage the plugin.
+	 *
+	 * @return bool
+	 */
+	public static function current_user_can_manage() {
+		return current_user_can( self::manage_capability() );
+	}
+
+	/**
+	 * Write an exception to the WooCommerce log, or to the PHP error log.
+	 *
+	 * @param Throwable $exception Caught error. The message is not shown to visitors.
+	 */
+	public static function log_exception( $exception ) {
+		if ( ! $exception instanceof Throwable ) {
+			return;
+		}
+
+		$message = 'Sidrena cijena: ' . $exception->getMessage();
+		if ( function_exists( 'wc_get_logger' ) ) {
+			wc_get_logger()->error( $message, array( 'source' => 'sidrena-cijena' ) );
+			return;
+		}
+
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+		error_log( $message );
+	}
+
+	/**
+	 * Get singleton.
+	 *
+	 * @return self
+	 */
+	public static function instance() {
+		if ( null === self::$instance ) {
+			self::$instance = new self();
+		}
+
+		return self::$instance;
+	}
+
+	/**
+	 * Wire hooks.
+	 */
+	private function __construct() {
+		CX_Sidrena_Settings::instance();
+		CX_Sidrena_I18n::instance();
+		CX_Sidrena_Catalog::instance();
+		CX_Sidrena_Admin::instance();
+		CX_Sidrena_Export::instance();
+		CX_Sidrena_Bulk_Import::instance();
+		CX_Sidrena_Frontend::instance();
+
+		if ( ! self::woocommerce_active() ) {
+			return;
+		}
+
+		add_action( 'cx_sidrena_snapshot_batch', array( 'CX_Sidrena_Activator', 'process_batch' ) );
+
+		CX_Sidrena_Product_Meta::instance();
+		CX_Sidrena_Compat::instance();
+		CX_Sidrena_Import_Export::instance();
+
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			require_once CX_SIDRENA_PATH . 'includes/class-cli.php';
+			WP_CLI::add_command( 'cx-sidrena', 'CX_Sidrena_CLI' );
+		}
+	}
+
+	/**
+	 * Activation: take over MJDD's settings and files if it was used here, otherwise defaults. Sidrena prices stay
+	 * empty until someone fills them. MJDD and the add-on are switched off right after WordPress has saved the
+	 * plugin list (CX_Sidrena_Migration::on_activated).
+	 */
+	public static function activate() {
+		$took_over = CX_Sidrena_Migration::copy_from_mjdd();
+
+		CX_Sidrena_Settings::add_defaults();
+
+		// After a take-over MJDD's own "fill empty fields" state came along; asking again would be new to the owner.
+		if ( self::woocommerce_active() && ! $took_over ) {
+			require_once CX_SIDRENA_PATH . 'includes/class-activator.php';
+			CX_Sidrena_Activator::queue_fill_prompt();
+		}
+
+		CX_Sidrena_Export::instance()->register_rewrite();
+		CX_Sidrena_Export::instance()->sync_daily_schedule();
+		CX_Sidrena_Export::instance()->queue_public_xml();
+		flush_rewrite_rules();
+		update_option( CX_Sidrena_Export::REWRITE_OPTION, CX_Sidrena_Export::rewrite_fingerprint(), false );
+	}
+
+	/**
+	 * Deactivation: clear scheduled jobs only. Product meta stays.
+	 */
+	public static function deactivate() {
+		wp_clear_scheduled_hook( 'cx_sidrena_snapshot_batch' );
+		wp_clear_scheduled_hook( CX_Sidrena_Export::DAILY_HOOK );
+		wp_clear_scheduled_hook( CX_Sidrena_Export::GENERATE_HOOK );
+		wp_unschedule_hook( 'cx_sidrena_n30_seed' );
+		flush_rewrite_rules();
+	}
+
+	/**
+	 * Delete our data: options, uploads, transients, cron (wp cx-sidrena purge).
+	 *
+	 * Never product meta: bazna, date, price history and the lowest price are the evidence for an inspection, and
+	 * MJDD reads the same keys, so going back to it keeps every price.
+	 */
+	public static function purge_all_data() {
+		global $wpdb;
+
+		delete_option( 'cx_sidrena_settings' );
+		delete_option( 'cx_sidrena_snapshot_pending' );
+		delete_option( 'cx_sidrena_snapshot_page' );
+		delete_option( 'cx_sidrena_snapshot_offset' );
+		delete_option( 'cx_sidrena_snapshot_child' );
+		delete_option( 'cx_sidrena_fill_prompt' );
+		delete_option( CX_Sidrena_Settings::PREFIX_CHOICE_OPTION );
+		delete_option( CX_Sidrena_Settings::FOLLOWUP_NOTICE_OPTION );
+		delete_option( 'cx_sidrena_public_xml' );
+		delete_option( 'cx_sidrena_rewrite_ver' );
+		delete_option( CX_Sidrena_Catalog::OPTION_KEY );
+		delete_option( CX_Sidrena_Upit::OPTION_KEY );
+		delete_option( CX_Sidrena_Poslovnice::OPTION_KEY );
+
+		$wpdb->query(
+			$wpdb->prepare(
+				"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
+				$wpdb->esc_like( 'cx_sidrena_' ) . '%',
+				$wpdb->esc_like( '_transient_cx_sidrena_' ) . '%',
+				$wpdb->esc_like( '_transient_timeout_cx_sidrena_' ) . '%'
+			)
+		);
+		wp_cache_delete( 'alloptions', 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
+
+		$uploads = wp_upload_dir( null, false );
+		if ( empty( $uploads['error'] ) && ! empty( $uploads['basedir'] ) ) {
+			self::delete_directory( trailingslashit( $uploads['basedir'] ) . 'cx-sidrena' );
+		}
+
+		wp_clear_scheduled_hook( 'cx_sidrena_snapshot_batch' );
+		wp_clear_scheduled_hook( CX_Sidrena_Export::DAILY_HOOK );
+		wp_clear_scheduled_hook( CX_Sidrena_Export::GENERATE_HOOK );
+		wp_unschedule_hook( 'cx_sidrena_n30_seed' );
+	}
+
+	/**
+	 * Recursively delete a directory.
+	 *
+	 * @param string $dir Absolute path.
+	 */
+	private static function delete_directory( $dir ) {
+		if ( ! is_dir( $dir ) ) {
+			return;
+		}
+
+		$items = scandir( $dir );
+		if ( ! is_array( $items ) ) {
+			return;
+		}
+
+		foreach ( $items as $item ) {
+			if ( '.' === $item || '..' === $item ) {
+				continue;
+			}
+
+			$path = $dir . DIRECTORY_SEPARATOR . $item;
+			if ( is_dir( $path ) ) {
+				self::delete_directory( $path );
+			} elseif ( is_file( $path ) ) {
+				wp_delete_file( $path );
+			}
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir
+		@rmdir( $dir );
+	}
+}

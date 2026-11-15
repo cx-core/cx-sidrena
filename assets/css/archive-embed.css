@@ -1,0 +1,41 @@
+.sidrena-arhiva {
+	margin: 0;
+	padding: 8px 16px;
+	list-style: none;
+	background: linear-gradient(135deg, #f8fafc 0%, #ecfeff 100%);
+	border: 1px solid #dbe7ee;
+	border-radius: 12px;
+}
+
+.sidrena-arhiva li {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 16px;
+	padding: 10px 0;
+	border-bottom: 1px solid #dbe7ee;
+}
+
+.sidrena-arhiva li:last-child {
+	border-bottom: 0;
+}
+
+.sidrena-arhiva a {
+	color: #0c6e7a;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+.sidrena-arhiva span {
+	flex: 0 0 auto;
+	color: #5b6b76;
+	font-size: 0.9rem;
+}
+
+.sidrena-arhiva-empty {
+	margin: 0;
+	padding: 16px;
+	background: linear-gradient(135deg, #f8fafc 0%, #ecfeff 100%);
+	border: 1px solid #dbe7ee;
+	border-radius: 12px;
+}

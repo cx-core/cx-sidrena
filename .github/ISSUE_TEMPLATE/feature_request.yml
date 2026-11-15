@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest something CX Sidrena could do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like
+      description: What you need and why. If it comes from a regulation, please name it.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Versions of CX Sidrena, WordPress, WooCommerce and PHP, and the theme (optional).
