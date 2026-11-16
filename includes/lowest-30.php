@@ -11,8 +11,8 @@
  * - when a sale starts, the lowest price applied in the 30 days before that moment is computed once and frozen
  *   (a deeper cut during the same sale keeps it: the prior price is the one before the first reduction);
  * - the struck price shown is that lowest price (normally equal to the regular price, so nothing changes visually),
- *   plus a line "Najniža cijena u 30 dana prije sniženja: X". If it is not higher than the sale price, there is no
- *   reduction to announce, so the price is shown without a strike.
+ *   with the caption "Najniža cijena u 30 dana prije sniženja" under it. If it is not higher than the sale price, there
+ *   is no reduction to announce: no strike, no caption, no "Akcija" badge (CX_Sidrena_Frontend, CX-SID-25).
  * - no history (a sale that was already running when this was installed): the regular price is used.
  * Price changes written straight into the database (ERP sync bypassing WooCommerce) are not seen.
  */
@@ -150,25 +150,6 @@ function cx_sidrena_n30_prior( $product ) {
 	return null !== $low ? $low : (string) $product->get_regular_price();
 }
 
-function cx_sidrena_n30_line( $product, $raw ) {
-	return '<span class="bazna-najniza30" style="display:block;font-size:.85em">' . esc_html__( 'Lowest price in the 30 days before the discount:', 'cx-sidrena' ) . ' '
-		. wc_price( wc_get_price_to_display( $product, array( 'price' => $raw ) ) ) . '</span>';
-}
-
-/**
- * Struck price = prior price, plus the line. $regular_raw/$sale_raw: raw prices of the item on sale.
- */
-function cx_sidrena_n30_html( $product, $html, $prior, $regular_raw, $sale_raw, $line = null ) {
-	$prior_d = wc_get_price_to_display( $product, array( 'price' => $prior ) );
-	$sale_d  = wc_get_price_to_display( $product, array( 'price' => $sale_raw ) );
-	if ( (float) $prior <= (float) $sale_raw ) {
-		$html = wc_price( $sale_d ) . $product->get_price_suffix();
-	} elseif ( abs( (float) $prior - (float) $regular_raw ) > 0.0001 ) {
-		$html = wc_format_sale_price( $prior_d, $sale_d ) . $product->get_price_suffix();
-	}
-	return $html . ( null === $line ? cx_sidrena_n30_line( $product, $prior ) : $line );
-}
-
 /**
  * Whether the line (and the struck prior price) is shown. Per shop, option cx_sidrena_n30_display; the history is
  * recorded either way, so turning it on later has 30 days of data. Missing = shown (a fresh install).
@@ -179,55 +160,8 @@ function cx_sidrena_n30_display_enabled() {
 	return 'no' !== get_option( 'cx_sidrena_n30_display', 'yes' );
 }
 
-add_filter(
-	'woocommerce_get_price_html',
-	function ( $html, $product ) {
-		if ( ! cx_sidrena_n30_display_enabled() ) {
-			return $html;
-		}
-		if ( ! $product instanceof WC_Product || '' === (string) $product->get_price() ) {
-			return $html;
-		}
-		if ( $product->is_type( 'variable' ) ) {
-			if ( ! $product->is_on_sale() ) {
-				return $html;
-			}
-			$priors = array();
-			$one    = null;
-			foreach ( $product->get_visible_children() as $cid ) {
-				$v = wc_get_product( $cid );
-				if ( $v && $v->is_on_sale() && $v->is_purchasable() ) {
-					$p        = cx_sidrena_n30_prior( $v );
-					$priors[] = (float) $p;
-					$one      = array( $p, (string) $v->get_regular_price(), (string) $v->get_sale_price() );
-				}
-			}
-			if ( ! $priors ) {
-				return $html;
-			}
-			$vp = $product->get_variation_prices( true );
-			$single = $vp['price'] && min( $vp['price'] ) === max( $vp['price'] ) && min( $vp['regular_price'] ) === max( $vp['regular_price'] );
-			$lo   = wc_price( wc_get_price_to_display( $product, array( 'price' => min( $priors ) ) ) );
-			$hi   = wc_price( wc_get_price_to_display( $product, array( 'price' => max( $priors ) ) ) );
-			$text = min( $priors ) === max( $priors ) ? $lo : $lo . ' – ' . $hi;
-			$line = '<span class="bazna-najniza30" style="display:block;font-size:.85em">' . esc_html__( 'Lowest price in the 30 days before the discount:', 'cx-sidrena' ) . ' ' . $text . '</span>';
-			if ( $single ) {
-				// One price for every size: WooCommerce strikes the regular price. Strike the LOWEST prior of the sizes
-				// instead (never announces a bigger reduction than any size really has); none if that is not higher.
-				return cx_sidrena_n30_html( $product, $html, (string) min( $priors ), $one[1], $one[2], $line );
-			}
-			return $html . $line;
-		}
-		$prior = cx_sidrena_n30_prior( $product );
-		if ( null === $prior || '' === $prior ) {
-			return $html;
-		}
-		// Sale price, not get_price(): between a scheduled start date and WooCommerce's cron run _price is still the old one.
-		return cx_sidrena_n30_html( $product, $html, $prior, (string) $product->get_regular_price(), (string) $product->get_sale_price() );
-	},
-	50,
-	2
-);
+// The price display (struck lowest price, the caption, "not a sale") is drawn with the bazna line in one block:
+// CX_Sidrena_Frontend::price_block() (CX-SID-25). This file keeps the history and the lowest price.
 
 /**
  * Start the history for every existing product and variation (on activation, and once after an update from 1.0.0).

@@ -1,11 +1,16 @@
+/*
+ * The price block (spec §2.1-2.3): price, then the caption under a struck amount, then the bazna line.
+ * Both lines: smaller than the theme's price, never bold, never struck. Sizes are relative to the price, so they follow
+ * the theme on every screen. Colour and font: below.
+ */
 .sidrena-cijena {
 	display: block;
 	position: relative;
 	margin-top: 0.35em;
-	font-size: 14px;
-	font-weight: 400;
+	font-size: 0.8em !important;
+	font-weight: 400 !important;
 	line-height: 1.4;
-	color: inherit;
+	text-decoration: none !important;
 }
 
 p.price .sidrena-cijena,
@@ -20,7 +25,17 @@ span.price .sidrena-cijena,
 .jet-single-price .sidrena-cijena,
 .wc-block-components-product-price .sidrena-cijena {
 	display: block;
-	margin-top: 0.4em;
+	margin-top: 0.35em;
+}
+
+/* Caption under the struck amount: tied to it (no more than 2 px between), a little smaller than the bazna line. */
+.bazna-najniza30 {
+	display: block;
+	margin-top: 2px;
+	font-size: 0.75em !important;
+	font-weight: 400 !important;
+	line-height: 1.35;
+	text-decoration: none !important;
 }
 
 .price .lowest_price,
@@ -45,31 +60,68 @@ span.price .lowest_price {
 	display: inline;
 }
 
-.sidrena-cijena,
+/* Everything inside a line takes the line's size, weight and colour, whatever the theme does to prices and amounts. */
 .sidrena-cijena .sidrena-cijena__text,
 .sidrena-cijena .sidrena-cijena__prefix,
+.sidrena-cijena .sidrena-cijena__sep,
 .sidrena-cijena .sidrena-cijena__amount,
 .sidrena-cijena .woocommerce-Price-amount,
 .sidrena-cijena .amount,
 .sidrena-cijena bdi,
 p.price .sidrena-cijena .woocommerce-Price-amount.amount,
 .elementor-widget-woocommerce-product-price .sidrena-cijena .woocommerce-Price-amount {
-	font-weight: 400 !important;
-	font-size: 14px !important;
+	font-size: inherit !important;
+	font-weight: inherit !important;
+	color: inherit !important;
+	text-decoration: none !important;
 }
 
-@media (max-width: 767px) {
-	.sidrena-cijena,
-	.sidrena-cijena .sidrena-cijena__text,
-	.sidrena-cijena .sidrena-cijena__prefix,
-	.sidrena-cijena .sidrena-cijena__amount,
-	.sidrena-cijena .woocommerce-Price-amount,
-	.sidrena-cijena .amount,
-	.sidrena-cijena bdi,
-	p.price .sidrena-cijena .woocommerce-Price-amount.amount,
-	.elementor-widget-woocommerce-product-price .sidrena-cijena .woocommerce-Price-amount {
-		font-size: 12px !important;
-	}
+/*
+ * Colour and font of both lines (CX-SID-41, Hrvoje): the shop's ordinary text, never the price's. A theme colours its
+ * prices (often in its sale colour) and may give them their own font; inside the price our lines took both, and the
+ * bazna line read as the price to pay (spec §2.3). text-vars.js reads the colour and font of <body> into the custom
+ * properties below; the colour is shown at 75 % (spec §2.1).
+ * - The owner's own colour (Settings, --cx-sidrena-own, printed by the server) wins, exactly as chosen.
+ * - Without JavaScript: a neutral grey (#666 on white, 5.7:1), not the price's colour; the font is then the price's.
+ * - frontend.js: where 75 % is below 4.5:1 on the line's background, the full colour (cx-sidrena-solid); where even
+ *   that is below, a colour pulled toward black or white, set on the line itself.
+ * :not(#cx-sidrena-none) counts as an id, so these rules win over any theme rule built from classes, also an !important
+ * one (a theme's price rules reach our spans: one gives "span.price span" its own font with !important).
+ */
+.sidrena-cijena:not(#cx-sidrena-none),
+.bazna-najniza30:not(#cx-sidrena-none) {
+	color: rgba(0, 0, 0, 0.6) !important;
+	color: var(--cx-sidrena-own, var(--cx-sidrena-text-75, rgba(0, 0, 0, 0.6))) !important;
+	font-family: var(--cx-sidrena-font) !important;
+}
+
+.sidrena-cijena.cx-sidrena-solid:not(#cx-sidrena-none),
+.bazna-najniza30.cx-sidrena-solid:not(#cx-sidrena-none) {
+	color: var(--cx-sidrena-own, var(--cx-sidrena-text, rgba(0, 0, 0, 0.6))) !important;
+}
+
+.sidrena-cijena:not(#cx-sidrena-none) .sidrena-cijena__text,
+.sidrena-cijena:not(#cx-sidrena-none) .sidrena-cijena__text * {
+	color: inherit !important;
+	font-family: inherit !important;
+}
+
+/* The "Cjenik" link at the bottom of every page (spec §2.6): small, in the page's colours, a tap target of 44 px. */
+.cx-sidrena-cjenik-link {
+	clear: both;
+	margin: 0;
+	padding: 0 1em;
+	font-size: 0.875em;
+	line-height: 20px;
+	text-align: center;
+}
+
+.cx-sidrena-cjenik-link a {
+	display: inline-block;
+	min-height: 44px;
+	padding: 12px 8px;
+	box-sizing: border-box;
+	color: inherit;
 }
 
 .sidrena-cijena--has-tooltip {

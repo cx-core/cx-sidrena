@@ -44,6 +44,19 @@ class CX_Sidrena_Bulk_Import {
 
 		if ( is_admin() ) {
 			add_action( 'admin_init', array( $this, 'purge_legacy_upload_imports' ) );
+			add_action( 'admin_init', array( $this, 'purge_old_jobs' ) );
+		}
+	}
+
+	/**
+	 * With WooCommerce the bazna cijena is imported only through Import (CX-SID-22), with the client's confirmation, so
+	 * this import is not offered there (CX-SID-43). A Settings page opened before the update still has the form and a
+	 * valid nonce: its requests are answered here, before anything is read or written. The actions stay registered so
+	 * that such a page shows this message, not WordPress's bare "0".
+	 */
+	private function refuse_with_woocommerce() {
+		if ( CX_Sidrena_Plugin::woocommerce_active() ) {
+			wp_send_json_error( array( 'message' => __( 'Bulk import is no longer available with WooCommerce. Import bazna cijene on the Import tab.', 'cx-sidrena' ) ) );
 		}
 	}
 
@@ -52,6 +65,7 @@ class CX_Sidrena_Bulk_Import {
 	 */
 	public function ajax_parse() {
 		check_ajax_referer( 'sidrena_cijena_import', 'nonce' );
+		$this->refuse_with_woocommerce();
 
 		if ( ! CX_Sidrena_Plugin::current_user_can_manage() ) {
 			wp_send_json_error( array( 'message' => __( 'You do not have permission to import.', 'cx-sidrena' ) ), 403 );
@@ -165,6 +179,7 @@ class CX_Sidrena_Bulk_Import {
 	 */
 	public function ajax_run() {
 		check_ajax_referer( 'sidrena_cijena_import', 'nonce' );
+		$this->refuse_with_woocommerce();
 
 		if ( ! CX_Sidrena_Plugin::current_user_can_manage() ) {
 			wp_send_json_error( array( 'message' => __( 'You do not have permission to import.', 'cx-sidrena' ) ), 403 );
@@ -800,9 +815,11 @@ class CX_Sidrena_Bulk_Import {
 	}
 
 	/**
-	 * Remove staged import files older than an hour.
+	 * Remove staged import files older than an hour (the job's transient lasts an hour too, so such a file can no
+	 * longer run). Also on admin_init: with WooCommerce ajax_parse is refused (CX-SID-43), so the files a Settings page
+	 * opened before the update staged would otherwise stay, with the uploaded SKUs and prices.
 	 */
-	private function purge_old_jobs() {
+	public function purge_old_jobs() {
 		$dir = $this->get_import_dir();
 		if ( ! is_dir( $dir ) ) {
 			return;

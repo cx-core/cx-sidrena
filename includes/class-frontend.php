@@ -7,6 +7,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
+require_once __DIR__ . '/class-badge.php';
+
 /**
  * Frontend renderer.
  */
@@ -18,6 +20,13 @@ class CX_Sidrena_Frontend {
 	 * @var self|null
 	 */
 	private static $instance = null;
+
+	/**
+	 * Whether text-vars.js is already on the page.
+	 *
+	 * @var bool
+	 */
+	private $text_vars_printed = false;
 
 	/**
 	 * @return self
@@ -43,13 +52,26 @@ class CX_Sidrena_Frontend {
 		add_shortcode( 'sidrena-arhiva', array( $this, 'arhiva_shortcode' ) );
 		add_shortcode( 'sidrena_arhiva', array( $this, 'arhiva_shortcode' ) );
 
+		add_action( 'wp_footer', array( $this, 'render_cjenik_link' ) );
+		// The shop's text colour and font for our lines (CX-SID-41): right after <body>, or first thing in the footer for a
+		// theme without wp_body_open.
+		add_action( 'wp_body_open', array( $this, 'print_text_vars' ), 1 );
+		add_action( 'wp_footer', array( $this, 'print_text_vars' ), 1 );
+
 		if ( ! CX_Sidrena_Plugin::woocommerce_active() ) {
 			return;
 		}
 
+		// One block per price, built in one place (spec §2.3): price (struck lowest in 30 days + current), the caption,
+		// the bazna line. Always on, because the lowest price is required even where the owner turned the automatic
+		// bazna line off; the bazna part checks that setting itself.
+		add_filter( 'woocommerce_get_price_html', array( $this, 'price_block' ), 9999, 2 );
+		// The sale badge: only where the lowest price in 30 days is shown with it (Kai: ZZP art. 19(4) and (6)), a
+		// percentage only from the struck amount (spec §2.5, CX-SID-26).
+		CX_Sidrena_Badge::instance();
+
 		if ( CX_Sidrena_Settings::instance()->is_auto_display_enabled() ) {
-			add_filter( 'woocommerce_get_price_html', array( $this, 'append_to_price_html' ), 9999, 2 );
-			add_filter( 'render_block_woocommerce/product-price', array( $this, 'append_to_price_block' ), 20, 2 );
+			add_filter( 'render_block_woocommerce/product-price', array( $this, 'append_to_price_block' ), 20, 3 );
 			add_filter( 'elementor/widget/render_content', array( $this, 'append_to_elementor_widget' ), 20, 2 );
 			add_filter( 'woocommerce_available_variation', array( $this, 'add_variation_data' ), 10, 3 );
 		}
@@ -70,33 +92,80 @@ class CX_Sidrena_Frontend {
 			CX_SIDRENA_VERSION
 		);
 
+		// The owner's own colour for both lines (Settings, CX-SID-41): with the stylesheet, so it holds before and without
+		// JavaScript. A #rrggbb value, checked again on reading.
+		$own = CX_Sidrena_Settings::instance()->line_color();
+		if ( '' !== $own ) {
+			wp_add_inline_style( 'sidrena-cijena', ':root{--cx-sidrena-own:' . $own . ';}' );
+		}
+
 		if ( $this->content_has_cjenik_shortcode() ) {
 			$this->enqueue_cjenik_embed_style();
 		}
 
-		if ( ! CX_Sidrena_Plugin::woocommerce_active() || ! CX_Sidrena_Settings::instance()->is_auto_display_enabled() ) {
+		if ( ! CX_Sidrena_Plugin::woocommerce_active() ) {
 			return;
 		}
 
+		// Also without the automatic bazna line: the script hides a variable parent's caption when a size is chosen and
+		// checks the contrast of the lines. It inserts the bazna line into page builders only when given its HTML.
+		$auto = CX_Sidrena_Settings::instance()->is_auto_display_enabled();
+
+		// The same text-vars.js as printed after <body>, again as a file at the end of the page: it then also sees a
+		// stylesheet printed later in the page, and it runs where a security policy (CSP) blocks inline scripts.
 		wp_enqueue_script(
-			'sidrena-cijena',
-			CX_SIDRENA_URL . 'assets/js/frontend.js',
-			array( 'jquery' ),
+			'cx-sidrena-text-vars',
+			CX_SIDRENA_URL . 'assets/js/text-vars.js',
+			array(),
 			CX_SIDRENA_VERSION,
 			true
 		);
 
-		$product = $this->current_product();
+		wp_enqueue_script(
+			'sidrena-cijena',
+			CX_SIDRENA_URL . 'assets/js/frontend.js',
+			array( 'jquery', 'cx-sidrena-text-vars' ),
+			CX_SIDRENA_VERSION,
+			true
+		);
+
+		// The page's line, for page builders that print the price without WooCommerce's filter: only on a product's own
+		// page. On a list page the "current product" is just the first in the loop, and its line ended up on other
+		// products' cards (Argus CX-SID-25 B1).
+		$product = is_singular( 'product' ) ? $this->current_product() : null;
 		wp_localize_script(
 			'sidrena-cijena',
 			'sidrenaCijenaFront',
 			array(
-				'html'           => $product ? $this->get_html_for_product( $product ) : '',
+				'html'           => ( $auto && $product ) ? $this->get_html_for_product( $product ) : '',
+				// Whose line it is: frontend.js puts it only into that product's own price (CX-SID-57).
+				'productId'      => $product ? $product->get_id() : 0,
 				'selectors'      => CX_Sidrena_Compat::price_selectors(),
 				'watchRoots'     => CX_Sidrena_Compat::watch_roots(),
 				'hasLowestPrice' => CX_Sidrena_Compat::lowest_price_plugin_active(),
+				// Set: frontend.js leaves the lines' colour as the owner chose it (no contrast steps).
+				'ownColor'       => $own,
 			)
 		);
+	}
+
+	/**
+	 * assets/js/text-vars.js inline, once per page: it reads the colour and font of <body> into the custom properties
+	 * frontend.css gives our lines. Inline, so they are set before the first line is drawn.
+	 */
+	public function print_text_vars() {
+		if ( $this->text_vars_printed || is_admin() ) {
+			return;
+		}
+		$this->text_vars_printed = true;
+
+		$js = file_get_contents( CX_SIDRENA_PATH . 'assets/js/text-vars.js' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		if ( false === $js ) {
+			return;
+		}
+
+		// The file's opening comment is for whoever reads the file, not for every page.
+		wp_print_inline_script_tag( trim( (string) preg_replace( '#^/\*.*?\*/#s', '', $js ) ), array( 'id' => 'cx-sidrena-text-vars' ) );
 	}
 
 	/**
@@ -133,6 +202,213 @@ class CX_Sidrena_Frontend {
 		}
 
 		return CX_Sidrena_Compat::merge_price_html( $price_html, $html );
+	}
+
+	/**
+	 * The whole price block of one product: the price as WooCommerce and the theme print it (on a sale: the lowest price
+	 * in 30 days struck), then the caption, then the bazna line. One filter, so a page never shows a line twice.
+	 *
+	 * @param string     $html    Price HTML.
+	 * @param WC_Product $product Product.
+	 * @return string
+	 */
+	public function price_block( $html, $product ) {
+		if ( ! $product instanceof WC_Product ) {
+			return $html;
+		}
+
+		return $this->append_to_price_html( $this->lowest_part( $html, $product ), $product );
+	}
+
+	/**
+	 * Price part of a sale (ZZP art. 19(4)): the struck amount is the lowest price in the 30 days before the sale, and a
+	 * caption under it says what it is (Kai: exactly this text, not shorter).
+	 *
+	 * - Sale price not lower than that lowest price: no reduction, so the plain price and no caption (spec §2.3).
+	 * - Variable product whose sizes have different prices: WooCommerce strikes nothing on a range, so no caption until
+	 *   a size is chosen (spec §2.4, Norman); the chosen size gets its own block.
+	 *
+	 * @param string     $html    Price HTML.
+	 * @param WC_Product $product Product.
+	 * @return string
+	 */
+	private function lowest_part( $html, $product ) {
+		$state = $this->sale_state( $product );
+		if ( null === $state || 'range' === $state['kind'] ) {
+			return $html;
+		}
+
+		$sale = wc_get_price_to_display( $product, array( 'price' => $state['sale'] ) );
+		if ( 'not_lower' === $state['kind'] ) {
+			return wc_price( $sale ) . $product->get_price_suffix();
+		}
+
+		if ( abs( (float) $state['prior'] - (float) $state['regular'] ) > 0.0001 ) {
+			$prior = wc_get_price_to_display( $product, array( 'price' => $state['prior'] ) );
+			$html  = wc_format_sale_price( $prior, $sale ) . $product->get_price_suffix();
+		}
+
+		return $html . $this->caption_html( $product->is_type( 'variable' ) );
+	}
+
+	/**
+	 * "Najniža cijena u 30 dana prije sniženja" under the struck amount. Text, never a tooltip (a tooltip does not work
+	 * on a phone). Class kept from the bazna add-on, themes may style it.
+	 *
+	 * @param bool $on_parent Line of a variable parent: hidden by frontend.js when a size is chosen.
+	 * @return string
+	 */
+	private function caption_html( $on_parent ) {
+		return '<span class="bazna-najniza30' . ( $on_parent ? ' bazna-najniza30--variable' : '' ) . '" style="display:block">'
+			. esc_html__( 'Lowest price in the 30 days before the discount', 'cx-sidrena' ) . '</span>';
+	}
+
+	/**
+	 * How a product on sale is shown, or null where we leave WooCommerce's price as it is: not on sale, the lowest-price
+	 * line turned off for this shop (cx_sidrena_n30_display), or another lowest-price plugin that draws its own.
+	 *
+	 * @param WC_Product $product Product.
+	 * @return array{kind:string,prior:string,regular:string,sale:string}|null kind: "sale" (the lowest price in 30 days
+	 *         is higher than the sale price: a real reduction), "not_lower", or "range" (sizes or grouped items with
+	 *         different prices: nothing is struck).
+	 */
+	public function sale_state( $product ) {
+		if ( ! $product instanceof WC_Product || ! function_exists( 'cx_sidrena_n30_prior' ) || ! cx_sidrena_n30_display_enabled() ) {
+			return null;
+		}
+
+		if ( CX_Sidrena_Compat::lowest_price_plugin_active() ) {
+			return null;
+		}
+
+		if ( $product->is_type( 'grouped' ) ) {
+			return $product->is_on_sale() ? array( 'kind' => 'range', 'prior' => '', 'regular' => '', 'sale' => '' ) : null;
+		}
+
+		if ( '' === (string) $product->get_price() ) {
+			return null;
+		}
+
+		if ( $product->is_type( 'variable' ) ) {
+			return $this->variable_sale_state( $product );
+		}
+
+		$prior = cx_sidrena_n30_prior( $product );
+		if ( null === $prior || '' === $prior ) {
+			return null;
+		}
+
+		// Sale price, not get_price(): between a scheduled start date and WooCommerce's cron run _price is still the old one.
+		$sale = (string) $product->get_sale_price();
+
+		return array(
+			'kind'    => (float) $prior > (float) $sale ? 'sale' : 'not_lower',
+			'prior'   => (string) $prior,
+			'regular' => (string) $product->get_regular_price(),
+			'sale'    => $sale,
+		);
+	}
+
+	/**
+	 * Variable parent on sale. One price for every size: WooCommerce strikes one amount on the parent, and we strike the
+	 * LOWEST prior of the sizes instead (never a bigger reduction than any size really has). Otherwise a range.
+	 *
+	 * @param WC_Product_Variable $product Parent.
+	 * @return array{kind:string,prior:string,regular:string,sale:string}|null
+	 */
+	private function variable_sale_state( $product ) {
+		if ( ! $product->is_on_sale() ) {
+			return null;
+		}
+
+		$priors = array();
+		$one    = null;
+		foreach ( $product->get_visible_children() as $variation_id ) {
+			$variation = wc_get_product( $variation_id );
+			if ( $variation && $variation->is_on_sale() && $variation->is_purchasable() ) {
+				$priors[] = (float) cx_sidrena_n30_prior( $variation );
+				$one      = array( (string) $variation->get_regular_price(), (string) $variation->get_sale_price() );
+			}
+		}
+
+		if ( ! $priors ) {
+			return null;
+		}
+
+		$prices = $product->get_variation_prices( true );
+		$single = $prices['price'] && min( $prices['price'] ) === max( $prices['price'] ) && min( $prices['regular_price'] ) === max( $prices['regular_price'] );
+		if ( ! $single ) {
+			return array( 'kind' => 'range', 'prior' => '', 'regular' => '', 'sale' => '' );
+		}
+
+		$prior = (string) min( $priors );
+
+		return array(
+			'kind'    => (float) $prior > (float) $one[1] ? 'sale' : 'not_lower',
+			'prior'   => $prior,
+			'regular' => $one[0],
+			'sale'    => $one[1],
+		);
+	}
+
+	/**
+	 * "Akcija" may stand only where the lowest price in 30 days is shown with it (Kai: ZZP art. 19(4) and (6), also for
+	 * advertising): not on a sale that is no reduction, not on a parent or a card that strikes nothing.
+	 *
+	 * @param WC_Product $product Product.
+	 * @return bool
+	 */
+	public function badge_allowed( $product ) {
+		$state = $this->sale_state( $product );
+
+		return null === $state || 'sale' === $state['kind'];
+	}
+
+	/**
+	 * A small "Cjenik" link at the bottom of every shop page (spec §2.6): inspectors and price comparison services need
+	 * to find the price list. On by default (setting cjenik_link); the public page and the files exist either way.
+	 */
+	public function render_cjenik_link() {
+		if ( is_admin() || 'no' === CX_Sidrena_Settings::instance()->get( 'cjenik_link' ) || ! class_exists( 'CX_Sidrena_Feed_Files' ) ) {
+			return;
+		}
+
+		if ( function_exists( 'is_embed' ) && is_embed() ) {
+			return;
+		}
+
+		// Not before the first price list (spec §2.8): until then the page only says it is being prepared.
+		if ( ! $this->cjenik_published() ) {
+			return;
+		}
+
+		printf(
+			'<p class="cx-sidrena-cjenik-link"><a href="%1$s">%2$s</a></p>',
+			esc_url( CX_Sidrena_Feed_Files::instance()->get_cjenik_url() ),
+			esc_html__( 'Price list', 'cx-sidrena' )
+		);
+	}
+
+	/**
+	 * Whether the public price list has been written with at least one row. Reads only the count comment on the first
+	 * line of the HTML snapshot (CX_Sidrena_Feed_Files::write_cjenik_html), once per page.
+	 *
+	 * @return bool
+	 */
+	private function cjenik_published() {
+		$path = CX_Sidrena_Feed_Files::instance()->get_cjenik_html_path();
+		if ( '' === $path || ! is_readable( $path ) ) {
+			return false;
+		}
+
+		$fh = fopen( $path, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen
+		if ( ! $fh ) {
+			return false;
+		}
+		$first = (string) fgets( $fh, 128 );
+		fclose( $fh ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+
+		return (bool) preg_match( '/<!-- sidrena-count:([1-9]\d*) -->/', $first );
 	}
 
 	/**
@@ -185,17 +461,15 @@ class CX_Sidrena_Frontend {
 		}
 
 		/*
-		 * WooCommerce leaves price_html empty when every remaining in-stock
-		 * variation has the same price. Selecting 1000 ml after 200 ml is out
-		 * of stock then rendered an empty variation price, so the sidrena line
-		 * never appeared. The variation's own price HTML already includes it.
+		 * WooCommerce leaves price_html empty when every remaining in-stock variation has the same price (selecting
+		 * 1000 ml after 200 ml is out of stock). The parent above then already shows that price, struck with its
+		 * caption when on sale, and stays one block: frontend.js leaves the parent's bazna line as it is when the size's
+		 * line says the same, or puts the size's line in its place, inside the parent's price (Norman, CX-SID-25: under
+		 * the size select it stood apart from its price and caption, and smaller). Its whole price again would put a
+		 * second struck amount on the page.
 		 */
 		if ( '' === trim( $price_html ) ) {
-			$price_html = $variation->get_price_html();
-		}
-
-		if ( '' === trim( (string) $price_html ) ) {
-			$data['price_html'] = $html;
+			$data['sidrena_cijena_inplace'] = true;
 			return $data;
 		}
 
@@ -211,16 +485,17 @@ class CX_Sidrena_Frontend {
 	/**
 	 * Append sidrena HTML to the WooCommerce product-price block when missing.
 	 *
-	 * @param string $content Block HTML.
-	 * @param array  $block   Block data.
+	 * @param string        $content  Block HTML.
+	 * @param array         $block    Block data.
+	 * @param WP_Block|null $instance Block instance: its context names the product of a card in a product list.
 	 * @return string
 	 */
-	public function append_to_price_block( $content, $block ) {
+	public function append_to_price_block( $content, $block, $instance = null ) {
 		if ( '' === $content || false !== strpos( $content, 'sidrena-cijena' ) ) {
 			return $content;
 		}
 
-		$product = $this->product_from_block( $block );
+		$product = $this->product_from_block( $block, $instance );
 		if ( ! $product ) {
 			return $content;
 		}
@@ -304,23 +579,30 @@ class CX_Sidrena_Frontend {
 	}
 
 	/**
-	 * Product from a block context.
+	 * Product of a block: its own attribute, else the block instance's context (the product of each card in a product
+	 * list, Argus CX-SID-25 B1). The page's post only for a caller without an instance: inside a product list it is
+	 * another product (the page or the previous card), whose line would show on this card.
 	 *
-	 * @param array $block Block data.
+	 * @param array         $block    Parsed block.
+	 * @param WP_Block|null $instance Block instance.
 	 * @return WC_Product|null
 	 */
-	private function product_from_block( $block ) {
+	public function product_from_block( $block, $instance = null ) {
 		$product_id = 0;
 
 		if ( ! empty( $block['attrs']['productId'] ) ) {
 			$product_id = absint( $block['attrs']['productId'] );
 		}
 
+		if ( ! $product_id && $instance instanceof WP_Block && ! empty( $instance->context['postId'] ) ) {
+			$product_id = absint( $instance->context['postId'] );
+		}
+
 		if ( ! $product_id && ! empty( $block['context']['postId'] ) ) {
 			$product_id = absint( $block['context']['postId'] );
 		}
 
-		if ( ! $product_id ) {
+		if ( ! $product_id && ! $instance instanceof WP_Block ) {
 			$product_id = get_the_ID();
 		}
 
@@ -730,16 +1012,20 @@ class CX_Sidrena_Frontend {
 	}
 
 	/**
-	 * Variable parent: show a single value or "od …" until a variation is chosen.
+	 * Variable parent until a size is chosen: the range of the sizes' bazna cijene, in the same form as the theme's range
+	 * of prices ("39,00 € – 42,00 €"; one amount when all are the same). Not "od 39,00 €": that is the bazna of one
+	 * size only (spec §2.4). A date belongs to every amount on the line, so when the sizes have different labels or
+	 * dates the parent shows no line and each size shows its own once chosen.
 	 *
 	 * @param WC_Product_Variable $product Parent product.
 	 * @return string
 	 */
 	private function get_html_for_variable( $product ) {
-		$settings = CX_Sidrena_Settings::instance();
-		$meta     = CX_Sidrena_Product_Meta::instance();
-		$prices = array();
-		$prefix = $meta->get_display_prefix( $meta->display_id( $product->get_id() ) );
+		$settings  = CX_Sidrena_Settings::instance();
+		$meta      = CX_Sidrena_Product_Meta::instance();
+		$prices    = array();
+		$prefixes  = array();
+		$prefix    = $meta->get_display_prefix( $meta->display_id( $product->get_id() ) );
 		$child_ids = method_exists( $product, 'get_visible_children' ) ? $product->get_visible_children() : $product->get_children();
 
 		foreach ( $child_ids as $variation_id ) {
@@ -759,26 +1045,18 @@ class CX_Sidrena_Frontend {
 				continue;
 			}
 
-			$prices[] = $display;
-			$prefix   = $meta->get_display_prefix( $stored_id );
+			$prices[]   = $display;
+			$prefix     = $meta->get_display_prefix( $stored_id );
+			$prefixes[] = $prefix;
 		}
 
-		if ( empty( $prices ) ) {
+		if ( empty( $prices ) || count( array_unique( $prefixes ) ) > 1 ) {
 			return '';
 		}
 
 		$min    = min( $prices );
 		$max    = max( $prices );
-		$amount = wc_price( $min );
-
-		if ( $min !== $max ) {
-			$from = sprintf(
-				/* translators: %s formatted price */
-				__( 'from %s', 'cx-sidrena' ),
-				wc_price( $min )
-			);
-			$amount = $from;
-		}
+		$amount = abs( (float) $min - (float) $max ) < 0.00001 ? wc_price( $min ) : wc_format_price_range( $min, $max );
 
 		return $this->render_line(
 			$prefix,
@@ -881,19 +1159,18 @@ class CX_Sidrena_Frontend {
 
 		$separator = CX_Sidrena_Settings::instance()->preview_separator( false );
 
-		ob_start();
-		?>
-		<span class="<?php echo esc_attr( $classes ); ?>"<?php echo $has_tooltip ? ' tabindex="0" aria-label="' . esc_attr( $tooltip ) . '"' : ''; ?>>
-			<span class="sidrena-cijena__text">
-				<span class="sidrena-cijena__prefix"><?php echo esc_html( $prefix ); ?></span>
-				<span class="sidrena-cijena__sep"><?php echo esc_html( $separator ); ?></span>
-				<span class="sidrena-cijena__amount"><?php echo wp_kses_post( $formatted ); ?></span>
-			</span>
-			<?php if ( $has_tooltip ) : ?>
-				<span class="sidrena-cijena__tooltip"><?php echo esc_html( $tooltip ); ?></span>
-			<?php endif; ?>
-		</span>
-		<?php
-		return (string) ob_get_clean();
+		// One string, no whitespace between the parts: between inline spans it would show as a space
+		// (MJDD printed "Bazna cijena (10.09.2026.) : 19,90 €").
+		$html  = '<span class="' . esc_attr( $classes ) . '"' . ( $has_tooltip ? ' tabindex="0" aria-label="' . esc_attr( $tooltip ) . '"' : '' ) . '>';
+		$html .= '<span class="sidrena-cijena__text">';
+		$html .= '<span class="sidrena-cijena__prefix">' . esc_html( $prefix ) . '</span>';
+		$html .= '<span class="sidrena-cijena__sep">' . esc_html( $separator ) . '</span>';
+		$html .= '<span class="sidrena-cijena__amount">' . wp_kses_post( $formatted ) . '</span>';
+		$html .= '</span>';
+		if ( $has_tooltip ) {
+			$html .= '<span class="sidrena-cijena__tooltip">' . esc_html( $tooltip ) . '</span>';
+		}
+
+		return $html . '</span>';
 	}
 }

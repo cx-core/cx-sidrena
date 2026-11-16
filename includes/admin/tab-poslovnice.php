@@ -15,7 +15,6 @@ defined( 'ABSPATH' ) || exit;
 			$json = '[]';
 		}
 
-		$adresa = (string) $settings->get( 'file_adresa', '' );
 		?>
 		<div class="sidrena-cijena-callout">
 			<span class="dashicons dashicons-info-outline" aria-hidden="true"></span>
@@ -39,11 +38,6 @@ defined( 'ABSPATH' ) || exit;
 							<label for="sidrena_cijena_file_oblik"><?php echo esc_html__( 'Outlet type', 'cx-sidrena' ); ?></label>
 							<input type="text" class="regular-text" id="sidrena_cijena_file_oblik" name="sidrena_cijena_file_oblik" value="<?php echo esc_attr( (string) $settings->get( 'file_oblik', 'webshop' ) ); ?>" />
 							<span class="description"><?php echo esc_html__( 'Written exactly as it should appear, e.g. webshop or prodavaonica.', 'cx-sidrena' ); ?></span>
-						</p>
-						<p class="sidrena-poslovnica__field">
-							<label for="sidrena_cijena_file_adresa"><?php echo esc_html__( 'Outlet address', 'cx-sidrena' ); ?></label>
-							<input type="text" class="regular-text" id="sidrena_cijena_file_adresa" name="sidrena_cijena_file_adresa" value="<?php echo esc_attr( $adresa ); ?>" placeholder="<?php echo esc_attr( $settings->default_file_address() ); ?>" />
-							<span class="description"><?php echo esc_html__( 'Street and city remain in the name, e.g. Ilica 150 Zagreb.', 'cx-sidrena' ); ?></span>
 						</p>
 						<p class="sidrena-poslovnica__field">
 							<label for="sidrena_cijena_file_oznaka"><?php echo esc_html__( 'Outlet label', 'cx-sidrena' ); ?></label>

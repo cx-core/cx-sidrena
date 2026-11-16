@@ -3,7 +3,7 @@
  * Plugin Name: CX Sidrena
  * Plugin URI: https://github.com/cx-core/cx-sidrena
  * Description: Bazna cijena (sidrena cijena) for Croatian WooCommerce shops, with the lowest price in the 30 days before a sale and a public pricelist. Based on MJDD Sidrena i bazna cijena 1.26.0 by Jure Zadravec / MJDD (GPL-2.0-or-later).
- * Version: 0.1.0
+ * Version: 0.2.0
  * Author: Hrvoje Puzin
  * Author URI: https://github.com/hpuzin
  * Text Domain: cx-sidrena
@@ -19,7 +19,9 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CX_SIDRENA_VERSION', '0.1.0' );
+define( 'CX_SIDRENA_VERSION', '0.2.0' );
+// Schema of our own tables (includes/class-history.php). Raise it when a table changes; plugins_loaded then upgrades.
+define( 'CX_SIDRENA_DB_VERSION', 1 );
 define( 'CX_SIDRENA_FILE', __FILE__ );
 define( 'CX_SIDRENA_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CX_SIDRENA_URL', plugin_dir_url( __FILE__ ) );
@@ -33,6 +35,21 @@ define( 'CX_SIDRENA_META_JEDINICA_CIJENA', '_sidrena_cijena_jedinice_mjere' );
 
 require_once CX_SIDRENA_PATH . 'includes/class-plugin.php';
 require_once CX_SIDRENA_PATH . 'includes/class-migration.php';
+require_once CX_SIDRENA_PATH . 'includes/class-history.php';
+require_once CX_SIDRENA_PATH . 'includes/class-dates.php';
+require_once CX_SIDRENA_PATH . 'includes/class-bulk.php';
+require_once CX_SIDRENA_PATH . 'includes/class-fill.php';
+require_once CX_SIDRENA_PATH . 'includes/class-import.php';
+require_once CX_SIDRENA_PATH . 'includes/class-sale-rule.php';
+
+// Price history: hooked here, before other plugins load, so whatever they write while loading is recorded too.
+CX_Sidrena_History::register();
+
+// Dates of bazna cijena per category (spec §1.3).
+CX_Sidrena_Dates::register();
+
+// Confirmed fill and import of bazna cijene (CX-SID-22): the background job runs from WP-cron.
+CX_Sidrena_Bulk::register();
 
 // Taking over from MJDD and the bazna add-on, and keeping them off while we run.
 CX_Sidrena_Migration::register();

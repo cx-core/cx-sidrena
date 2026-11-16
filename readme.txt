@@ -3,7 +3,7 @@ Tags: woocommerce, croatia, sidrena cijena, bazna cijena, consumer protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 0.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -11,273 +11,156 @@ Croatian bazna (sidrena) cijena, the lowest price in the 30 days before a sale, 
 
 == Description ==
 
-With WooCommerce active, CX Sidrena stores each product and variation regular price in its own field and shows it next to the current price. The statutory name from 17 November 2026 is bazna cijena. Sidrena cijena is the same amount. The default label is Bazna cijena, and the prefix stays editable. The first tab, **Dodatne stavke**, is the same row repeater for services and made-to-order items that are not Woo products. Those rows are appended to the end of the public XML/CSV. Without WooCommerce, that repeater is the whole pricelist (**Proizvodi**) plus a public HTML page at `/sidrena-cjenik`.
+CX Sidrena shows the bazna cijena next to a product's price and the lowest price in the 30 days before a sale, and publishes the shop's price list with its archive. It follows the Croatian Consumer Protection Act (Zakon o zaštiti potrošača, NN 19/22 and 59/26) and, where the implementing rules are still drafts from the public consultation (10333 for the bazna cijena, 10332 for the price list), those drafts. When the final texts are published, we adapt the plugin.
 
-The prefix is text only; the date is added automatically in one of two formats:
+= What the customer sees =
 
-`Bazna cijena (10.09.2026.) : 19,99 €`
-`Bazna cijena na 10.09.2026. : 19,99 €`
+* Under the price, the line `Bazna cijena na 10.9.2026.: 8,50 €`: on the product page, on product cards (shop, category, search, related products) and in the product blocks. It is shown also when it equals the price, and it is never struck. The label is a setting.
+* On a sale: the struck amount is the lowest price in the 30 days before the sale started, with the caption *Najniža cijena u 30 dana prije sniženja*, then the bazna line. That amount stays fixed while the sale lasts. A sale price that is not lower than it is shown as a plain price, without a struck amount or a badge. On a shop that moved from MJDD without the add-on this is off until the owner runs `wp cx-sidrena n30 on`; until then customers see WooCommerce's struck regular price, without the caption.
+* The sale badge shows a percentage only when it is worked out from the lowest price in 30 days, rounded down; otherwise it says *Akcija*.
+* A variable product shows the range of its variations' bazna cijene until a size is chosen, then that size's line.
+* Both lines take the colour and font of the shop's ordinary text, not the colour of the sale price.
+* The cart, mini-cart and checkout blocks show one price per item: no struck regular price, no "Save", no bazna cijena and no lowest price.
+* A small *Cjenik* link at the bottom of every page, once the first price list is published.
 
-Hovering the row shows a tooltip with an explanation (can be turned off). The prefix and tooltip can be translated with WPML, Polylang, TranslatePress, or Loco Translate.
+= What the shop owner gets =
 
-The line under the product price has the CSS class `sidrena-cijena` so you can style it in the theme or Customizer (Appearance → Customize → Additional CSS). The default size is 14px (12px on mobile), without bold.
+WooCommerce → Bazna cijena has three screens:
 
-= Features =
+* **Status (Stanje)**: whether today's price list is published (with **Update now** (Osvježi sada)), products that need attention (no bazna cijena, a date later than expected, a sale price not lower than the lowest price in 30 days), and fixes in place. **Use regular price** (Upotrijebi redovnu cijenu) and **Fix all** (Popravi sve) set a missing bazna cijena from the regular price only after a person confirms it by name.
+* **Import (Uvoz)**: bazna cijene from a CSV file. You see a preview of every change first. Nothing is written until a person gives the shop owner's confirmation, with their name and the date; then it runs as one background job. It writes only the bazna cijena, its date, its source and the starting lowest price in 30 days, never the regular or sale price.
+* **Settings (Postavke)**: Dates (Datumi; the bazna date for each product category), the label customers see with a preview, its colour, the discount badge, and the public price list. **Show advanced settings** (Prikaži napredne postavke) holds the options inherited from MJDD.
 
-* Works with WooCommerce, or standalone on a plain WordPress site
-* Activation does not fill empty sidrena prices. Use the fill buttons or WP-CLI when you want that copy
-* Display follows WooCommerce tax settings (same VAT treatment as the regular price)
-* Filter `sidrena_cijena_price_to_display` when MPC is calculated outside WooCommerce Tax
-* Field below the sale price on simple products and on every variation
-* WooCommerce → Sidrena cijena tabs: Dodatne stavke, Settings, Import/Export, Public feed (top-level menu when Woo is not active; the first tab is then Proizvodi)
-* With Woo: **Dodatne stavke** repeater for services and made-to-order items. Each row has a type (proizvod or usluga), its own sidrena date, and, with several outlets, a webshop or poslovnica. Shortcode `[sidrena-cijena id="d1"]`
-* Without Woo: product repeater (name, SKU, URL, regular, sale, sidrena, Dostupno/Nedostupno) feeding the same export; each row has `[sidrena-cijena id="x"]` for pages
-* Public HTML pricelist at `/sidrena-cjenik` (always without Woo; on a shop only after **HTML stranica /sidrena-cjenik** is turned on)
-* Prefix without a date; storefront format: `Prefix (date)` or `Prefix date` (the word “na” belongs in the prefix). An empty prefix with `Prefix date` prints only the date and the amount
-* Default reference date plus an optional per-product date (FMCG 02.05.2025. vs other goods 10.09.2026.)
-* Tooltip on hover of the whole row (switch, on by default)
-* Prefix and tooltip translations in WPML, Polylang, TranslatePress, or Loco Translate
-* Export of the client pricelist (CSV or XML, same columns as the public feed) and of products missing a sidrena price
-* Bulk import CSV/XML by SKU or catalog/product ID, with price column mapping (creates catalog rows when Woo is off)
-* Public price list at `/sidrena-cijena.xml` or `/sidrena-cijena.csv` (choose format in settings; manual or daily after 00:05)
-* Public feed includes `vrsta`, `sidrena_datum`, `dostupno`/`nedostupno`, barcode from GTIN, UPC, EAN or ISBN, and brand (`marka`) from a chosen taxonomy or a manual field. Each outlet keeps its own availability
-* 30-day archive at `/arhiva-sidrene-cijene` (`prodavaonica_Ilica 150 Zagreb_P-01_104_01.10.2026_07:45.xml` or `.csv`)
-* Optional multiple outlets: `/sidrena-cijena.xml` stays the webshop file. Each poslovnica has its own feed (`/sidrena-cijena-001.xml`), HTML page (`/sidrena-cjenik/001`), and 30-file archive. `/sidrena-cjenik` is the webshop table and includes the webshop download
-* Shortcode `[sidrena-cjenik]` prints the searchable pricelist table (name, SKU, barcode, prices, availability) on any page. `oznaka="001"` limits it to one outlet. `[sidrena-arhiva oznaka="001"]` does the same for the archive list
-* Optional unit of measure (CJM). When the setting is on, each Woo product and each manual row (Proizvodi / Dodatne stavke) can append a unit to the prefix, e.g. "za kg/l"
-* Public feed publishes one retail price. While a sale price is active the sale-form column is `akcija`, unless that product or manual row sets another name
-* Automatic display below the price (can be turned off; the shortcode remains)
-* Shortcode `[sidrena-cijena]` for product loops and custom templates. `prikaz="redovna"`, `prikaz="akcijska"`, or `prikaz="sidrena"` prints only that amount
-* Universal hook: `do_action( 'sidrena_cijena' );` or `sidrena_cijena();`
-* WooCommerce CSV product import / export columns
-* HPOS compatibility
-* Lowest price in the 30 days before a sale (WooCommerce): every change of the price a customer pays is recorded per product and variation; when a sale starts, the lowest price of the 30 days before it is fixed for the whole sale and shown as the struck-through price, with the line *Najniža cijena u 30 dana prije sniženja*
-* A new variation added in the admin gets its bazna cijena too
-* Tools → Bazna cijena: provjera (and `wp cx-sidrena check`): products without a bazna cijena, products whose own date is later than the reference day, when the public pricelist was last written, and how the plugin is updated on this site
-* Moves a shop over from MJDD Sidrena i bazna cijena (with or without the Bazna cijena – dodatak add-on) without entering any price again
-* Updates only from the published releases of github.com/cx-core/cx-sidrena
+On a product and on each variation the bazna cijena is a read-only line with its date and where it came from. **Change** (Promijeni) asks for the amount, the date and a reason, and records the change. The product list has a Bazna cijena column and a filter for products that need attention.
 
-CX Sidrena is MJDD Sidrena i bazna cijena 1.26.0 by Jure Zadravec / MJDD (https://mjdd.hr, GPL-2.0-or-later) under a new name, with the Bazna cijena – dodatak add-on 1.1.1 built in. Development of CX Sidrena: Hrvoje Puzin, https://github.com/cx-core/cx-sidrena
+A product created after installation gets its bazna cijena on its first save: the regular price, with the date by the rule below. A product that existed before is never filled by itself; Status lists it. A copy made with "Copy to a new draft" starts as a new product, without the original's bazna cijena and price history.
+
+**Dates.** A bazna cijena without its own date takes the later of two dates: its category's date, or the day the product was added. A product's own date always wins. When two of its categories have different dates, the earlier one counts. A date the customer sees never moves by itself: when a product changes category, it keeps its old date as its own.
+
+**Price history.** Every change of a product's regular price, sale price, sale dates, bazna cijena and lowest price in 30 days is recorded: when, by which route (admin, quick or bulk edit, REST, WooCommerce CSV, WP-CLI, import, Status) and by whom. Changes made directly in the database are not seen. `wp cx-sidrena history <id|sku>` shows the history of one product.
+
+= Public price list =
+
+* Addresses: `/sidrena-cijena.xml` or `/sidrena-cijena.csv` (one format, a setting; XML by default), the page `/sidrena-cjenik/`, and the shortcode `[sidrena-cjenik]`.
+* What is in it: everything any consumer can buy, at the price a visitor pays. It is always built as a visitor, whoever starts it, so prices for a role or for one customer stay out. Rows without a retail price are left out.
+* Columns: `id`, `vrsta`, `naziv`, `sku`, `marka`, `url`, `jedinica_mjere`, `cijena_jedinice_mjere`, `maloprodajna_cijena`, `poseban_oblik`, `naziv_posebnog_oblika`, `sidrena_cijena`, `sidrena_datum`, `barkod`. The column `dostupnost` only when you turn it on (Settings → Public price list → Availability; Postavke → Javni cjenik → Dostupnost).
+* When it is built: about a minute after a change of a price, a sale or stock, once more every morning after 00:05 Croatian time, and with **Update now** (Osvježi sada) on Status. A file is always replaced whole, never half written.
+* Archive: a price list with new content, and the first one of each day, is also stored under its legal name, e.g. `prodavaonica_Ilica 150 Zagreb_P-01_104_01.10.2026_07:45.xml`, and no published file is written over. Price lists from the last 30 days are public at `/arhiva-sidrene-cijene/` and through `[sidrena-arhiva]`. Older files are taken out of public reach and kept, compressed, for 4 years by default; Settings → Public price list → **Keep older price lists** (Postavke → Javni cjenik → Čuvanje starijih cjenika) sets anything from 30 days to forever, and **Saved older price lists** (Spremljeni stariji cjenici) lets you download them.
+* The price list runs on WordPress's scheduled events, which run only when someone visits the site. **Set a server cron** (see the FAQ), or the morning price list waits for the first visit.
 
 = Responsibility =
 
-CX Sidrena helps merchants display prices and publish price lists as required by the Croatian Consumer Protection Act (Zakon o zaštiti potrošača, Official Gazette NN 19/22, 59/23, 59/26) and its implementing regulations. It is not legal advice.
-
-The merchant remains solely responsible for the accuracy of all prices it displays, including the bazna cijena and the lowest price in the 30 days before a sale, and for its shop's compliance with the regulations in force. Default settings reflect the regulations, and where final texts were not yet published, the draft regulations, known on the release date. Regulations may change; check them before relying on the defaults.
+CX Sidrena helps a merchant display prices and publish a price list. It is not legal advice. The merchant remains solely responsible for the accuracy of every price the shop displays, including the bazna cijena and the lowest price in the 30 days before a sale, and for the shop's compliance with the regulations in force. Defaults follow the Act and the draft rules known on the release date; check them before relying on the defaults.
 
 This program is free software, distributed under the GNU General Public License v2 or later, WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
+CX Sidrena is MJDD Sidrena i bazna cijena 1.26.0 by Jure Zadravec / MJDD (https://mjdd.hr, GPL-2.0-or-later) under a new name, with the Bazna cijena – dodatak add-on 1.1.1 built in. Development of CX Sidrena: Hrvoje Puzin, https://github.com/cx-core/cx-sidrena
+
 == Installation ==
 
-1. Download `cx-sidrena.zip` from the latest release at https://github.com/cx-core/cx-sidrena/releases and upload it in Plugins → Add New → Upload Plugin (or copy the `cx-sidrena` folder to `wp-content/plugins/`).
-2. Activate the plugin. On a shop that runs MJDD Sidrena i bazna cijena (and the Bazna cijena – dodatak add-on), activation moves it over: see **Moving from MJDD Sidrena i bazna cijena** below.
-
-**With WooCommerce**
-
-3. WooCommerce → Sidrena cijena → **Dodatne stavke** (first tab): optional rows for services and made-to-order items that are not Woo products. They are added at the end of the public XML/CSV. Copy `[sidrena-cijena id="d1"]` from a row onto a page.
-4. **Settings**: prefix, date format, default date, tooltip.
-5. Edit the sidrena price and date on a Woo product if needed (below the sale price).
-6. **Import/Export**: export the price list or bulk-import CSV/XML by SKU.
-7. **Public feed**: choose XML or CSV, generate `/sidrena-cijena.xml` or `/sidrena-cijena.csv`, or leave daily regeneration after 00:05. Turn on **HTML stranica /sidrena-cjenik** if you also want the full HTML page. The archive is at `/arhiva-sidrene-cijene`.
-8. **Several outlets**: Settings → **Više poslovnica?**. After saving, the **Poslovnice** tab appears. Each outlet gets `/sidrena-cijena-001.xml` (its object code) and its own 30-file archive. Dodatne stavke are appended to every outlet file.
-9. **Table on a page**: paste `[sidrena-cjenik]` (or `[sidrena-cjenik oznaka="001"]` for one outlet). The shortcode is also shown on the Public feed tab, with a copy button.
-
-**Without WooCommerce**
-
-3. Sidrena cijena → **Proizvodi**: add rows (name, SKU, URL, regular price, sale price, sidrena price, Dostupno/Nedostupno) or import CSV/XML. Copy `[sidrena-cijena id="x"]` from a row onto any page so prices stay in admin. Paste `[sidrena-cjenik]` where you want the full searchable table.
-4. **Settings**: prefix, date format, default date, tooltip. Turn on **Više poslovnica?** if you have more than one sales outlet.
-5. Public HTML pricelist: `/sidrena-cjenik`. XML/CSV feed and 30-day archive work the same as with Woo.
+1. Download `cx-sidrena.zip` from the latest release at https://github.com/cx-core/cx-sidrena/releases and upload it in Plugins → Add New → Upload Plugin.
+2. Activate it. On a shop that runs MJDD Sidrena i bazna cijena (with or without the Bazna cijena – dodatak add-on), activation moves the shop over: see **Moving from MJDD Sidrena i bazna cijena** below.
+3. WooCommerce → Bazna cijena → Settings → **Dates** (Postavke → Datumi): check the date of each category and save. Until Dates are saved, **Fix all** (Popravi sve) on Status does not run.
+4. Settings → **Public price list** (Postavke → Javni cjenik): fill in **Shop address** (Adresa trgovine); it goes into the name of each archived file.
+5. Set a server cron: see **Server cron** below.
+6. Open **Status** (Stanje) and deal with the products that need attention.
 
 == Frequently Asked Questions ==
 
-= WP-CLI =
+= Server cron =
 
-The admin **Fill empty fields** button processes 40 products per AJAX request. For a full catalog:
+In cPanel → Cron Jobs, add a job that runs every 15 minutes (`*/15 * * * *`) with this command, using the site's address exactly as in the browser:
 
-`wp cx-sidrena status`
-`wp cx-sidrena fill --dry-run`
-`wp cx-sidrena fill`
-`wp cx-sidrena fill --today`
+`wget -q -O - "https://example.com/wp-cron.php?doing_wp_cron" >/dev/null 2>&1`
 
-Other commands:
+If the host has no `wget`:
 
-`wp cx-sidrena check` - the same check as Tools → Bazna cijena: provjera; exit code 1 when something is not in order
-`wp cx-sidrena n30 on|off|status` - show or hide the lowest price in 30 days (the price history is recorded either way)
-`wp cx-sidrena purge` - delete all CX Sidrena data and deactivate the plugin (asks for confirmation; see **Removing CX Sidrena**)
+`curl -s -L "https://example.com/wp-cron.php?doing_wp_cron" >/dev/null 2>&1`
 
-Default fill is a SQL copy of `_regular_price` into empty `_sidrena_cijena` (does not overwrite values already stored). Variable/grouped parents are skipped; variations are filled. `--today` also writes today's date as the per-product reference date when that field is empty (products first put on sale after 10.09.2026.).
-
-`wp cx-sidrena fill --safe` uses WooCommerce product objects (same as the admin button, slower). Fallback: `wp eval-file wp-content/plugins/cx-sidrena/bin/fill.php`
-
-= Tax (VAT) =
-
-The sidrena price is stored in the same form as the WooCommerce regular price. On the storefront the plugin uses `wc_get_price_to_display()`, so the display follows WooCommerce → Settings → Tax (entered including or excluding tax, shop display with or without VAT). You do not need to re-enter prices after an update.
-
-If the shop shows MPC with a custom VAT calculation (not WooCommerce Tax), hook `sidrena_cijena_price_to_display` so the sidrena amount matches the regular price. See **Hook and shortcode**.
-
-= Settings =
-
-Sidrena cijena settings (WooCommerce submenu, or a top-level menu without Woo).
-
-The admin and storefront text is Croatian when the site language is Croatian (or when WordPress has no other match). English, German, and Slovenian are included for en_US, en_GB, de_DE, and sl_SI. A saved prefix and tooltip stay as you typed them.
-
-* **Automatic sidrena price display** - Woo only; below the current price; when off, only `[sidrena-cijena]` / `[sidrena-cijena id="x"]` remain
-* **Prefix** - words only, e.g. `Bazna cijena` (do not type the date here). `Sidrena cijena` is accepted and is not rewritten. If the saved prefix is only `Cijena`, an admin notice offers the statutory label.
-* **Date format** - `Prefix (date)` or `Prefix date` (e.g. put `Sidrena cijena na` in the prefix). Leave the prefix empty with `Prefix date` to print only the date and the amount, with no colon
-* **Default reference date** - e.g. `10.09.2026.` (used for every product without its own date)
-* **Per-product reference date** - Woo only; leave empty for the default; for FMCG enter `02.05.2025.`
-* **Tooltip** - switch and text (translate in WPML / Polylang / Loco)
-* **Marka** - taxonomy dropdown (Woo) plus a manual brand. The feed uses the product's term, then the manual brand. Each row on Proizvodi / Dodatne stavke has its own Marka field.
-* **Cijena za jedinicu mjere (CJM)** - off by default. When on, Woo products and every manual row get a CJM switch plus a unit phrase (e.g. `za kg/l`). The phrase is added only to that row's sidrena label. The public feed uses separate fields: `jedinica_mjere` and `cijena_jedinice_mjere`, entered on the product or the manual row.
-* **Više poslovnica?** - off by default (one feed for the whole site). When on, the **Poslovnice** tab stores, for each outlet, the legal filename fields (store type, address, object code, storage sequence) and the products that belong to it. An outlet with no products does not publish a file. The tab appears after you save the switch.
-* **Dodatne stavke** (Woo, first tab) - same repeater for services and made-to-order items. Required: name, regular price, sidrena price. Each row has a type (proizvod or usluga), its own sidrena date (empty keeps the shop default), and a Dostupno/Nedostupno dropdown. With several outlets, choose Webshop or a poslovnica. A service is written only into that feed. Shortcode `[sidrena-cijena id="d1"]`.
-* **Products** tab (without Woo) - the same repeater for the whole public pricelist, including the availability dropdown. Saved as one JSON field to avoid `max_input_vars` limits.
-* **HTML stranica /sidrena-cjenik** - on the Public feed tab, Woo only, off by default. When on, `/sidrena-cjenik` publishes the full HTML pricelist. The shortcode `[sidrena-cjenik]` works either way.
-* At the bottom of the Woo settings tab: **Fill empty fields from the regular price** - empty fields only; existing sidrena values are left alone. The date stays the shop default (e.g. 10.09.2026.). **Fill empty sidrena prices with today's date** - same fill, plus today's date on products that have no date yet (new products after the reference day). Activation does not fill prices. The buttons walk the catalog in short steps, including each variation, show a progress bar, and resume if a request is cut off. An admin notice points at these two buttons until you run one or dismiss it. For large catalogs use WP-CLI: `wp cx-sidrena fill` or `wp cx-sidrena fill --today` (see **WP-CLI**).
-* There is no button that deletes all data. Use `wp cx-sidrena purge` (see **Removing CX Sidrena**).
-
-= Import / export =
-
-**Import/Export** tab:
-
-* **Bulk import** - CSV or XML. Rows match first by SKU, then by ID. With Woo: a matching Woo product is updated (including stock on the webshop). If neither SKU nor ID hits a product, or the row is vrsta usluga, it is saved as a manual row (Dodatne stavke), not as a new Woo product. The template has one product example and one service example, including type, date, and outlet. Regular, sale, and sidrena prices are mapped separately; the default is **Do not import**. Without Woo: rows with a matching SKU or ID in that catalog are updated, other rows are appended (name, regular, and sidrena are required for new rows). Empty cells are skipped. The progress bar uses AJAX batches.
-* **Export price list** - the client cjenik, same CSV/XML columns as the public feed: `id`, `vrsta`, `naziv`, `sku`, `marka`, `url`, `jedinica_mjere`, `cijena_jedinice_mjere`, `maloprodajna_cijena`, `naziv_posebnog_oblika`, `sidrena_cijena`, `sidrena_datum`, `barkod`, `dostupnost`. Published products only. Variations are separate rows. Dodatne stavke are at the end. A file that contains only services leaves out SKU, brand, unit, barcode, and availability.
-* **Export products without a sidrena price** - internal columns `naziv`, `sku`, `cijena_redovna`, `cijena_akcijska`, `sidrena_cijena`, including unpublished products, only where sidrena is empty
-* Sidrena price, date, and CJM remain columns in WooCommerce **Products → Import/Export** (for the catalog, not for the price list itself)
-
-After importing sidrena prices, regenerate the public feed if you use it.
-
-= Public feed =
-
-**Public feed** tab. Price list of published products and variations (or the standalone catalog): `https://shop.example/sidrena-cijena.xml` or `.csv` (format is a setting; default XML).
-
-Fields: `id`, `vrsta`, `naziv`, `sku`, `marka`, `url`, `jedinica_mjere`, `cijena_jedinice_mjere`, `maloprodajna_cijena`, `naziv_posebnog_oblika`, `sidrena_cijena`, `sidrena_datum`, `barkod`, `dostupnost`. `vrsta` is `proizvod` or `usluga`. `sidrena_datum` is that row's date, or the shop default when the row date is empty. `naziv` for a variation is the parent title plus every attribute, including when WooCommerce stores only the parent name. `marka` comes from the taxonomy chosen in settings, then from the manual brand in settings. A manual row uses its own Marka field first. `maloprodajna_cijena` is the sale price while that sale is active, otherwise the regular price, using the same tax display as the shop. `naziv_posebnog_oblika` is `akcija` in that case, or the name entered on the product or manual row. It is empty when no sale price is active. `jedinica_mjere` and `cijena_jedinice_mjere` stay empty until entered. Barcode is read from WooCommerce GTIN/UPC/EAN/ISBN (`_global_unique_id`). On a shop, the webshop file takes availability from stock status. Each outlet file uses the availability stored for that poslovnica, not the webshop stock. Rows from **Dodatne stavke** are appended after the shop products (`id` prefixed with `d`, barcode empty, availability from that row's dropdown) and only in the feed they belong to. Without WooCommerce, every row has a Dostupno/Nedostupno dropdown (default Dostupno). A file that contains only services leaves out SKU, brand, unit, barcode, and availability, and the HTML table does not draw those empty columns.
-
-Generated with the "Generate public feed" button, daily after 00:05 (on by default; WordPress timezone, so the file is ready before 08:00), and about a minute after a WooCommerce price, sale, or stock change. A burst of saves waits until a minute after the last one, then writes the file once. The daily run stays. A visit to a missing file does not rebuild the catalog in that request: the response is 503 and one background rebuild is queued, with a 15-minute cooldown. The file is stored in `wp-content/uploads/cx-sidrena/`. The HTML page and `[sidrena-cjenik]` serve the table written in that same run. Until the file exists they show a short preparing message and queue one rebuild; they do not walk the catalog.
-
-The daily cron also stores a legally named file in the archive, following the 18 September 2026 ministry example `prodavaonica_Ilica 150 Zagreb_P-01_104_01.10.2026_07:45.xml` (date DD.MM.YYYY, time HH:MM; spaces and hyphens stay; 30 files maximum; the oldest is deleted). Regenerating on the same calendar day replaces that day's file and does not advance the storage number. On a Windows server the time is written `07-45` because a colon cannot be stored in a filename. Older `YYYYMMDD_HHMM` and `sidrena-cijena_DD-MM-YYYY` files stay listed. HTML listing: `https://shop.example/arhiva-sidrene-cijene/`. Set store type, address and object code on the Public feed tab.
-
-**Several outlets.** Turn on **Više poslovnica?** in Settings. Those filename fields move to the **Poslovnice** tab, one set per outlet, plus the products assigned to it. `/sidrena-cijena.xml` stays the webshop file: Woo products plus manual rows assigned to the webshop. Each outlet with products is published at `https://shop.example/sidrena-cijena-001.xml` (or `.csv`; `001` is that outlet's object code), with its own HTML table and an archive of at most 30 files. `/sidrena-cjenik` is the webshop table and its download button is the webshop feed. Each outlet HTML page is `https://shop.example/sidrena-cjenik/001/`, with that outlet's table and download. Availability on an outlet file is the flag stored for that poslovnica. Format (XML or CSV) and the daily run after 00:05 still apply to every outlet. With the switch off, the single `/sidrena-cijena.xml` feed is unchanged.
-
-**Table shortcode.** `[sidrena-cjenik]` prints only the searchable table (plugin design) on any page or in an Oxygen shortcode element. `[sidrena-cjenik oznaka="001"]` limits the rows to one outlet. Columns follow the public feed: name, SKU, brand, barcode, unit, unit price, retail price, sale-form name, sidrena price, availability. The name links to the product URL when one is set. The Public feed tab lists these shortcodes with a copy button.
-
-**Archive shortcode.** `[sidrena-arhiva]` prints only the archived filenames and dates, in the same light-blue list. `[sidrena-arhiva oznaka="001"]` limits the list to one object code. The public archive page groups files by outlet when several are on. The Public feed tab shows these shortcodes with a copy button.
-
-Without WooCommerce, the same table is also a page at `https://shop.example/sidrena-cjenik/`. On a WooCommerce shop that page is off until you turn on **HTML stranica /sidrena-cjenik** on the Public feed tab.
-
-= CJM =
-
-In settings, enable **Cijena za jedinicu mjere (CJM)**. On each Woo product and variation, and on each row of **Proizvodi** or **Dodatne stavke**, a **CJM** switch appears. When that row's switch is on, you enter a unit phrase (e.g. `za kg/l`).
-
-`Bazna cijena` + `za kg/l` + parentheses format = `Bazna cijena za kg/l (10.09.2026.)`
-`Bazna cijena` + `za kg/l` + “na” format = `Bazna cijena za kg/l na 10.09.2026.`
-
-= Compatibility =
-
-Works alongside the Croatian 30-day Omnibus plugins **WooCommerce Lowest Price** by Igor Kovačić (1.x) and Media X / Borko Livić (2.x). Sidrena cijena is the fixed reference price; those plugins show the lowest price in the last 30 days while a product is on sale. When both are active the storefront order is: current price → sidrena cijena → 30-day lowest price, without a duplicate sidrena line. WPML and Polylang store each translation as its own product and do not copy the sidrena field, so the storefront uses the default-language sidrena when the translated product has none.
-
-The core filter is `woocommerce_get_price_html` (priority 9999). It covers Storefront, Astra, GeneratePress, OceanWP, Kadence, Blocksy, and most themes that call `$product->get_price_html()`.
-
-Builders that often skip that filter have extra PHP hooks plus JS injection into their `.price` container:
-
-* **Elementor / AnyWhere Elementor** - widget `woocommerce-product-price`
-* **JetWooBuilder / ShopEngine** - `jet-single-price`, `shopengine-product-price`
-* **WPBakery** - shortcode `[product_price]`, wrapper `.wpb_wrapper > p.price`
-* **Oxygen** - Product Price element (`.oxy-product-price`)
-* **Divi 4 / Divi 5** - module `et_pb_wc_price` / block `divi/wc-product-price`
-* **Bricks** - element `product-price`
-* **Beaver Builder** - WooCommerce price module
-* **Breakdance / Brizy** - CSS selectors for price elements
-* **Avada / Fusion** - Woo Price theme builder element
-* **Woodmart / Flatsome** - `.wd-single-price`, `.product-page-price`
-* **WooCommerce Blocks** - `woocommerce/product-price`
-
-If a theme still does not show the line, put the shortcode or hook below the price in the template or loop.
-
-= Hook and shortcode =
-
-Output goes through `woocommerce_get_price_html` (product page, shop, archive, related products - anywhere the theme calls `get_price_html()`), Woo blocks, and popular page builders.
-
-For custom product loops (Elementor, page builder, custom PHP) use:
-
-`[sidrena-cijena id="123"]`
-`[sidrena-cijena id="123" prikaz="sidrena"]`
-`[sidrena-cjenik]`
-`[sidrena-cjenik oznaka="001"]`
-`[sidrena-arhiva]`
-`[sidrena-arhiva oznaka="001"]`
-
-`[sidrena-cjenik]` prints only the searchable pricelist table, using the plugin table design. Put it on any page or in an Oxygen shortcode element. With multiple outlets, `oznaka` limits the table to that poslovnica. Without it, the table lists every product.
-
-`[sidrena-arhiva]` prints only the archive file list: each legal filename and its date. It does not add a title or a back link. `oznaka` keeps one object code. Older filenames that have no object code stay in the list only when `oznaka` is omitted.
-
-Without WooCommerce, `[sidrena-cijena id="123"]` prints that catalog row's current price and sidrena line. On a shop, `[sidrena-cijena id="d1"]` does the same for a row on **Dodatne stavke**. Add `prikaz="redovna"`, `prikaz="akcijska"`, or `prikaz="sidrena"` to print only that amount, for example `120,00 €`. Without `prikaz`, the full line with the label and tooltip stays. An empty sale price prints nothing. A variable product with a price range prints `od` plus the amount. Paste it once and change prices in Sidrena cijena, not on the page.
-
-In a PHP template:
-
-`echo do_shortcode( '[sidrena-cijena]' );`
-`do_action( 'sidrena_cijena' );`
-`sidrena_cijena();`
-`sidrena_cijena( $product );`
-
-Filter the storefront amount after WooCommerce tax display. Arguments: `$amount` (float), `$product` (`WC_Product`), `$raw` (stored sidrena string, same basis as `_regular_price`). Does not change the value stored in the product field.
-
-```
-add_filter( 'sidrena_cijena_price_to_display', function( $amount, $product, $raw ) {
-    return (float) $amount * 1.25;
-}, 10, 3 );
-```
-
-= Kako prikazati sidrenu cijenu za dostavu? =
-
-Dostavu postavite kao uslugu (kartica Dodatne stavke ili Proizvodi, vrsta Usluga) te koristite shortcode za programatski ispis, npr. `[sidrena-cijena id="d1" prikaz="sidrena"]`. Na trgovini s WooCommerceom ručni redak ide s prefiksom `d`. Integracija sidrenih cijena za dostave nije dio plugina zbog raznih dostupnih načina kalkulacije i prikaza istih.
-
-= Custom CSS =
-
-The line under the product price has the class `sidrena-cijena`. Use it for color, size, or alignment. The tooltip is on hover/focus of the whole row (no “i” icon). Default: 14px / 12px on mobile, `font-weight: 400`.
-
-HTML structure:
-
-`<span class="sidrena-cijena sidrena-cijena--has-tooltip">`
-`  <span class="sidrena-cijena__text">…</span>`
-`  <span class="sidrena-cijena__tooltip">…</span>`
-`</span>`
-
-Classes:
-
-* `.sidrena-cijena` - the whole row under the product price (main class for styling)
-* `.sidrena-cijena__prefix` - prefix text with the date (e.g. Bazna cijena (10.09.2026.))
-* `.sidrena-cijena__sep` - colon between prefix and amount, or a space when the prefix is empty and the date format is plain
-* `.sidrena-cijena__amount` - sidrena price amount
-* `.sidrena-cijena__tooltip` - tooltip text (hover/focus on the whole row, no icon)
-* `.sidrena-cijena--variable` - variable product while no variation is selected
-
-Example:
-
-`.sidrena-cijena { font-size: 14px; color: #555; }`
-`.sidrena-cijena__amount { font-weight: 700; color: #111; }`
-
-= Lowest price in 30 days =
-
-On a product on sale, the struck-through price is the lowest price the product had in the 30 days before the sale started, with the line *Najniža cijena u 30 dana prije sniženja* below it. The history starts when the plugin is installed: a sale that was already running then uses the regular price. The line can be hidden with `wp cx-sidrena n30 off`; the history is recorded either way. It is shown by default on a new installation and on a shop that moved from MJDD together with the Bazna cijena – dodatak add-on, and hidden on a shop that moved from MJDD alone.
+With the cron in place you may also add `define( 'DISABLE_WP_CRON', true );` to `wp-config.php`, so that visits no longer start WP-Cron. Never add it without the cron job: scheduled events would stop altogether. To check, open `/sidrena-cjenik/` the next morning: the "Ažurirano" line should show today's date and a time shortly after 00:05.
 
 = Moving from MJDD Sidrena i bazna cijena =
 
-Install CX Sidrena next to MJDD and activate it. It copies MJDD's settings and its public pricelist and archive files under its own name, switches MJDD and the Bazna cijena – dodatak add-on off, and shows what it did. The bazna prices, dates and price history on the products are the same fields and stay where they are, and the public addresses (`/sidrena-cijena.xml`, `/sidrena-cjenik`, `/arhiva-sidrene-cijene`) keep working. MJDD's own data is left as it was, so you can go back: deactivate CX Sidrena and activate MJDD (and the add-on). MJDD and the add-on cannot run next to CX Sidrena; if one of them is activated, CX Sidrena switches it off again and says so.
+Install CX Sidrena next to MJDD and activate it. It copies MJDD's settings and its public price list and archive files under its own name, switches MJDD and the Bazna cijena – dodatak add-on off, and shows on Status what it did. The bazna prices, dates and price history on the products are the same fields and stay where they are, and the public addresses (`/sidrena-cijena.xml`, `/sidrena-cjenik`, `/arhiva-sidrene-cijene`) keep working. Customers then see the label "Bazna cijena na …", without a tooltip. MJDD's own data is left as it was, so you can go back: deactivate CX Sidrena and activate MJDD (and the add-on). MJDD and the add-on cannot run next to CX Sidrena; if one of them is activated, CX Sidrena switches it off again and says so.
+
+On a shop that ran MJDD **without** the add-on, the lowest price in 30 days stays hidden, as it was: customers see WooCommerce's struck regular price, without the caption, until you turn it on with `wp cx-sidrena n30 on`.
+
+= Lowest price in 30 days =
+
+The price a customer pays is recorded for every product and variation from the day CX Sidrena is installed, on every save through WooCommerce. When a sale starts, the lowest price of the 30 days before it is fixed for the whole sale. A sale that was already running at installation uses the regular price, or a starting lowest price you import (Import, column "Najniža cijena u 30 dana"). `wp cx-sidrena n30 on|off|status` shows or hides the line for the whole shop; the history is recorded either way. It is shown on a new installation and after a move from MJDD with the add-on.
+
+If WooCommerce Lowest Price (Igor Kovačić 1.x or Media X 2.x) is active, CX Sidrena leaves the lowest price to that plugin and shows only the bazna line.
+
+= WP-CLI =
+
+`wp cx-sidrena`:
+
+* `status`: how many products have a bazna cijena
+* `check`: products without a bazna cijena or with a later date than expected, the price list and how the plugin is updated; exit code 1 when something is not in order
+* `n30 on|off|status`: show or hide the lowest price in 30 days
+* `fill [--confirmed-by=<name>] [--confirmed-on=<Y-m-d>] [--dry-run]`: the bazna cijena from the regular price, where it is missing; without a name it only counts
+* `import <file> [--confirmed-by=<name>] [--confirmed-on=<Y-m-d>]`: the same import as the Import screen; without a name it only shows the preview
+* `job [status|cancel]`: the running fill or import
+* `sale-rule [--out=<file>]`: a file for `import` with a suggested bazna cijena for products on sale that have none
+* `export-bazna [--out=<file>]`: the bazna cijene in the shape `import` reads back
+* `archive [list] [--kept]`, `archive get <name> [--out=<file>]`: the archive of published price lists
+* `dates [<id>]`: the bazna date of each category, or of one product
+* `history <id|sku>`: the price history of a product
+* `purge`: see **Removing CX Sidrena**
+
+= Tax (VAT) =
+
+The bazna cijena is stored in the same form as the WooCommerce regular price and shown with `wc_get_price_to_display()`, so it follows WooCommerce → Settings → Tax like the regular price. If the shop shows prices with a VAT calculation outside WooCommerce Tax, hook `sidrena_cijena_price_to_display` (arguments: `$amount`, `$product`, `$raw`).
+
+= Themes and page builders =
+
+The line is added through `woocommerce_get_price_html`, so it shows wherever a theme prints a WooCommerce price. For page builders that skip that filter (Elementor, JetWooBuilder, ShopEngine, WPBakery, Oxygen, Divi, Bricks, Beaver Builder, Breakdance, Brizy, Avada, Woodmart, Flatsome, WooCommerce blocks), CX Sidrena adds it with PHP hooks and a script that puts it only into the price of the page's own product. This support is inherited from MJDD 1.26.0, not yet re-tested in CX Sidrena. If a theme still shows no line, use the shortcode or hook below.
+
+= Shortcodes and hook =
+
+* `[sidrena-cijena]`, `[sidrena-cijena id="123"]`: the bazna line of a product. `prikaz="redovna"`, `prikaz="akcijska"` or `prikaz="sidrena"` prints only that amount.
+* `[sidrena-cjenik]`: the searchable price list table, on any page.
+* `[sidrena-arhiva]`: the list of archived price list files.
+* In a template: `do_action( 'sidrena_cijena' );` or `sidrena_cijena( $product );`
+
+= Custom CSS =
+
+The bazna line is `.sidrena-cijena` (parts: `.sidrena-cijena__prefix`, `.sidrena-cijena__sep`, `.sidrena-cijena__amount`; a variable product before a size is chosen: `.sidrena-cijena--variable`). The caption under a struck amount is `.bazna-najniza30`. Both are smaller than the price, never bold and never struck; their size and weight are set with `!important`, so a rule of yours needs it too. For the colour use Settings → Label shown to customers → Colour (Postavke → Natpis koji vide kupci → Boja).
+
+= Without WooCommerce, outlets and extra items =
+
+Without WooCommerce, CX Sidrena keeps MJDD's own price list: rows entered by hand or imported from CSV/XML, published the same way. With several outlets, each has its own price list, page and archive. Services and items that are not WooCommerce products can be added to the price list. All three are in **Show advanced settings** (Prikaži napredne postavke). Inherited from MJDD 1.26.0, not yet re-tested in CX Sidrena.
+
+= Languages =
+
+The plugin's own texts are in English with a Croatian translation included; German and Slovenian come from MJDD and are not complete. "Bazna cijena" is not translated, and the values in the price list are Croatian.
 
 = Updates =
 
-CX Sidrena updates itself from the published releases at https://github.com/cx-core/cx-sidrena, only with the release's own `cx-sidrena.zip`, never from wordpress.org. To update by hand instead, add `define( 'CX_SIDRENA_AUTO_UPDATE', false );` to `wp-config.php`. When automatic updates are switched off for the whole site (by the hosting, or `AUTOMATIC_UPDATER_DISABLED` in `wp-config.php`), nothing updates by itself; Tools → Bazna cijena: provjera says how the plugin is updated on this site. While CX Sidrena is active, MJDD and the add-on are not updated automatically.
+CX Sidrena updates itself from the published releases at https://github.com/cx-core/cx-sidrena, only with the release's own `cx-sidrena.zip`, never from wordpress.org. To update by hand instead, add `define( 'CX_SIDRENA_AUTO_UPDATE', false );` to `wp-config.php`. When automatic updates are switched off for the whole site (by the hosting, or `AUTOMATIC_UPDATER_DISABLED` in `wp-config.php`), nothing updates by itself; Settings → Show advanced settings (Postavke → Prikaži napredne postavke) and `wp cx-sidrena check` say how the plugin is updated on this site. While CX Sidrena is active, MJDD and the add-on are not updated automatically.
 
 = Removing CX Sidrena =
 
-Deleting CX Sidrena in Plugins removes its settings, the public pricelist and its archive. `wp cx-sidrena purge` does the same and deactivates the plugin. Neither ever removes the bazna prices, dates or price history on products: they are your record of the prices you published, and MJDD Sidrena i bazna cijena reads the same fields.
-
-== Screenshots ==
-
-1. Sidrena cijena on a WooCommerce product: regular price, sale price, and the sidrena line with tooltip.
+Deleting CX Sidrena in Plugins removes its settings (including Dates, outlets and the rows entered by hand), the live price lists and its scheduled tasks. `wp cx-sidrena purge` does the same, after asking, and deactivates the plugin. Neither ever removes the bazna prices, dates and sources on products, the lowest price data, the price history and confirmations, or the archive of published price lists: they are your record of the prices you published, and MJDD Sidrena i bazna cijena reads the same product fields.
 
 == Changelog ==
+
+= 0.2.0 =
+* Price history: every change of a product's price, sale, bazna cijena and lowest price in 30 days is recorded (when, how and by whom), whatever wrote it, and every bazna cijena knows where it came from. Neither deleting the plugin nor `wp cx-sidrena purge` removes the history.
+* A bazna cijena without its own date takes the later of its category's date and the day the product was added. The dates per category are a setting (Settings > Dates). The update from 0.1.0 changes no date a customer sees.
+* Filling empty bazna cijene from the regular price, and importing them from a CSV, write nothing until a person confirms by name; they run as one background job and write only the bazna cijena, its date, its source and the starting lowest price in 30 days. MJDD's old fill without a confirmation is gone. WooCommerce's CSV import leaves a bazna cijena alone on an empty cell, and the export has an ID column.
+* With WooCommerce, MJDD's old bulk import (and its CSV template) is gone from Settings: the bazna cijena is imported only through Import, with a confirmation. Without WooCommerce it stays for the shop's own price list rows.
+* WooCommerce > Bazna cijena has new screens: Status (what needs attention, with fixes in place, and the state of the price list), Import, and Settings with Dates per category. MJDD's old tab addresses lead to the new place.
+* On a product and a variation the bazna cijena is a read-only line with its date and source; it is changed only with Change, with a reason, and the change is recorded. The product list has a Bazna cijena column. A copy made with "Copy to a new draft" starts as a new product, without the original's bazna cijena and price history.
+* The customer sees one price block: the line "Bazna cijena na 10.9.2026.: 8,50 €" and, on a sale, the lowest price in the 30 days before the sale, struck, with its caption. A sale price that is not lower than that is shown as a plain price, without a badge. A variable product shows the range of its variations' bazna cijene.
+* The sale badge and a theme's discount percentage follow one rule: a percentage only from the lowest price in 30 days, rounded down, otherwise "Akcija", or no badge (Settings).
+* The bazna line and the lowest-price caption take the colour and font of the shop's ordinary text, not the sale price's colour. The owner can set an own colour.
+* The cart, mini-cart and checkout blocks, and the product blocks that read the Store API, show one price per line: no struck regular price and no "Uštedi".
+* Public price list: every change makes a new file with the moment it was made in its name and its own storage number; no published file is written over. Files of the last 30 days are public, older ones are kept out of public reach for as long as the owner chooses. A live file is replaced whole, never half written.
+* The public price list holds what any consumer can buy, at the price a visitor pays: no rows without a retail price, no prices by role or for one customer, hidden products a visitor can buy are in. The availability column is off unless the owner turns it on. New column poseban_oblik (yes/no), and the brand from WooCommerce Brands when no other is chosen.
+* On a product page the bazna line goes only into that product's own price. It no longer shows next to the items of the block mini-cart, or in a theme's side cart, quick view or list of other products (a bug since 0.1.0).
+* Status shows the red "Scheduled tasks did not run" banner only when the morning build has really not run by 08:00 Croatian time; a site whose WordPress time zone is not Europe/Zagreb (for example UTC) no longer gets it every morning.
+* The public price list page no longer prints one bazna date under its title; each row has its own date.
 
 = 0.1.0 =
 * CX Sidrena: MJDD Sidrena i bazna cijena 1.26.0 under a new name (folder, main file, classes, options, cron hooks and WP-CLI command), with everything a customer sees unchanged.

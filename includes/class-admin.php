@@ -7,6 +7,9 @@
 
 defined( 'ABSPATH' ) || exit;
 
+require_once __DIR__ . '/admin/class-admin-status.php';
+require_once __DIR__ . '/admin/class-admin-products.php';
+
 /**
  * Admin UI.
  */
@@ -92,8 +95,10 @@ class CX_Sidrena_Admin {
 	 */
 	private function __construct() {
 		add_action( 'admin_menu', array( $this, 'register_menu' ), 60 );
+		add_action( 'admin_init', array( $this, 'redirect_old_urls' ), 1 );
+		add_action( 'admin_page_access_denied', array( $this, 'redirect_old_check_page' ) );
 		add_action( 'admin_init', array( $this, 'handle_settings_save' ) );
-		add_action( 'admin_init', array( $this, 'handle_xml_settings_save' ) );
+		add_action( 'admin_init', array( CX_Sidrena_Admin_Save::instance(), 'handle_export_bazna' ) );
 		add_action( 'admin_init', array( $this, 'handle_poslovnice_save' ) );
 		add_action( 'admin_init', array( $this, 'handle_catalog_save' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ), 20 );
@@ -102,24 +107,23 @@ class CX_Sidrena_Admin {
 		add_action( 'admin_footer', array( $this, 'hide_footer_thankyou' ), 999 );
 		add_filter( 'admin_footer_text', array( $this, 'filter_admin_footer_text' ), 999 );
 		add_action( 'admin_init', array( $this, 'handle_prefix_choice' ) );
-		add_action( 'admin_notices', array( $this, 'prefix_notice' ) );
-		add_action( 'admin_notices', array( $this, 'followup_notice' ) );
+		// The notice about a bare "Cijena" label is a line under the label in Settings now (warnings are discreet,
+		// Hrvoje 15.11.); the consultation notice (until 13.11.2026.) and the fill prompt are gone (CX-SID-23).
 
 		if ( ! CX_Sidrena_Plugin::woocommerce_active() ) {
 			return;
 		}
 
-		add_action( 'admin_init', array( $this, 'maybe_dismiss_fill_prompt' ) );
-		add_action( 'admin_notices', array( $this, 'snapshot_notice' ) );
-		add_action( 'wp_ajax_sidrena_cijena_snapshot', array( $this, 'ajax_snapshot' ) );
+		CX_Sidrena_Admin_Status::instance();
+		// MJDD's old "fill empty fields" (ajax sidrena_cijena_snapshot and its cron) is gone: it wrote the regular price
+		// with no confirmation and could stamp today's date (CX-SID-22, decision 1606 c). The fill is CX_Sidrena_Fill.
 
 		add_action( 'woocommerce_product_options_pricing', array( $this, 'render_simple_fields' ) );
 		add_action( 'woocommerce_variation_options_pricing', array( $this, 'render_variation_fields' ), 10, 3 );
 		add_action( 'woocommerce_admin_process_product_object', array( $this, 'save_simple_fields' ) );
 		add_action( 'woocommerce_save_product_variation', array( $this, 'save_variation_fields' ), 10, 2 );
 
-		add_filter( 'manage_edit-product_columns', array( $this, 'add_product_column' ) );
-		add_action( 'manage_product_posts_custom_column', array( $this, 'render_product_column' ), 10, 2 );
+		CX_Sidrena_Admin_Products::instance(); // the product list's column and filter (CX-SID-24)
 	}
 
 	/**
@@ -127,7 +131,7 @@ class CX_Sidrena_Admin {
 	 */
 	public function register_menu() {
 		$cap   = CX_Sidrena_Plugin::manage_capability();
-		$title = __( 'Sidrena cijena', 'cx-sidrena' );
+		$title = __( 'Bazna cijena', 'cx-sidrena' );
 
 		if ( CX_Sidrena_Plugin::woocommerce_active() ) {
 			add_submenu_page(
@@ -164,19 +168,26 @@ class CX_Sidrena_Admin {
 		$tabs     = $this->get_tabs();
 		$settings = CX_Sidrena_Settings::instance();
 		$export   = CX_Sidrena_Export::instance();
-		$saved     = isset( $_GET['updated'] ) && '1' === $_GET['updated']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		// Which form was saved: four forms share the Settings page, so the notice names the part that was saved.
+		$saved_part = isset( $_GET['updated'] ) ? sanitize_key( wp_unslash( $_GET['updated'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$saved_msgs = array(
+			'1'       => __( 'Settings saved.', 'cx-sidrena' ),
+			'outlets' => __( 'Outlets saved.', 'cx-sidrena' ),
+			'items'   => __( 'Additional items saved.', 'cx-sidrena' ),
+		);
 		$xml_ok    = isset( $_GET['sidrena_xml'] ) && '1' === $_GET['sidrena_xml']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$xml_fail  = isset( $_GET['sidrena_xml'] ) && '0' === $_GET['sidrena_xml']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$xml_empty = isset( $_GET['sidrena_xml'] ) && '2' === $_GET['sidrena_xml']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$xml_b2b   = isset( $_GET['sidrena_xml'] ) && 'b2b' === $_GET['sidrena_xml']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$multi     = $settings->is_multi_poslovnica();
 		$xml_url   = $export->get_public_url();
 		?>
 		<div class="wrap sidrena-cijena-settings">
 			<div class="sidrena-cijena-hero">
-				<h1><?php echo esc_html__( 'Sidrena cijena', 'cx-sidrena' ); ?></h1>
+				<h1><?php echo esc_html__( 'Bazna cijena', 'cx-sidrena' ); ?></h1>
 			</div>
 
-			<nav class="sidrena-cijena-tabs" aria-label="<?php echo esc_attr__( 'Sidrena cijena', 'cx-sidrena' ); ?>">
+			<nav class="sidrena-cijena-tabs" aria-label="<?php echo esc_attr__( 'Bazna cijena', 'cx-sidrena' ); ?>">
 				<?php foreach ( $tabs as $key => $item ) : ?>
 					<a
 						class="sidrena-cijena-tabs__item<?php echo $tab === $key ? ' is-active' : ''; ?>"
@@ -188,8 +199,12 @@ class CX_Sidrena_Admin {
 				<?php endforeach; ?>
 			</nav>
 
-			<?php if ( $saved ) : ?>
-				<div class="notice notice-success is-dismissible"><p><?php echo esc_html__( 'Settings saved.', 'cx-sidrena' ); ?></p></div>
+			<?php if ( isset( $_GET['cx_dates_error'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
+				<div class="notice notice-error"><p><?php echo esc_html__( 'Dates were not saved. Choose one of the two dates for every category.', 'cx-sidrena' ); ?></p></div>
+			<?php endif; ?>
+
+			<?php if ( isset( $saved_msgs[ $saved_part ] ) ) : ?>
+				<div class="notice notice-success is-dismissible"><p><?php echo esc_html( $saved_msgs[ $saved_part ] ); ?></p></div>
 			<?php endif; ?>
 
 			<?php if ( $xml_ok ) : ?>
@@ -209,6 +224,10 @@ class CX_Sidrena_Admin {
 				<div class="notice notice-warning is-dismissible"><p><?php echo esc_html__( 'No outlet has products added. Add products on the Outlets tab.', 'cx-sidrena' ); ?></p></div>
 			<?php endif; ?>
 
+			<?php if ( $xml_b2b ) : ?>
+				<div class="notice notice-info is-dismissible"><p><?php echo esc_html( CX_Sidrena_Export::b2b_message() ); ?></p></div>
+			<?php endif; ?>
+
 			<?php if ( $xml_fail ) : ?>
 				<div class="notice notice-error is-dismissible"><p><?php echo esc_html__( 'The public price list could not be generated. Check uploads folder permissions.', 'cx-sidrena' ); ?></p></div>
 			<?php endif; ?>
@@ -217,44 +236,16 @@ class CX_Sidrena_Admin {
 
 			<div class="sidrena-cijena-panels">
 				<?php
-				if ( 'proizvodi' === $tab ) {
-					$this->render_tab_proizvodi();
-				} elseif ( 'uvoz-izvoz' === $tab ) {
-					$this->render_tab_uvoz_izvoz();
-				} elseif ( 'javni-xml' === $tab ) {
-					$this->render_tab_javni_xml( $export );
-				} elseif ( 'poslovnice' === $tab ) {
-					$this->render_tab_poslovnice();
-				} elseif ( 'postavke' === $tab ) {
-					$this->render_tab_postavke( $settings );
+				if ( 'status' === $tab ) {
+					CX_Sidrena_Admin_Status::instance()->render();
+				} elseif ( 'settings' === $tab ) {
+					include CX_SIDRENA_PATH . 'includes/admin/tab-settings.php';
+				} elseif ( 'import' === $tab ) {
+					include CX_SIDRENA_PATH . 'includes/admin/tab-import.php';
 				} else {
 					do_action( 'sidrena_cijena_render_settings_tab', $tab );
 				}
 				?>
-
-				<section class="sidrena-cijena-card sidrena-cijena-credit">
-					<p>
-						<?php
-						echo wp_kses(
-							sprintf(
-								/* translators: %s: developer website URL */
-								__( 'Developed by <a href="%s" target="_blank" rel="noopener noreferrer">Jure Zadravec / MJDD</a>', 'cx-sidrena' ),
-								'https://mjdd.hr'
-							),
-							array(
-								'a' => array(
-									'href'   => array(),
-									'target' => array(),
-									'rel'    => array(),
-								),
-							)
-						);
-						?>
-					</p>
-					<a class="sidrena-cijena-credit__logo" href="https://mjdd.hr" target="_blank" rel="noopener noreferrer">
-						<img src="<?php echo esc_url( CX_SIDRENA_URL . 'assets/images/mjdd-logo-black.webp' ); ?>" alt="MJDD" width="135" height="36" />
-					</a>
-				</section>
 			</div>
 		</div>
 		<?php
@@ -268,28 +259,29 @@ class CX_Sidrena_Admin {
 	private function get_tabs() {
 		$tabs = array();
 
-		$tabs['proizvodi'] = array(
-			'label' => CX_Sidrena_Plugin::woocommerce_active()
-				? __( 'Additional items', 'cx-sidrena' )
-				: __( 'Products', 'cx-sidrena' ),
-			'icon'  => 'dashicons-products',
-		);
+		// Status first and always (spec §1.0). Without WooCommerce there is nothing to check, only the settings.
+		if ( CX_Sidrena_Plugin::woocommerce_active() ) {
+			$tabs['status'] = array(
+				'label' => __( 'Status', 'cx-sidrena' ),
+				'icon'  => 'dashicons-yes-alt',
+			);
+		}
 
-		$tabs['postavke'] = array(
+		/**
+		 * Whether the bazna import (CX-SID-22) is there. The tab shows only then.
+		 *
+		 * @param bool $available Available.
+		 */
+		if ( apply_filters( 'cx_sidrena_import_available', false ) ) {
+			$tabs['import'] = array(
+				'label' => __( 'Import', 'cx-sidrena' ),
+				'icon'  => 'dashicons-upload',
+			);
+		}
+
+		$tabs['settings'] = array(
 			'label' => __( 'Settings', 'cx-sidrena' ),
 			'icon'  => 'dashicons-admin-generic',
-		);
-		$tabs['uvoz-izvoz'] = array(
-			'label' => __( 'Import/Export', 'cx-sidrena' ),
-			'icon'  => 'dashicons-migrate',
-		);
-		$tabs['javni-xml'] = array(
-			'label' => __( 'Public price list', 'cx-sidrena' ),
-			'icon'  => 'dashicons-media-code',
-		);
-		$tabs['poslovnice'] = array(
-			'label' => __( 'Outlets', 'cx-sidrena' ),
-			'icon'  => 'dashicons-store',
 		);
 
 		/**
@@ -316,27 +308,83 @@ class CX_Sidrena_Admin {
 		}
 
 		if ( isset( $_GET['sidrena_xml'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			return 'javni-xml';
+			return 'settings';
 		}
 
 		$keys = array_keys( $tabs );
-		return isset( $keys[0] ) ? $keys[0] : 'postavke';
+		return isset( $keys[0] ) ? $keys[0] : 'settings';
 	}
 
 	/**
-	 * Settings tab URL.
+	 * MJDD's tabs and where their content is now (spec §1.0, §1.8): bookmarks and notices that point at them still work.
+	 */
+	const OLD_TABS = array(
+		'postavke'   => 'cx-label',
+		'javni-xml'  => 'cx-public',
+		'proizvodi'  => 'cx-items',
+		'poslovnice' => 'cx-outlets',
+		'uvoz-izvoz' => 'cx-outlets-import',
+	);
+
+	/**
+	 * Old tab URLs (GET only: a form posted to an old URL is saved by its handler first) go to Settings, at the section.
+	 */
+	public function redirect_old_urls() {
+		if ( ! isset( $_GET['page'], $_GET['tab'] ) || 'sidrena-cijena' !== $_GET['page'] || 'GET' !== ( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : 'GET' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput
+			return;
+		}
+
+		$old = sanitize_key( wp_unslash( $_GET['tab'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( ! isset( self::OLD_TABS[ $old ] ) ) {
+			return;
+		}
+
+		$keep = array();
+		foreach ( array( 'updated', 'sidrena_xml' ) as $arg ) {
+			if ( isset( $_GET[ $arg ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				$keep[ $arg ] = sanitize_key( wp_unslash( $_GET[ $arg ] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			}
+		}
+
+		wp_safe_redirect( $this->get_settings_tab_url( $old, $keep ) );
+		exit;
+	}
+
+	/**
+	 * The add-on's check page (Tools > Bazna cijena: check) is now Status. WordPress refuses an unregistered page
+	 * before admin_init, so the redirect hangs on the refusal.
+	 */
+	public function redirect_old_check_page() {
+		if ( isset( $_GET['page'] ) && 'bazna-provjera' === $_GET['page'] && CX_Sidrena_Plugin::current_user_can_manage() ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			wp_safe_redirect( CX_Sidrena_Admin_Status::url() );
+			exit;
+		}
+	}
+
+	/**
+	 * Settings tab URL. MJDD's old tab names give the Settings section their content moved to.
 	 *
-	 * @param string $tab Tab slug.
+	 * @param string $tab  Tab slug (status, import, settings, or an old one).
+	 * @param array  $args Extra query args.
 	 * @return string
 	 */
-	private function get_settings_tab_url( $tab ) {
+	private function get_settings_tab_url( $tab, $args = array() ) {
+		$anchor = '';
+		if ( isset( self::OLD_TABS[ $tab ] ) ) {
+			$anchor = '#' . self::OLD_TABS[ $tab ];
+			$tab    = 'settings';
+		}
+
 		return add_query_arg(
-			array(
-				'page' => 'sidrena-cijena',
-				'tab'  => $tab,
+			array_merge(
+				array(
+					'page' => 'sidrena-cijena',
+					'tab'  => $tab,
+				),
+				$args
 			),
 			admin_url( 'admin.php' )
-		);
+		) . $anchor;
 	}
 
 	/**
@@ -355,15 +403,6 @@ class CX_Sidrena_Admin {
 		}
 
 		return $out;
-	}
-
-	/**
-	 * Postavke tab: display options, then snapshot fill.
-	 *
-	 * @param CX_Sidrena_Settings $settings Settings helper.
-	 */
-	private function render_tab_postavke( $settings ) {
-		include CX_SIDRENA_PATH . 'includes/admin/tab-postavke.php';
 	}
 
 	/**
@@ -511,26 +550,10 @@ class CX_Sidrena_Admin {
 	}
 
 	/**
-	 * Javni XML tab.
-	 *
-	 * @param CX_Sidrena_Export $export Export helper.
-	 */
-	private function render_tab_javni_xml( $export ) {
-		include CX_SIDRENA_PATH . 'includes/admin/tab-javni-xml.php';
-	}
-
-	/**
-	 * Save settings form.
+	 * The Settings form.
 	 */
 	public function handle_settings_save() {
-		CX_Sidrena_Admin_Save::instance()->handle_settings_save();
-	}
-
-	/**
-	 * Save public XML options from the Javni XML tab.
-	 */
-	public function handle_xml_settings_save() {
-		CX_Sidrena_Admin_Save::instance()->handle_xml_settings_save();
+		CX_Sidrena_Admin_Save::instance()->handle_main_settings_save();
 	}
 
 	/**
@@ -541,54 +564,13 @@ class CX_Sidrena_Admin {
 	}
 
 	/**
-	 * Hide the post-activation fill prompt.
-	 */
-	public function maybe_dismiss_fill_prompt() {
-		if ( ! isset( $_GET['sidrena_cijena_dismiss_fill'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			return;
-		}
-
-		check_admin_referer( 'sidrena_cijena_dismiss_fill' );
-
-		if ( ! CX_Sidrena_Plugin::current_user_can_manage() ) {
-			return;
-		}
-
-		delete_option( CX_Sidrena_Activator::FILL_PROMPT_OPTION );
-		wp_safe_redirect( remove_query_arg( array( 'sidrena_cijena_dismiss_fill', '_wpnonce' ) ) );
-		exit;
-	}
-
-	/**
-	 * After activation, point at the two fill buttons. Shown on every admin screen until dismissed or a fill finishes.
-	 */
-	private function render_fill_prompt_notice() {
-		if ( 'yes' !== get_option( CX_Sidrena_Activator::FILL_PROMPT_OPTION ) ) {
-			return;
-		}
-
-		$settings_url = $this->get_settings_tab_url( 'postavke' );
-		$dismiss_url  = wp_nonce_url(
-			add_query_arg( 'sidrena_cijena_dismiss_fill', '1' ),
-			'sidrena_cijena_dismiss_fill'
-		);
-
-		echo '<div class="notice notice-info"><p>';
-		echo esc_html__( 'The plugin does not write prices on activation. You can fill empty fields on the Settings tab: from the regular price (the date stays the default) or with today\'s date.', 'cx-sidrena' );
-		echo ' <a href="' . esc_url( $settings_url ) . '">' . esc_html__( 'Open settings', 'cx-sidrena' ) . '</a>';
-		echo ' · <a href="' . esc_url( $dismiss_url ) . '">' . esc_html__( 'Hide', 'cx-sidrena' ) . '</a>';
-		echo '</p></div>';
-	}
-
-	/**
 	 * Confirm replacing a bare "Cijena" label, or remember that the merchant kept it.
 	 */
 	public function handle_prefix_choice() {
 		$use     = isset( $_GET['sidrena_cijena_use_bazna'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$dismiss = isset( $_GET['sidrena_cijena_dismiss_prefix'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$later   = isset( $_GET['sidrena_cijena_dismiss_followup'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 
-		if ( ! $use && ! $dismiss && ! $later ) {
+		if ( ! $use && ! $dismiss ) {
 			return;
 		}
 
@@ -600,27 +582,21 @@ class CX_Sidrena_Admin {
 			check_admin_referer( 'sidrena_cijena_use_bazna' );
 			CX_Sidrena_Settings::instance()->apply_bazna_prefix();
 			delete_option( CX_Sidrena_Settings::PREFIX_CHOICE_OPTION );
-		} elseif ( $dismiss ) {
+		} else {
 			check_admin_referer( 'sidrena_cijena_dismiss_prefix' );
 			$prefix = trim( (string) CX_Sidrena_Settings::instance()->get( 'prefix' ) );
 			update_option( CX_Sidrena_Settings::PREFIX_CHOICE_OPTION, $prefix, false );
-		} else {
-			check_admin_referer( 'sidrena_cijena_dismiss_followup' );
-			update_option( CX_Sidrena_Settings::FOLLOWUP_NOTICE_OPTION, 'yes', false );
 		}
 
-		wp_safe_redirect( remove_query_arg( array( 'sidrena_cijena_use_bazna', 'sidrena_cijena_dismiss_prefix', 'sidrena_cijena_dismiss_followup', '_wpnonce' ) ) );
+		wp_safe_redirect( remove_query_arg( array( 'sidrena_cijena_use_bazna', 'sidrena_cijena_dismiss_prefix', '_wpnonce' ) ) );
 		exit;
 	}
 
 	/**
-	 * Offer the statutory label when the shop still shows only "Cijena".
+	 * Offer the statutory label when the shop still shows only "Cijena": one line under the label in Settings, once
+	 * (warnings are discreet and on the merchant's side, Hrvoje 15.11.; before CX-SID-23 a notice on every screen).
 	 */
-	public function prefix_notice() {
-		if ( ! CX_Sidrena_Plugin::current_user_can_manage() ) {
-			return;
-		}
-
+	public function prefix_advice() {
 		$prefix = trim( (string) CX_Sidrena_Settings::instance()->get( 'prefix' ) );
 		if ( ! CX_Sidrena_Settings::is_generic_prefix( $prefix ) ) {
 			return;
@@ -634,7 +610,7 @@ class CX_Sidrena_Admin {
 		$use_url     = wp_nonce_url( add_query_arg( 'sidrena_cijena_use_bazna', '1' ), 'sidrena_cijena_use_bazna' );
 		$keep_url    = wp_nonce_url( add_query_arg( 'sidrena_cijena_dismiss_prefix', '1' ), 'sidrena_cijena_dismiss_prefix' );
 
-		echo '<div class="notice notice-warning"><p>';
+		echo '<p class="description cx-settings__advice">';
 		echo esc_html(
 			sprintf(
 				/* translators: 1: current prefix, 2: suggested prefix */
@@ -645,68 +621,87 @@ class CX_Sidrena_Admin {
 		);
 		echo ' <a href="' . esc_url( $use_url ) . '">' . esc_html( sprintf( /* translators: %s: prefix */ __( 'Set “%s”', 'cx-sidrena' ), $replacement ) ) . '</a>';
 		echo ' · <a href="' . esc_url( $keep_url ) . '">' . esc_html__( 'Keep current label', 'cx-sidrena' ) . '</a>';
-		echo '</p></div>';
+		echo '</p>';
 	}
 
 	/**
-	 * The draft pravilnici are still in consultation. The next release follows the published text.
+	 * Settings > Dates, the Status fixes and the Import tab (CX-SID-42): assets/js/admin-bazna.js and its texts.
 	 */
-	public function followup_notice() {
-		if ( ! CX_Sidrena_Plugin::current_user_can_manage() ) {
-			return;
-		}
-
-		if ( 'yes' === get_option( CX_Sidrena_Settings::FOLLOWUP_NOTICE_OPTION ) ) {
-			return;
-		}
-
-		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
-		if ( ! $screen || ! in_array( $screen->id, array( 'woocommerce_page_sidrena-cijena', 'toplevel_page_sidrena-cijena' ), true ) ) {
-			return;
-		}
-
-		$dismiss_url = wp_nonce_url( add_query_arg( 'sidrena_cijena_dismiss_followup', '1' ), 'sidrena_cijena_dismiss_followup' );
-
-		echo '<div class="notice notice-info"><p>';
-		echo esc_html__( 'The draft regulations on bazna cijena and on publishing price lists are open for consultation until 13 November 2026. The next version, after publication in Narodne novine, adds net quantity, a bazna_cijena column, exceptions, and publishing the price list only when a price changes. Until then, the daily generation after 00:05 stays, and the file is refreshed about a minute after a price, sale or stock change.', 'cx-sidrena' );
-		echo ' <a href="' . esc_url( $dismiss_url ) . '">' . esc_html__( 'Hide', 'cx-sidrena' ) . '</a>';
-		echo '</p></div>';
-	}
-
-	/**
-	 * Notice while a snapshot is running, or after activation until prices are filled or the prompt is dismissed.
-	 */
-	public function snapshot_notice() {
-		if ( ! CX_Sidrena_Plugin::current_user_can_manage() ) {
-			return;
-		}
-
-		if ( ! CX_Sidrena_Activator::is_pending() ) {
-			$this->render_fill_prompt_notice();
-			return;
-		}
-
-		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
-		if ( ! $screen ) {
-			return;
-		}
-
-		$allowed = (
-			'woocommerce_page_sidrena-cijena' === $screen->id
-			|| 'toplevel_page_sidrena-cijena' === $screen->id
-			|| 'product' === $screen->id
-			|| 'edit-product' === $screen->id
-			|| ( isset( $screen->post_type ) && 'product' === $screen->post_type )
-			|| ( is_string( $screen->id ) && false !== strpos( $screen->id, 'woocommerce' ) )
+	private function enqueue_bazna_screens() {
+		// Counts are written "Label: N" (or "(N)") as everywhere in the plugin: the i18n tools have no plural forms.
+		wp_enqueue_script( 'cx-sidrena-admin-bazna', CX_SIDRENA_URL . 'assets/js/admin-bazna.js', array(), CX_SIDRENA_VERSION, true );
+		wp_localize_script(
+			'cx-sidrena-admin-bazna',
+			'cxBazna',
+			array(
+				'ajaxUrl'     => admin_url( 'admin-ajax.php' ),
+				'statusNonce' => wp_create_nonce( 'cx_sidrena_status' ),
+				'importNonce' => wp_create_nonce( 'cx_sidrena_import' ),
+				't'           => array(
+					'error'        => __( 'An error occurred. Please try again.', 'cx-sidrena' ),
+					'noName'       => __( 'Enter the name of who confirmed.', 'cx-sidrena' ),
+					'noConsent'    => __( 'Tick the confirmation.', 'cx-sidrena' ),
+					'noFile'       => __( 'Choose a file.', 'cx-sidrena' ),
+					'noDate'       => __( 'Enter the date of the confirmation.', 'cx-sidrena' ),
+					'reading'      => __( 'Reading the file…', 'cx-sidrena' ),
+					'retry'        => __( 'Connection lost. Trying again…', 'cx-sidrena' ),
+					'product'      => __( 'Product', 'cx-sidrena' ),
+					'sku'          => __( 'SKU', 'cx-sidrena' ),
+					'line'         => __( 'Line', 'cx-sidrena' ),
+					'nameInFile'   => __( 'Name in the file', 'cx-sidrena' ),
+					'now'          => __( 'Now', 'cx-sidrena' ),
+					'new'          => __( 'New', 'cx-sidrena' ),
+					'bazna'        => __( 'Bazna cijena', 'cx-sidrena' ),
+					'reason'       => __( 'Why', 'cx-sidrena' ),
+					'none'         => __( 'none', 'cx-sidrena' ),
+					'fromCategory' => __( '(from category)', 'cx-sidrena' ),
+					'dayAdded'     => __( '(day added)', 'cx-sidrena' ),
+					'waits'        => __( 'waits for Dates', 'cx-sidrena' ),
+					'empty'        => __( 'Nothing here.', 'cx-sidrena' ),
+					'noHistory'    => __( 'No imports yet.', 'cx-sidrena' ),
+					/* translators: 1: page, 2: pages */
+					'page'         => __( 'Page %1$d of %2$d', 'cx-sidrena' ),
+					'prev'         => __( 'Previous', 'cx-sidrena' ),
+					'next'         => __( 'Next', 'cx-sidrena' ),
+					/* translators: 1: name of who confirmed, 2: date */
+					'confirmedBy'  => __( 'Confirmed by %1$s on %2$s', 'cx-sidrena' ),
+					/* translators: %s: first 8 characters of the file's sha256 */
+					'fingerprint'  => __( 'File fingerprint: %s', 'cx-sidrena' ),
+					/* translators: %d: products and variations */
+					'count'        => __( 'Products and variations: %d', 'cx-sidrena' ),
+					/* translators: %d: rows of the file that will be imported */
+					'importN'      => __( 'Import prices (%d)', 'cx-sidrena' ),
+					/* translators: %d: prices imported */
+					'imported'     => __( 'Prices imported: %d.', 'cx-sidrena' ),
+					/* translators: %d: rows */
+					'notImported'  => __( 'Not imported: %d.', 'cx-sidrena' ),
+					/* translators: %d: rows */
+					'noDateRows'   => __( 'Rows that take their date from Dates: %d. They wait until Dates are saved in Settings; the other rows can be imported now.', 'cx-sidrena' ),
+					/* translators: %d: rows */
+					'waited'       => __( 'Not imported (they wait for Dates): %d. Save Dates in Settings, then import the same file again.', 'cx-sidrena' ),
+					// The import's job (CX-SID-22): it runs without this page, so the tab follows it and can stop it.
+					'lowest'       => __( 'Lowest price in 30 days', 'cx-sidrena' ),
+					/* translators: 1: name of who confirmed, 2: date and time it started */
+					'runningWho'   => __( 'Confirmed by %1$s, started %2$s.', 'cx-sidrena' ),
+					'stopAsk'      => __( 'Stop the import? The prices already imported stay; the rest is not imported.', 'cx-sidrena' ),
+					/* translators: %d: rows */
+					'stopped'      => __( 'Stopped. Not imported: %d.', 'cx-sidrena' ),
+					'otherDone'    => __( 'The other import has finished. You can import your file now.', 'cx-sidrena' ),
+					'openStatus'   => __( 'Open Status', 'cx-sidrena' ),
+					'inProgress'   => __( 'In progress', 'cx-sidrena' ),
+					// After Norman's review of the import on 22 (CX-SID-42): whose import a Stop stops, a refused Stop
+					// that is not a pause, and a lost connection that does not stop the import.
+					'otherRunning' => __( 'Another import is running', 'cx-sidrena' ),
+					/* translators: 1: name of who confirmed, 2: date and time it started */
+					'stopAskWho'   => __( 'Stop the import (confirmed by %1$s, started %2$s)? The prices already imported stay; the rest is not imported.', 'cx-sidrena' ),
+					'notStopped'   => __( 'Not stopped yet: some prices are being saved right now. The import goes on; press Stop import again in a moment.', 'cx-sidrena' ),
+					'lost'         => __( 'The connection to the shop was lost. The import goes on without this page. Press Continue to show its progress again, or reload the page later.', 'cx-sidrena' ),
+				),
+				'statusUrl'   => CX_Sidrena_Admin_Status::url(),
+				'priceFormat' => html_entity_decode( sprintf( get_woocommerce_price_format(), get_woocommerce_currency_symbol(), '%s' ), ENT_QUOTES, 'UTF-8' ),
+				'decimal'     => wc_get_price_decimal_separator(),
+			)
 		);
-
-		if ( ! $allowed ) {
-			return;
-		}
-
-		echo '<div class="notice notice-info"><p>';
-		echo esc_html__( 'CX Sidrena: saving the regular prices of products and variations is in progress. Sidrena cijena values that are already entered will not be overwritten.', 'cx-sidrena' );
-		echo '</p></div>';
 	}
 
 	/**
@@ -718,8 +713,12 @@ class CX_Sidrena_Admin {
 		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
 		$is_product  = $screen && 'product' === $screen->id;
 		$is_settings = in_array( $hook, array( 'woocommerce_page_sidrena-cijena', 'toplevel_page_sidrena-cijena' ), true );
+		// The product list: only the styles of its "Bazna cijena" column (width, the yellow "missing"). Without them the
+		// column got no width and its text stood one letter a line (Norman, CX-SID-24). Every rule in admin.css is
+		// scoped to our classes, so nothing else on the list changes.
+		$is_list = $screen && 'edit-product' === $screen->id;
 
-		if ( ! $is_product && ! $is_settings ) {
+		if ( ! $is_product && ! $is_settings && ! $is_list ) {
 			return;
 		}
 
@@ -729,6 +728,10 @@ class CX_Sidrena_Admin {
 			array(),
 			CX_SIDRENA_VERSION
 		);
+
+		if ( $is_list ) {
+			return;
+		}
 
 		$script_deps = array( 'jquery' );
 		if ( $is_settings && CX_Sidrena_Plugin::woocommerce_active() ) {
@@ -748,6 +751,16 @@ class CX_Sidrena_Admin {
 			CX_SIDRENA_VERSION,
 			true
 		);
+
+		if ( $is_product ) {
+			wp_enqueue_script(
+				'cx-sidrena-admin-product',
+				CX_SIDRENA_URL . 'assets/js/admin-product.js',
+				array( 'jquery', 'jquery-ui-datepicker' ),
+				CX_SIDRENA_VERSION,
+				true
+			);
+		}
 
 		if ( $is_settings ) {
 			$catalog_choices = array();
@@ -769,7 +782,6 @@ class CX_Sidrena_Admin {
 				'sidrenaCijenaAdmin',
 				array(
 					'ajaxUrl'            => admin_url( 'admin-ajax.php' ),
-					'nonce'              => wp_create_nonce( 'sidrena_cijena_snapshot' ),
 					'importNonce'        => wp_create_nonce( 'sidrena_cijena_import' ),
 					'productSearchNonce' => wp_create_nonce( 'search-products' ),
 					'standalone'         => ! CX_Sidrena_Plugin::woocommerce_active(),
@@ -778,17 +790,11 @@ class CX_Sidrena_Admin {
 					'multiPoslovnica'    => CX_Sidrena_Settings::instance()->is_multi_poslovnica(),
 					'defaultDate'        => (string) CX_Sidrena_Settings::instance()->get( 'default_date' ),
 					'defaultPrefix'      => __( 'Bazna cijena', 'cx-sidrena' ),
+					'unsavedConfirm'     => __( 'Your changes in Settings are not saved yet. This button saves only its own section, and those changes will be lost. Continue?', 'cx-sidrena' ),
 					'outlets'            => $this->catalog_outlet_choices(),
 					'catalogChoices'     => $catalog_choices,
 					'productLabels'      => CX_Sidrena_Poslovnice::instance()->product_labels(),
 					'i18n'               => array(
-						'running'      => __( 'Processing…', 'cx-sidrena' ),
-						'progress'     => __( 'Processing… %1$s / %2$s', 'cx-sidrena' ),
-						'retry'        => __( 'Connection lost. Continuing automatically…', 'cx-sidrena' ),
-						'stalled'      => __( 'Processing stopped. Press the button again to continue from the same place. Already entered prices are not overwritten.', 'cx-sidrena' ),
-						'done'         => __( 'Done. Empty fields were filled.', 'cx-sidrena' ),
-						'doneToday'    => __( 'Done. Empty fields were filled with today\'s date.', 'cx-sidrena' ),
-						'todayConfirm' => __( 'This fills empty sidrena cijena fields with the current regular price and sets today\'s date as the reference date (only if no date is entered yet). Products that existed on 10.09.2026. should keep the default date. Continue?', 'cx-sidrena' ),
 						'error'        => __( 'An error occurred. Please try again.', 'cx-sidrena' ),
 						'copied'       => __( 'Copied', 'cx-sidrena' ),
 						'noFile'       => __( 'Select a CSV or XML file.', 'cx-sidrena' ),
@@ -849,13 +855,16 @@ class CX_Sidrena_Admin {
 				CX_SIDRENA_VERSION,
 				true
 			);
-			wp_enqueue_script(
-				'sidrena-cijena-admin-import',
-				CX_SIDRENA_URL . 'assets/js/admin-import.js',
-				array( 'sidrena-cijena-admin' ),
-				CX_SIDRENA_VERSION,
-				true
-			);
+			// MJDD's bulk import is there only without WooCommerce (CX-SID-43, tab-uvoz-izvoz.php).
+			if ( ! CX_Sidrena_Plugin::woocommerce_active() ) {
+				wp_enqueue_script(
+					'sidrena-cijena-admin-import',
+					CX_SIDRENA_URL . 'assets/js/admin-import.js',
+					array( 'sidrena-cijena-admin' ),
+					CX_SIDRENA_VERSION,
+					true
+				);
+			}
 			wp_enqueue_script(
 				'sidrena-cijena-admin-outlets',
 				CX_SIDRENA_URL . 'assets/js/admin-outlets.js',
@@ -863,14 +872,10 @@ class CX_Sidrena_Admin {
 				CX_SIDRENA_VERSION,
 				true
 			);
+			if ( CX_Sidrena_Plugin::woocommerce_active() ) {
+				$this->enqueue_bazna_screens();
+			}
 		}
-	}
-
-	/**
-	 * AJAX batch snapshot from the settings page.
-	 */
-	public function ajax_snapshot() {
-		CX_Sidrena_Admin_Save::instance()->ajax_snapshot();
 	}
 
 	/**
@@ -909,69 +914,5 @@ class CX_Sidrena_Admin {
 	 */
 	public function save_variation_fields( $variation_id, $i ) {
 		CX_Sidrena_Fields::save_variation( $variation_id, $i );
-	}
-
-	/**
-	 * Product list column.
-	 *
-	 * @param array<string, string> $columns Columns.
-	 * @return array<string, string>
-	 */
-	public function add_product_column( $columns ) {
-		$columns['sidrena_cijena'] = __( 'Sidrena cijena', 'cx-sidrena' );
-		return $columns;
-	}
-
-	/**
-	 * Render product list column.
-	 *
-	 * @param string $column  Column key.
-	 * @param int    $post_id Product ID.
-	 */
-	public function render_product_column( $column, $post_id ) {
-		if ( 'sidrena_cijena' !== $column ) {
-			return;
-		}
-
-		$product = wc_get_product( $post_id );
-		if ( ! $product ) {
-			echo '-';
-			return;
-		}
-
-		$meta = CX_Sidrena_Product_Meta::instance();
-
-		if ( $product->is_type( 'variable' ) ) {
-			$prices = array();
-			foreach ( $product->get_children() as $variation_id ) {
-				$variation = wc_get_product( $variation_id );
-				if ( ! $variation ) {
-					continue;
-				}
-
-				$display = $meta->get_price_to_display( $variation );
-				if ( null !== $display ) {
-					$prices[] = $display;
-				}
-			}
-
-			if ( empty( $prices ) ) {
-				echo '-';
-				return;
-			}
-
-			$min = min( $prices );
-			$max = max( $prices );
-			if ( $min === $max ) {
-				echo wp_kses_post( wc_price( $min ) );
-				return;
-			}
-
-			echo wp_kses_post( wc_price( $min ) . ' - ' . wc_price( $max ) );
-			return;
-		}
-
-		$html = $meta->format_price_html( $product );
-		echo '' === $html ? '-' : wp_kses_post( $html );
 	}
 }

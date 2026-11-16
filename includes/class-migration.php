@@ -26,6 +26,18 @@ final class CX_Sidrena_Migration {
 	/** Whether the "lowest price in 30 days" line is shown (yes|no). The history is recorded either way. */
 	const N30_DISPLAY_OPTION = 'cx_sidrena_n30_display';
 
+	/**
+	 * Set once the customer-facing display (label, date style, tooltip) was switched to ours: at a take-over, or for
+	 * a shop taken over by 0.1.0 at the update. A later take-over switches it again (MJDD's display is never kept).
+	 */
+	const DISPLAY_OPTION = 'cx_sidrena_display_ours';
+
+	/** The display settings that are not taken over from MJDD (spec §1.2), as two groups that go together. */
+	const DISPLAY_GROUPS = array(
+		'label'   => array( 'prefix', 'date_style', 'i18n.prefix' ),
+		'tooltip' => array( 'enable_tooltip', 'tooltip', 'i18n.tooltip' ),
+	);
+
 	/** Main file names of the plugins we replace; the folder name may differ per shop. */
 	const MJDD_MAIN  = 'sidrena-cijena.php';
 	const ADDON_MAIN = 'bazna-dodatak.php';
@@ -41,6 +53,7 @@ final class CX_Sidrena_Migration {
 	 */
 	public static function register() {
 		add_action( 'plugins_loaded', array( __CLASS__, 'on_load' ), 0 );
+		add_action( 'plugins_loaded', array( __CLASS__, 'maybe_switch_display' ), 2 );
 		add_action( 'activated_plugin', array( __CLASS__, 'on_activated' ), 10, 1 );
 		add_action( 'admin_notices', array( __CLASS__, 'show_notice' ) );
 	}
@@ -136,6 +149,11 @@ final class CX_Sidrena_Migration {
 
 		if ( 'took_over' === $why ) {
 			$done = get_option( self::DONE_OPTION, array() );
+			if ( is_array( $done ) && $done ) {
+				// For the take-over notice on Status: which plugins this take-over switched off, by their names.
+				$done['off'] = $names;
+				update_option( self::DONE_OPTION, $done, true );
+			}
 			if ( ! empty( $done['options'] ) || ! empty( $done['files'] ) || $names ) {
 				$msg = sprintf(
 					/* translators: 1: number of settings, 2: number of files, 3: plugin names or "nothing" */
@@ -209,7 +227,8 @@ final class CX_Sidrena_Migration {
 			return false;
 		}
 
-		$copied = 0;
+		$copied   = 0;
+		$settings = false;
 		foreach ( (array) $rows as $row ) {
 			$name = (string) $row->option_name;
 			$hash = md5( (string) $row->option_value );
@@ -235,7 +254,8 @@ final class CX_Sidrena_Migration {
 
 			$value = maybe_unserialize( $row->option_value );
 			if ( CX_Sidrena_Settings::OPTION_KEY === $ours ) {
-				$value = self::keep_counter( $value, get_option( $ours, array() ) );
+				$settings = true;
+				$value    = self::keep_counter( $value, get_option( $ours, array() ) );
 			} elseif ( CX_Sidrena_Poslovnice::OPTION_KEY === $ours ) {
 				$value = self::keep_outlet_counters( $value, get_option( $ours, array() ) );
 			}
@@ -251,19 +271,171 @@ final class CX_Sidrena_Migration {
 			update_option( self::N30_DISPLAY_OPTION, self::addon_active() ? 'yes' : 'no', true );
 		}
 
-		update_option(
-			self::DONE_OPTION,
-			array(
-				'at'      => time(),
-				'first'   => $first ? time() : ( isset( $done['first'] ) ? (int) $done['first'] : time() ),
-				'options' => $copied,
-				'files'   => $files,
-				'fp'      => $fp,
-			),
-			true
+		$marker = array(
+			'at'      => time(),
+			'first'   => $first ? time() : ( isset( $done['first'] ) ? (int) $done['first'] : time() ),
+			'options' => $copied,
+			'files'   => $files,
+			'fp'      => $fp,
+			// When this shop moved over from MJDD. Products older than that show "Taken over from MJDD" as the source
+			// of their bazna (CX_Sidrena_History::izvor()). 0: it never did (MJDD only ran next to a fresh install).
+			'mjdd_at' => self::mjdd_at( $done, $first ),
+			'off'     => isset( $done['off'] ) && is_array( $done['off'] ) ? $done['off'] : array(),
 		);
+		if ( ! empty( $done['fresh'] ) ) {
+			$marker['fresh'] = true;
+		}
+		update_option( self::DONE_OPTION, $marker, true );
+
+		// MJDD's settings were taken just now, but what customers see is ours (spec §1.2).
+		if ( $settings ) {
+			self::switch_display();
+		}
 
 		return true;
+	}
+
+	/**
+	 * @param array<string,mixed> $done  The marker before this take-over.
+	 * @param bool                $first No marker before.
+	 * @return int
+	 */
+	private static function mjdd_at( array $done, $first ) {
+		if ( $first ) {
+			return time();
+		}
+		if ( isset( $done['mjdd_at'] ) ) {
+			return (int) $done['mjdd_at'];
+		}
+		// A marker written by 0.1.0: a take-over if it took MJDD's options and was not a fresh install.
+		return empty( $done['fresh'] ) && ! empty( $done['fp'] ) && ! empty( $done['first'] ) ? (int) $done['first'] : 0;
+	}
+
+	/**
+	 * plugins_loaded, once: a shop that 0.1.0 took over from MJDD still shows MJDD's label and tooltip. Switch them to
+	 * ours, but each group only while it is still what was taken from MJDD; what the owner changed since stays.
+	 */
+	public static function maybe_switch_display() {
+		if ( false !== get_option( self::DISPLAY_OPTION, false ) ) {
+			return;
+		}
+		$done = get_option( self::DONE_OPTION, false );
+		if ( ! is_array( $done ) ) {
+			return; // never activated yet: the take-over does it
+		}
+		if ( ! empty( $done['fresh'] ) || empty( $done['fp']['sidrena_cijena_settings'] ) ) {
+			update_option( self::DISPLAY_OPTION, array( 'at' => time(), 'how' => 'nothing taken' ), false );
+			return;
+		}
+		self::switch_display( self::taken_display( $done['fp']['sidrena_cijena_settings'] ) );
+	}
+
+	/**
+	 * Set the display groups to our defaults.
+	 *
+	 * @param array<string,mixed>|null $taken What was taken from MJDD (null: at a take-over, switch every group).
+	 *                                        A group whose value differs from it was changed by the owner and stays.
+	 */
+	private static function switch_display( $taken = null ) {
+		$ours     = get_option( CX_Sidrena_Settings::OPTION_KEY, array() );
+		$ours     = is_array( $ours ) ? $ours : array();
+		$defaults = CX_Sidrena_Settings::defaults();
+		$switched = array();
+
+		foreach ( self::DISPLAY_GROUPS as $group => $fields ) {
+			if ( null !== $taken ) {
+				$same = true;
+				foreach ( $fields as $f ) {
+					if ( self::display_value( $ours, $f, $defaults ) !== self::display_value( $taken, $f, $defaults ) ) {
+						$same = false;
+					}
+				}
+				if ( ! $same ) {
+					continue;
+				}
+			}
+			foreach ( $fields as $f ) {
+				if ( 0 === strpos( $f, 'i18n.' ) ) {
+					$ours['i18n']                    = isset( $ours['i18n'] ) && is_array( $ours['i18n'] ) ? $ours['i18n'] : array();
+					$ours['i18n'][ substr( $f, 5 ) ] = $defaults['i18n'][ substr( $f, 5 ) ];
+				} else {
+					$ours[ $f ] = $defaults[ $f ];
+				}
+			}
+			$switched[] = $group;
+		}
+
+		if ( $switched ) {
+			update_option( CX_Sidrena_Settings::OPTION_KEY, $ours );
+			CX_Sidrena_Settings::instance()->flush();
+		}
+		update_option(
+			self::DISPLAY_OPTION,
+			array(
+				'at'       => time(),
+				'how'      => null === $taken ? 'take-over' : 'update',
+				'switched' => $switched,
+			),
+			false
+		);
+	}
+
+	/**
+	 * What 0.1.0 took from MJDD. MJDD's settings option while it is unchanged since (its fingerprint), otherwise MJDD
+	 * 1.26.0's own display, which no take-over changed (0.1.0 copied MJDD's settings as they were).
+	 *
+	 * @param string $fingerprint md5 of MJDD's settings at the take-over.
+	 * @return array<string,mixed>
+	 */
+	private static function taken_display( $fingerprint ) {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$raw = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", 'sidrena_cijena_settings' ) );
+		if ( null !== $raw && md5( (string) $raw ) === $fingerprint ) {
+			$mjdd = maybe_unserialize( $raw );
+			if ( is_array( $mjdd ) ) {
+				return $mjdd;
+			}
+		}
+
+		return array(
+			'prefix'         => 'Bazna cijena',
+			'date_style'     => 'parens',
+			'enable_tooltip' => 'yes',
+			'tooltip'        => CX_Sidrena_Settings::DEFAULT_TOOLTIP,
+			'i18n'           => array(
+				'prefix'  => array(),
+				'tooltip' => array(),
+			),
+		);
+	}
+
+	/**
+	 * One display field, compared the way the plugin reads it (a missing field is the default, the label without a
+	 * date in it, an empty translation list is no list).
+	 *
+	 * @param array<string,mixed> $settings Settings.
+	 * @param string              $field    Field, or i18n.<field>.
+	 * @param array<string,mixed> $defaults Defaults.
+	 * @return mixed
+	 */
+	private static function display_value( array $settings, $field, array $defaults ) {
+		if ( 0 === strpos( $field, 'i18n.' ) ) {
+			$sub = substr( $field, 5 );
+			$v   = isset( $settings['i18n'][ $sub ] ) && is_array( $settings['i18n'][ $sub ] ) ? array_filter( $settings['i18n'][ $sub ], 'strlen' ) : array();
+			ksort( $v );
+			return $v;
+		}
+		$v = array_key_exists( $field, $settings ) ? $settings[ $field ] : $defaults[ $field ];
+		if ( 'prefix' === $field ) {
+			$v = CX_Sidrena_Settings::strip_date_from_prefix( (string) $v );
+		}
+		if ( 'tooltip' === $field && CX_Sidrena_Settings::PREVIOUS_TOOLTIP === $v ) {
+			$v = CX_Sidrena_Settings::DEFAULT_TOOLTIP;
+		}
+
+		return is_string( $v ) ? trim( $v ) : $v;
 	}
 
 	/**

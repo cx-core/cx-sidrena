@@ -13,12 +13,21 @@ defined( 'ABSPATH' ) || exit;
 class CX_Sidrena_Settings {
 
 	const OPTION_KEY       = 'cx_sidrena_settings';
+	// MJDD's label: still recognised (translations, the old "Cijena" notice), no longer the default.
 	const DEFAULT_PREFIX   = 'Bazna cijena';
+	// The label a new shop starts with, plain date style: "Bazna cijena na 10.9.2026.: 19,90 €" (Kai: draft regulation
+	// art. 5(2)-(3), the bazna must not be mistaken for the selling price).
+	const LABEL_PREFIX     = 'Bazna cijena na';
 	const GENERIC_PREFIX   = 'Cijena';
 	const PREVIOUS_TOOLTIP = 'Sidrena (bazna) cijena je redovna maloprodajna cijena koja je za ovaj proizvod vrijedila na navedeni referentni datum. Služi potrošaču za usporedbu s aktualnom cijenom, sukladno odlukama Vlade RH i Zakonu o zaštiti potrošača. Nije akcijska cijena niti najniža cijena u zadnjih 30 dana.';
 	const DEFAULT_TOOLTIP  = 'Bazna cijena je maloprodajna cijena koja je za ovaj proizvod vrijedila na navedeni dan. Ističe se uz aktualnu cijenu radi usporedbe. Nije akcijska cijena niti najniža cijena u zadnjih 30 dana.';
 	const PREFIX_CHOICE_OPTION   = 'cx_sidrena_prefix_choice';
 	const FOLLOWUP_NOTICE_OPTION = 'cx_sidrena_followup_13_11';
+
+	/**
+	 * Kept price list files: 4 years, the limitation period of a misdemeanour (Prekršajni zakon čl. 13 st. 1).
+	 */
+	const KEEP_DAYS_DEFAULT = 1461;
 
 	/**
 	 * Singleton.
@@ -52,13 +61,14 @@ class CX_Sidrena_Settings {
 	 */
 	public static function defaults() {
 		return array(
-			'prefix'          => self::DEFAULT_PREFIX,
+			'prefix'          => self::LABEL_PREFIX,
 			'tooltip'         => self::DEFAULT_TOOLTIP,
-			'enable_tooltip'  => 'yes',
+			// Off: the customer sees only what is required (Hrvoje, spec §2.1). MJDD's tooltip is unchanged when on.
+			'enable_tooltip'  => 'no',
 			'auto_display'    => 'yes',
 			'auto_fill'       => 'yes',
 			'default_date'    => '10.09.2026.',
-			'date_style'      => 'parens',
+			'date_style'      => 'plain',
 			'enable_cjm'      => 'no',
 			'daily_xml'       => 'yes',
 			'export_format'   => 'xml',
@@ -70,10 +80,22 @@ class CX_Sidrena_Settings {
 			'brand_manual'    => '',
 			'multi_poslovnica' => 'no',
 			'public_cjenik'    => 'yes',
+			// A small "Cjenik" link at the bottom of every shop page (spec §2.6, on by default).
+			'cjenik_link'      => 'yes',
+			// Sale badge: percent | akcija | hide; empty = by theme (CX_Sidrena_Badge::default_mode(), spec §2.5).
+			'discount_badge'   => '',
+			// Days a price list file older than the public 30 is kept out of public reach; 0 = for ever (CX-SID-27).
+			'archive_keep_days' => self::KEEP_DAYS_DEFAULT,
 			'i18n'            => array(
 				'prefix'  => array(),
 				'tooltip' => array(),
 			),
+			// Colour of the bazna line and the lowest-price caption: '' = the shop's text colour, or the owner's #rrggbb
+			// (CX-SID-41).
+			'line_color'      => '',
+			// The dostupno/nedostupno column in the public price list: off unless the owner turns it on. Only the repealed
+			// Decision asked for it (CX-SID-28); a shop updated from 0.1.0 has no key and gets 'no' too.
+			'feed_dostupnost' => 'no',
 		);
 	}
 
@@ -164,6 +186,13 @@ class CX_Sidrena_Settings {
 	}
 
 	/**
+	 * Forget the cached settings, after the option was written by someone else (the take-over, CX_Sidrena_Migration).
+	 */
+	public function flush() {
+		$this->settings = null;
+	}
+
+	/**
 	 * Persist settings.
 	 *
 	 * @param array<string, mixed> $settings Raw values.
@@ -178,7 +207,7 @@ class CX_Sidrena_Settings {
 			'auto_display'   => ( isset( $settings['auto_display'] ) && 'yes' === $settings['auto_display'] ) ? 'yes' : 'no',
 			'auto_fill'      => ( isset( $settings['auto_fill'] ) && 'yes' === $settings['auto_fill'] ) ? 'yes' : 'no',
 			'default_date'   => isset( $settings['default_date'] ) ? sanitize_text_field( $settings['default_date'] ) : self::defaults()['default_date'],
-			'date_style'     => $this->sanitize_date_style( isset( $settings['date_style'] ) ? $settings['date_style'] : 'parens' ),
+			'date_style'     => $this->sanitize_date_style( isset( $settings['date_style'] ) ? $settings['date_style'] : self::defaults()['date_style'] ),
 			'enable_cjm'     => ( isset( $settings['enable_cjm'] ) && 'yes' === $settings['enable_cjm'] ) ? 'yes' : 'no',
 			'daily_xml'      => ( isset( $settings['daily_xml'] ) && 'yes' === $settings['daily_xml'] ) ? 'yes' : 'no',
 			'export_format'  => $this->sanitize_format( isset( $settings['export_format'] ) ? $settings['export_format'] : 'xml' ),
@@ -190,7 +219,12 @@ class CX_Sidrena_Settings {
 			'brand_manual'     => sanitize_text_field( isset( $settings['brand_manual'] ) ? $settings['brand_manual'] : '' ),
 			'multi_poslovnica' => ( isset( $settings['multi_poslovnica'] ) && 'yes' === $settings['multi_poslovnica'] ) ? 'yes' : 'no',
 			'public_cjenik'    => 'yes',
+			'cjenik_link'      => ( isset( $settings['cjenik_link'] ) && 'no' === $settings['cjenik_link'] ) ? 'no' : 'yes',
+			'discount_badge'   => ( isset( $settings['discount_badge'] ) && in_array( $settings['discount_badge'], array( 'percent', 'akcija', 'hide' ), true ) ) ? $settings['discount_badge'] : '',
+			'archive_keep_days' => $this->sanitize_keep_days( isset( $settings['archive_keep_days'] ) ? $settings['archive_keep_days'] : self::KEEP_DAYS_DEFAULT ),
 			'i18n'           => $this->sanitize_i18n( isset( $settings['i18n'] ) ? $settings['i18n'] : array() ),
+			'line_color'     => self::sanitize_line_color( isset( $settings['line_color'] ) ? $settings['line_color'] : '' ),
+			'feed_dostupnost' => ( isset( $settings['feed_dostupnost'] ) && 'yes' === $settings['feed_dostupnost'] ) ? 'yes' : 'no',
 		);
 
 		if ( '' === $clean['default_date'] ) {
@@ -203,6 +237,36 @@ class CX_Sidrena_Settings {
 		if ( class_exists( 'CX_Sidrena_I18n' ) ) {
 			CX_Sidrena_I18n::instance()->register_strings();
 		}
+	}
+
+	/**
+	 * The owner's own colour for the bazna line and the lowest-price caption, or '' for the shop's text colour.
+	 *
+	 * @return string #rrggbb or ''.
+	 */
+	public function line_color() {
+		return self::sanitize_line_color( $this->get( 'line_color', '' ) );
+	}
+
+	/**
+	 * A colour as #rrggbb in lower case (#abc becomes #aabbcc, the colour picker's form); anything else is '' (the shop's
+	 * text colour). The value is printed into the shop's CSS, so nothing but a hex colour gets through.
+	 *
+	 * @param mixed $value Raw value.
+	 * @return string
+	 */
+	public static function sanitize_line_color( $value ) {
+		$value = is_string( $value ) ? sanitize_hex_color( trim( $value ) ) : null;
+		if ( ! is_string( $value ) || '' === $value ) {
+			return '';
+		}
+
+		$value = strtolower( $value );
+		if ( 4 === strlen( $value ) ) {
+			$value = '#' . $value[1] . $value[1] . $value[2] . $value[2] . $value[3] . $value[3];
+		}
+
+		return $value;
 	}
 
 	/**
@@ -253,6 +317,25 @@ class CX_Sidrena_Settings {
 	 */
 	public function export_format() {
 		return $this->sanitize_format( $this->get( 'export_format', 'xml' ) );
+	}
+
+	/**
+	 * Whether the public price list has the dostupno/nedostupno column (CX-SID-28: off unless the owner turns it on).
+	 *
+	 * @return bool
+	 */
+	public function feed_has_dostupnost() {
+		return 'yes' === $this->get( 'feed_dostupnost', 'no' );
+	}
+
+	/**
+	 * A shop that sells only to businesses publishes no price list (CX-SID-28). The key is CX-SID-31's; until it is in
+	 * the settings, get() gives 'no'.
+	 *
+	 * @return bool
+	 */
+	public function is_b2b_only() {
+		return 'yes' === $this->get( 'b2b_only', 'no' );
 	}
 
 	/**
@@ -462,6 +545,8 @@ class CX_Sidrena_Settings {
 	 *
 	 * Terms on the product win. A variation with no terms uses the parent.
 	 * The settings value is used when the taxonomy has no term.
+	 * An owner who chose neither a taxonomy nor a manual brand gets WooCommerce's own Brands (product_brand, WooCommerce
+	 * 9.6+), when the shop has them (CX-SID-28).
 	 *
 	 * @param WC_Product $product Product or variation.
 	 * @return string
@@ -469,6 +554,10 @@ class CX_Sidrena_Settings {
 	public function product_marka( $product ) {
 		$manual = $this->manual_marka();
 		$tax    = (string) $this->get( 'brand_taxonomy', '' );
+
+		if ( '' === $tax && '' === $manual ) {
+			$tax = 'product_brand';
+		}
 
 		if ( '' === $tax || ! taxonomy_exists( $tax ) || ! $product instanceof WC_Product ) {
 			return $manual;
@@ -612,6 +701,25 @@ class CX_Sidrena_Settings {
 	}
 
 	/**
+	 * Days kept price list files are kept: 0 = for ever, otherwise at least the public 30 (nothing goes before it was
+	 * public its whole time). Not a number: the default.
+	 *
+	 * @param mixed $value Raw.
+	 * @return int
+	 */
+	public function sanitize_keep_days( $value ) {
+		if ( ! is_numeric( $value ) ) {
+			return self::KEEP_DAYS_DEFAULT;
+		}
+		$n = (int) $value;
+		if ( 0 === $n ) {
+			return 0;
+		}
+
+		return min( max( $n, CX_Sidrena_Archive::PUBLIC_DAYS ), 36525 );
+	}
+
+	/**
 	 * Stored translation for one language, or empty.
 	 *
 	 * @param string $key  prefix|tooltip.
@@ -735,7 +843,7 @@ class CX_Sidrena_Settings {
 		$raw    = $stored_only ? (string) $this->get( 'prefix' ) : $this->get_translated( 'prefix' );
 		$prefix = self::strip_date_from_prefix( $raw );
 		if ( '' === $prefix && 'plain' !== $this->get( 'date_style' ) ) {
-			$prefix = $stored_only ? self::defaults()['prefix'] : __( 'Bazna cijena', 'cx-sidrena' );
+			$prefix = $stored_only ? self::DEFAULT_PREFIX : __( 'Bazna cijena', 'cx-sidrena' );
 		}
 
 		return $prefix;
@@ -750,7 +858,7 @@ class CX_Sidrena_Settings {
 	 */
 	public function format_prefix_with_date( $prefix, $date ) {
 		$prefix = trim( (string) $prefix );
-		$date   = trim( (string) $date );
+		$date   = CX_Sidrena_Money::customer_date( $date );
 
 		if ( '' === $date ) {
 			return $prefix;

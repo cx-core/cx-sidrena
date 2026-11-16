@@ -200,21 +200,27 @@ class CX_Sidrena_Import_Export {
 	public function import_values( $product, $data ) {
 		$meta = CX_Sidrena_Product_Meta::instance();
 
+		// An empty bazna or date cell leaves the product's bazna and date alone (note 1397/1). A file exported from
+		// another tool often has the column with nothing in it; deleting the bazna let the next save fill it again
+		// from the regular price with today's date. A bazna is removed on the product screen, never by an empty cell.
 		if ( isset( $data['sidrena_cijena'] ) ) {
 			$price = $meta->normalize_price( $data['sidrena_cijena'] );
-			if ( '' === $price ) {
-				$product->delete_meta_data( CX_SIDRENA_META_PRICE );
-			} else {
+			if ( '' !== $price ) {
 				$product->update_meta_data( CX_SIDRENA_META_PRICE, $price );
 			}
 		}
 
 		if ( isset( $data['sidrena_cijena_datum'] ) ) {
 			$date = sanitize_text_field( (string) $data['sidrena_cijena_datum'] );
-			if ( '' === $date ) {
-				$product->delete_meta_data( CX_SIDRENA_META_DATE );
-			} else {
+			if ( '' !== $date ) {
 				$product->update_meta_data( CX_SIDRENA_META_DATE, $date );
+			}
+		}
+
+		// The same for WooCommerce's own "Meta: _sidrena_cijena" columns, which it has already put on the product.
+		foreach ( isset( $data['meta_data'] ) ? (array) $data['meta_data'] : array() as $m ) {
+			if ( isset( $m['key'], $m['value'] ) && in_array( $m['key'], array( CX_SIDRENA_META_PRICE, CX_SIDRENA_META_DATE ), true ) && '' === trim( (string) $m['value'] ) ) {
+				self::keep_stored( $product, $m['key'] );
 			}
 		}
 
@@ -264,5 +270,20 @@ class CX_Sidrena_Import_Export {
 		}
 
 		return $product;
+	}
+
+	/**
+	 * Undo a change the importer made to one of our keys: back to what the database holds (nothing is written).
+	 *
+	 * @param WC_Product $product Product being imported.
+	 * @param string     $key     Meta key.
+	 */
+	private static function keep_stored( $product, $key ) {
+		$id = (int) $product->get_id();
+		if ( $id > 0 && metadata_exists( 'post', $id, $key ) ) {
+			$product->update_meta_data( $key, get_post_meta( $id, $key, true ) );
+		} else {
+			$product->delete_meta_data( $key );
+		}
 	}
 }

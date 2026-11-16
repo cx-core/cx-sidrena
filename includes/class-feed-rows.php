@@ -40,11 +40,73 @@ class CX_Sidrena_Feed_Rows {
 	 * @return array<int, array<string, string>>
 	 */
 	public function collect_rows( $missing_only = false, $public = false, $only_ids = null, $catalog_scope = null ) {
-		return CX_Sidrena_I18n::instance()->run_in_default_language(
-			function () use ( $missing_only, $public, $only_ids, $catalog_scope ) {
-				return $this->collect_rows_now( $missing_only, $public, $only_ids, $catalog_scope );
+		$collect = function () use ( $missing_only, $public, $only_ids, $catalog_scope ) {
+			return CX_Sidrena_I18n::instance()->run_in_default_language(
+				function () use ( $missing_only, $public, $only_ids, $catalog_scope ) {
+					return $this->collect_rows_now( $missing_only, $public, $only_ids, $catalog_scope );
+				}
+			);
+		};
+
+		if ( ! $public ) {
+			return $collect();
+		}
+
+		return $this->finish_public_rows( self::as_visitor( $collect ) );
+	}
+
+	/**
+	 * Run a callback as a visitor (no user), then put back whoever ran it, also when it throws.
+	 *
+	 * The public price list shows what any consumer pays and can buy (CX-SID-28). A plugin that gives the admin or a
+	 * wholesale role another price, or lets only members buy a product, filters WooCommerce's getters by the current
+	 * user. Built under the admin who clicked Generate or saved a product, those prices went into the public file,
+	 * while cron and WP-CLI built as a guest: the file depended on who built it last.
+	 *
+	 * @param callable $callback Work.
+	 * @return mixed What the callback returns.
+	 */
+	public static function as_visitor( $callback ) {
+		$who = get_current_user_id();
+		if ( 0 === $who ) {
+			return $callback();
+		}
+
+		wp_set_current_user( 0 );
+		try {
+			return $callback();
+		} finally {
+			wp_set_current_user( $who );
+		}
+	}
+
+	/**
+	 * The rules every public row follows, whatever it came from (WooCommerce, the manual catalog, an outlet):
+	 * - no retail price, no row: a row the consumer cannot read a price from is not in the price list;
+	 * - the bazna date only next to a bazna;
+	 * - poseban_oblik: da when the row is in a special form of sale (draft 10332 art. 3(2)), ne otherwise.
+	 *
+	 * @param array<int, array<string, string>> $rows Public rows.
+	 * @return array<int, array<string, string>>
+	 */
+	public function finish_public_rows( $rows ) {
+		$out = array();
+		foreach ( $rows as $row ) {
+			if ( '' === trim( isset( $row['maloprodajna_cijena'] ) ? (string) $row['maloprodajna_cijena'] : '' ) ) {
+				continue;
 			}
-		);
+
+			if ( '' === trim( isset( $row['sidrena_cijena'] ) ? (string) $row['sidrena_cijena'] : '' ) ) {
+				$row['sidrena_datum'] = '';
+			}
+
+			$oblik                = isset( $row['naziv_posebnog_oblika'] ) ? trim( (string) $row['naziv_posebnog_oblika'] ) : '';
+			$row['poseban_oblik'] = '' !== $oblik ? 'da' : 'ne';
+
+			$out[] = $row;
+		}
+
+		return $out;
 	}
 
 	/**
@@ -493,7 +555,10 @@ class CX_Sidrena_Feed_Rows {
 	}
 
 	/**
-	 * Published products only. Password-protected and catalog-hidden products stay out of public files.
+	 * Published products only; password-protected ones stay out of public files. A product hidden from the catalog and
+	 * search is in when a visitor can buy it, by its link (CX-SID-28: any consumer can buy it, so it has a price the law
+	 * asks to publish), and out when a visitor cannot (a members' or wholesale product). Rows are built as a visitor
+	 * (as_visitor()), so is_purchasable() answers for a guest.
 	 *
 	 * @param WC_Product $product Product or variation.
 	 * @return bool
@@ -516,10 +581,14 @@ class CX_Sidrena_Feed_Rows {
 			}
 
 			$parent = wc_get_product( $parent_id );
-			return ! ( $parent instanceof WC_Product && 'hidden' === $parent->get_catalog_visibility() );
+			if ( $parent instanceof WC_Product && 'hidden' === $parent->get_catalog_visibility() ) {
+				return $product->is_purchasable();
+			}
+
+			return true;
 		}
 
-		return 'hidden' !== $product->get_catalog_visibility();
+		return 'hidden' !== $product->get_catalog_visibility() || $product->is_purchasable();
 	}
 
 	/**
@@ -528,11 +597,22 @@ class CX_Sidrena_Feed_Rows {
 	 * @return array{webshop: array<int, array<string, string>>, outlets: array<string, array<int, array<string, string>>>}
 	 */
 	public function collect_public_by_scope() {
-		return CX_Sidrena_I18n::instance()->run_in_default_language(
+		$bundle = self::as_visitor(
 			function () {
-				return $this->collect_public_by_scope_now();
+				return CX_Sidrena_I18n::instance()->run_in_default_language(
+					function () {
+						return $this->collect_public_by_scope_now();
+					}
+				);
 			}
 		);
+
+		$bundle['webshop'] = $this->finish_public_rows( $bundle['webshop'] );
+		foreach ( $bundle['outlets'] as $oznaka => $rows ) {
+			$bundle['outlets'][ $oznaka ] = $this->finish_public_rows( $rows );
+		}
+
+		return $bundle;
 	}
 
 	/**

@@ -25,7 +25,14 @@
 		if (!date) {
 			return "";
 		}
-		return date.replace(/\.+$/, "") + ".";
+		// As the customer sees it: 10.9.2026. (the stored date keeps its leading zeros).
+		return date
+			.replace(/\.+$/, "")
+			.split(".")
+			.map(function (part) {
+				return part.replace(/^0+(?=\d)/, "");
+			})
+			.join(".") + ".";
 	}
 
 	function bindPrefixPreview() {
@@ -52,7 +59,7 @@
 				}
 			}
 
-			$code.text(label + (prefix ? ": " : " ") + "19,99 €");
+			$code.text(label + (prefix ? ": " : " ") + "19,90 €");
 		}
 
 		$(document).on(
@@ -62,6 +69,42 @@
 		);
 
 		updatePreview();
+	}
+
+	// Colour of the lines (CX-SID-41): the preview takes the own colour; under 4.5:1 on white, one line of warning (saving
+	// is not blocked). Picking a colour chooses "Own colour".
+	function bindLineColor() {
+		var $color = $("#cx_line_color");
+		if (!$color.length) {
+			return;
+		}
+		var $line = $("#sidrena-cijena-preview");
+		var $warn = $("#cx-line-color-warn");
+
+		function onWhite(hex) {
+			var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || "");
+			if (!m) {
+				return 21;
+			}
+			var l = [m[1], m[2], m[3]].map(function (h) {
+				var v = parseInt(h, 16) / 255;
+				return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+			});
+			return 1.05 / (0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2] + 0.05);
+		}
+
+		function sync() {
+			var own = $('input[name="cx_line_color_mode"]:checked').val() === "own";
+			$line.css("color", own ? $color.val() : "");
+			$warn.prop("hidden", !(own && onWhite($color.val()) < 4.5));
+		}
+
+		$color.on("input change", function () {
+			$('input[name="cx_line_color_mode"][value="own"]').prop("checked", true);
+			sync();
+		});
+		$(document).on("change", 'input[name="cx_line_color_mode"]', sync);
+		sync();
 	}
 
 	function bindTooltipToggle() {
@@ -106,131 +149,9 @@
 	}
 
 
-	function formatProgress(seen, total) {
-		var tpl = sidrenaCijenaAdmin.i18n.progress || "Processing… %1$s / %2$s";
-		return tpl.replace("%1$s", String(seen)).replace("%2$s", String(total));
-	}
-
-	function bindSnapshot() {
-		var $buttons = $(".sidrena-cijena-snapshot-btn");
-		var $status = $(".sidrena-cijena-snapshot-status");
-		var $progress = $("#sidrena-snapshot-progress");
-		var $bar = $("#sidrena-snapshot-bar");
-		var resume = null;
-
-		if (!$buttons.length || typeof sidrenaCijenaAdmin === "undefined") {
-			return;
-		}
-
-		function setProgress(seen, total, done) {
-			var percent = 0;
-			if (done) {
-				percent = 100;
-			} else if (total > 0) {
-				percent = Math.max(0, Math.min(100, Math.round((seen / total) * 100)));
-			}
-			$progress.removeAttr("hidden");
-			$bar.css("width", percent + "%");
-		}
-
-		$buttons.on("click", function () {
-			var stampToday = this.id === "sidrena-cijena-run-snapshot-today";
-			var page = 1;
-			var offset = 0;
-			var child = 0;
-			var attempts = 0;
-			var doneText = stampToday
-				? sidrenaCijenaAdmin.i18n.doneToday
-				: sidrenaCijenaAdmin.i18n.done;
-
-			if (stampToday && !window.confirm(sidrenaCijenaAdmin.i18n.todayConfirm)) {
-				return;
-			}
-
-			if (resume && resume.stampToday === stampToday) {
-				page = resume.page;
-				offset = resume.offset;
-				child = resume.child;
-			}
-
-			$buttons.prop("disabled", true);
-			$status.text(sidrenaCijenaAdmin.i18n.running);
-			setProgress(0, 0, false);
-
-			function remember() {
-				resume = {
-					stampToday: stampToday,
-					page: page,
-					offset: offset,
-					child: child,
-				};
-			}
-
-			function runBatch() {
-				$.ajax({
-					url: sidrenaCijenaAdmin.ajaxUrl,
-					method: "POST",
-					timeout: 90000,
-					data: {
-						action: "sidrena_cijena_snapshot",
-						nonce: sidrenaCijenaAdmin.nonce,
-						page: page,
-						offset: offset,
-						child: child,
-						stamp_today: stampToday ? "1" : "0",
-					},
-				})
-					.done(function (response) {
-						if (!response || !response.success || !response.data) {
-							failBatch();
-							return;
-						}
-
-						attempts = 0;
-						var data = response.data;
-						var seen = parseInt(data.seen, 10) || 0;
-						var total = parseInt(data.total, 10) || 0;
-
-						if (data.done) {
-							resume = null;
-							setProgress(total || seen, total || seen, true);
-							$status.text(doneText);
-							$buttons.prop("disabled", false);
-							return;
-						}
-
-						page = parseInt(data.next_page, 10) || page;
-						offset = parseInt(data.next_offset, 10) || 0;
-						child = parseInt(data.next_child, 10) || 0;
-						remember();
-						setProgress(seen, total, false);
-						$status.text(formatProgress(seen, total));
-						runBatch();
-					})
-					.fail(function () {
-						failBatch();
-					});
-			}
-
-			function failBatch() {
-				attempts += 1;
-				remember();
-				if (attempts < 5) {
-					$status.text(sidrenaCijenaAdmin.i18n.retry || sidrenaCijenaAdmin.i18n.running);
-					window.setTimeout(runBatch, 1200 * attempts);
-					return;
-				}
-				$status.text(sidrenaCijenaAdmin.i18n.stalled || sidrenaCijenaAdmin.i18n.error);
-				$buttons.prop("disabled", false);
-			}
-
-			runBatch();
-		});
-	}
-
-
 	$(function () {
 		bindPrefixPreview();
+		bindLineColor();
 		bindTooltipToggle();
 		bindCjm();
 
@@ -264,6 +185,35 @@
 			});
 		});
 
-		bindSnapshot();
+		openAdvancedForHash();
+		$(window).on("hashchange", openAdvancedForHash);
+
+		// Four forms on one page: Outlets and Additional items save only themselves. Changes in the main Settings form
+		// would be lost without a word, so ask first (Norman, CX-SID-23).
+		var mainDirty = false;
+		$(document).on("input change", "[form='cx-settings-form'], #cx-settings-form :input", function () {
+			mainDirty = true;
+		});
+		$(document).on("submit", "#sidrena-poslovnice-form, #sidrena-cijena-catalog-form", function (e) {
+			var msg = window.sidrenaCijenaAdmin && sidrenaCijenaAdmin.unsavedConfirm;
+			if (mainDirty && msg && !window.confirm(msg)) {
+				e.preventDefault();
+			}
+		});
 	});
+
+	// Settings: a link to a section inside "Show advanced settings" (an old tab's address, a save that returns there)
+	// opens it first, so the browser can scroll to it.
+	function openAdvancedForHash() {
+		var details = document.getElementById("cx-advanced");
+		var id = window.location.hash.slice(1);
+		if (!details || !id) {
+			return;
+		}
+		var target = document.getElementById(id);
+		if (target && details.contains(target) && !details.open) {
+			details.open = true;
+			target.scrollIntoView();
+		}
+	}
 })(jQuery);

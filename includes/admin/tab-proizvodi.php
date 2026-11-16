@@ -28,8 +28,8 @@ defined( 'ABSPATH' ) || exit;
 				<?php
 				echo esc_html(
 					$woo
-						? __( 'Services and products that are not in WooCommerce (e.g. made to order, or a shipping class). Name, regular price and sidrena cijena are required. The type sets the columns of the public price list. Leave the date empty for the default reference day, or enter the day the item was first listed. If you have several outlets, choose the webshop or an outlet above the table - the rows go only into that price list. Availability is a dropdown: in stock or out of stock. The shortcode [sidrena-cijena id="dX"] shows the prices of that row on a page. For a single amount add prikaz="redovna", prikaz="akcijska" or prikaz="sidrena".', 'cx-sidrena' )
-						: __( 'Each row becomes an item of the public price list (XML/CSV and HTML). Name, regular price and sidrena cijena are required. The type sets the columns: product or service. Leave the date empty for the default reference day, or enter the day the item was first listed. If you have several outlets, choose the webshop or an outlet above the table. Availability is a dropdown: in stock or out of stock. Empty rows are not saved. The shortcode [sidrena-cijena id="x"] shows the prices of this row on any page. For a single amount add prikaz="redovna", prikaz="akcijska" or prikaz="sidrena". Insert the whole table with the shortcode [sidrena-cjenik].', 'cx-sidrena' )
+						? __( 'Services and products that are not in WooCommerce (e.g. made to order, or a shipping class). Name, regular price and bazna cijena are required. The type sets the columns of the public price list. Leave the date empty for the default reference day, or enter the day the item was first listed. If you have several outlets, choose the webshop or an outlet above the table - the rows go only into that price list. Availability is a dropdown: in stock or out of stock. The shortcode [sidrena-cijena id="dX"] shows the prices of that row on a page. For a single amount add prikaz="redovna", prikaz="akcijska" or prikaz="sidrena".', 'cx-sidrena' )
+						: __( 'Each row becomes an item of the public price list (XML/CSV and HTML). Name, regular price and bazna cijena are required. The type sets the columns: product or service. Leave the date empty for the default reference day, or enter the day the item was first listed. If you have several outlets, choose the webshop or an outlet above the table. Availability is a dropdown: in stock or out of stock. Empty rows are not saved. The shortcode [sidrena-cijena id="x"] shows the prices of this row on any page. For a single amount add prikaz="redovna", prikaz="akcijska" or prikaz="sidrena". Insert the whole table with the shortcode [sidrena-cjenik].', 'cx-sidrena' )
 				);
 				?>
 			</p>
@@ -109,8 +109,8 @@ defined( 'ABSPATH' ) || exit;
 								<th><?php echo esc_html__( 'Special form', 'cx-sidrena' ); ?></th>
 								<th><?php echo esc_html__( 'Unit of measure', 'cx-sidrena' ); ?></th>
 								<th><?php echo esc_html__( 'Price per unit', 'cx-sidrena' ); ?></th>
-								<th><?php echo esc_html__( 'Sidrena cijena', 'cx-sidrena' ); ?></th>
-								<th><?php echo esc_html__( 'Date of sidrena cijena', 'cx-sidrena' ); ?></th>
+								<th><?php echo esc_html__( 'Bazna cijena', 'cx-sidrena' ); ?></th>
+								<th><?php echo esc_html__( 'Date of bazna cijena', 'cx-sidrena' ); ?></th>
 								<?php if ( CX_Sidrena_Settings::instance()->is_cjm_enabled() ) : ?>
 								<th><?php echo esc_html__( 'CJM unit', 'cx-sidrena' ); ?></th>
 								<?php endif; ?>

@@ -107,6 +107,22 @@ class CX_Sidrena_Money {
 	}
 
 	/**
+	 * A date as the customer reads it next to a price: 10.9.2026. (no leading zeros, as in the draft regulation and the
+	 * screens' spec). Stored dates and the price list keep 10.09.2026.; anything that is not d.m.Y comes back unchanged.
+	 *
+	 * @param string $date Date, usually 10.09.2026.
+	 * @return string
+	 */
+	public static function customer_date( $date ) {
+		$date = trim( (string) $date );
+		if ( preg_match( '/^(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})\.?$/', $date, $m ) ) {
+			return (int) $m[1] . '.' . (int) $m[2] . '.' . $m[3] . '.';
+		}
+
+		return $date;
+	}
+
+	/**
 	 * proizvod or usluga. Anything else becomes proizvod.
 	 *
 	 * @param mixed $value Raw.

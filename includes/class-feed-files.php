@@ -243,17 +243,23 @@ class CX_Sidrena_Feed_Files {
 	}
 
 	/**
-	 * Public CSV/XML columns. Service-only feeds drop goods fields.
+	 * Public CSV/XML columns. Service-only feeds drop goods fields. poseban_oblik (da|ne) says whether the row is in a
+	 * special form of sale (draft 10332 art. 3(2)); dostupnost only when the owner turned it on (CX-SID-28).
 	 *
 	 * @param array<int, array<string, string>> $rows Rows.
 	 * @return array<int, string>
 	 */
 	public function public_column_keys( $rows ) {
 		if ( $this->feed_is_services_only( $rows ) ) {
-			return array( 'id', 'vrsta', 'naziv', 'url', 'maloprodajna_cijena', 'naziv_posebnog_oblika', 'sidrena_cijena', 'sidrena_datum' );
+			return array( 'id', 'vrsta', 'naziv', 'url', 'maloprodajna_cijena', 'poseban_oblik', 'naziv_posebnog_oblika', 'sidrena_cijena', 'sidrena_datum' );
 		}
 
-		return array( 'id', 'vrsta', 'naziv', 'sku', 'marka', 'url', 'jedinica_mjere', 'cijena_jedinice_mjere', 'maloprodajna_cijena', 'naziv_posebnog_oblika', 'sidrena_cijena', 'sidrena_datum', 'barkod', 'dostupnost' );
+		$keys = array( 'id', 'vrsta', 'naziv', 'sku', 'marka', 'url', 'jedinica_mjere', 'cijena_jedinice_mjere', 'maloprodajna_cijena', 'poseban_oblik', 'naziv_posebnog_oblika', 'sidrena_cijena', 'sidrena_datum', 'barkod' );
+		if ( CX_Sidrena_Settings::instance()->feed_has_dostupnost() ) {
+			$keys[] = 'dostupnost';
+		}
+
+		return $keys;
 	}
 
 	/**
@@ -503,9 +509,10 @@ class CX_Sidrena_Feed_Files {
 	 * @param array<int, array<string, string>> $rows           Rows.
 	 * @param string                            $root           Root element name.
 	 * @param bool                              $public_fields  Include id and url.
+	 * @param int                               $timestamp      Its generated time, 0 = now.
 	 * @return string
 	 */
-	public function build_xml_string( $rows, $root, $public_fields = false ) {
+	public function build_xml_string( $rows, $root, $public_fields = false, $timestamp = 0 ) {
 		$root = preg_replace( '/[^a-z0-9_\-]/i', '', $root );
 		if ( '' === $root ) {
 			$root = 'cjenik';
@@ -515,7 +522,7 @@ class CX_Sidrena_Feed_Files {
 		$tag  = $this->feed_is_services_only( $rows ) ? 'usluga' : 'proizvod';
 
 		$xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-		$xml .= '<' . $root . ' generated="' . $this->xml_value( gmdate( 'c' ) ) . '" count="' . $this->xml_value( (string) count( $rows ) ) . '" shop="' . $this->xml_value( home_url( '/' ) ) . '">' . "\n";
+		$xml .= '<' . $root . ' generated="' . $this->xml_value( CX_Sidrena_Archive::legal_date( 'c', $timestamp > 0 ? (int) $timestamp : null ) ) . '" count="' . $this->xml_value( (string) count( $rows ) ) . '" shop="' . $this->xml_value( home_url( '/' ) ) . '">' . "\n";
 
 		foreach ( $rows as $row ) {
 			$row_tag = ( isset( $row['vrsta'] ) && 'usluga' === $row['vrsta'] ) ? 'usluga' : $tag;
@@ -543,15 +550,17 @@ class CX_Sidrena_Feed_Files {
 	}
 
 	/**
-	 * Write one live feed file.
+	 * Publish one price list: the archive file and the live file (CX_Sidrena_Archive::publish()), then the HTML table.
 	 *
 	 * @param array<int, array<string, string>> $rows   Rows.
 	 * @param string                            $oznaka Outlet code, empty for the single shop feed.
+	 * @param array<string, mixed>|null         $outlet The outlet of that code, or null for the webshop.
 	 * @return array<string, mixed>|WP_Error
 	 */
-	public function write_feed_file( $rows, $oznaka = '' ) {
+	public function write_feed_file( $rows, $oznaka = '', $outlet = null ) {
 		$format = $this->export_format();
-		$body   = 'csv' === $format ? $this->build_csv_string( $rows ) : $this->build_xml_string( $rows, 'cjenik', true );
+		$now    = time(); // one instant: generated in the file, the time in its name, "Updated"
+		$body   = 'csv' === $format ? $this->build_csv_string( $rows ) : $this->build_xml_string( $rows, 'cjenik', true, $now );
 		$dir    = $this->get_public_dir();
 
 		if ( '' === $dir ) {
@@ -561,12 +570,19 @@ class CX_Sidrena_Feed_Files {
 		if ( ! wp_mkdir_p( $dir ) ) {
 			return new WP_Error( 'sidrena_xml_mkdir', __( 'The public price list folder could not be created.', 'cx-sidrena' ) );
 		}
+		$this->ensure_dir_index( $dir );
 
-		$path    = $this->get_public_path( $format, $oznaka );
-		$written = file_put_contents( $path, $body ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-
-		if ( false === $written ) {
-			return new WP_Error( 'sidrena_xml_write', __( 'The public price list could not be saved.', 'cx-sidrena' ) );
+		if ( '' === (string) $oznaka ) {
+			$outlet = null;
+		} elseif ( ! is_array( $outlet ) ) {
+			$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );
+			if ( ! is_array( $outlet ) ) {
+				return new WP_Error( 'sidrena_poslovnica_missing', __( 'The outlet has no published price list.', 'cx-sidrena' ) );
+			}
+		}
+		$published = CX_Sidrena_Archive::instance()->publish( $body, $format, $outlet, $now );
+		if ( is_wp_error( $published ) ) {
+			return $published;
 		}
 
 		$html_result = $this->write_cjenik_html( $rows, $oznaka );
@@ -575,11 +591,167 @@ class CX_Sidrena_Feed_Files {
 		}
 
 		return array(
-			'generated' => time(),
+			'generated' => $published['generated'],
+			'published' => $published['published'],
 			'count'     => count( $rows ),
-			'bytes'     => $written,
+			'bytes'     => $published['bytes'],
 			'format'    => $format,
+			'filename'  => $published['filename'],
+			'pohrana'   => $published['pohrana'],
+			'new'       => $published['new'],
 		);
+	}
+
+	/**
+	 * Write a public file in one step: the body goes to a temporary file in the same folder, which then replaces the
+	 * target with rename(). A request that reads the target meanwhile gets the old file or the new one, never part of
+	 * one (written straight into the target, a reader during the write got half a price list). The temporary name
+	 * starts with a dot and does not end in .xml/.csv/.html, so no list or route ever shows it.
+	 *
+	 * @param string $path Target.
+	 * @param string $body Content.
+	 * @return int|false Bytes written.
+	 */
+	public function write_atomic( $path, $body ) {
+		$tmp = $this->temp_path( $path );
+		// A folder the server cannot write to: the build returns its error (and keeps the old file) without a PHP warning
+		// on every build (Argus N1).
+		$put = @file_put_contents( $tmp, $body ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPress.PHP.NoSilencedErrors.Discouraged
+		if ( false === $put || strlen( $body ) !== $put ) {
+			$this->drop_temp( $tmp );
+			return false;
+		}
+
+		return $this->replace_with( $tmp, $path ) ? $put : false;
+	}
+
+	/**
+	 * Copy a file to a target in one step, as write_atomic().
+	 *
+	 * @param string $source Source file.
+	 * @param string $path   Target.
+	 * @return bool
+	 */
+	public function copy_atomic( $source, $path ) {
+		$tmp = $this->temp_path( $path );
+		if ( ! @copy( $source, $tmp ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			$this->drop_temp( $tmp );
+			return false;
+		}
+
+		return $this->replace_with( $tmp, $path );
+	}
+
+	/**
+	 * Temporary name next to the target.
+	 *
+	 * @param string $path Target.
+	 * @return string
+	 */
+	private function temp_path( $path ) {
+		return dirname( $path ) . '/.' . basename( $path ) . '.tmp-' . wp_generate_password( 12, false );
+	}
+
+	/**
+	 * Put a complete temporary file in place of the target. The temporary file never stays behind, also when
+	 * something in between throws.
+	 *
+	 * @param string $tmp  Complete temporary file.
+	 * @param string $path Target.
+	 * @return bool
+	 */
+	private function replace_with( $tmp, $path ) {
+		$done = false;
+		try {
+			// Test seam: the new content is complete and the target still holds the old one.
+			do_action( 'cx_sidrena_feed_tmp_written', $tmp, $path );
+			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename
+			$done = @rename( $tmp, $path );
+			if ( ! $done ) {
+				// A host whose rename() cannot replace a file: copy over it, as before, rather than no price list.
+				$done = @copy( $tmp, $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			}
+		} finally {
+			$this->drop_temp( $tmp );
+		}
+
+		return $done;
+	}
+
+	/**
+	 * @param string $tmp Temporary file.
+	 */
+	private function drop_temp( $tmp ) {
+		if ( file_exists( $tmp ) ) {
+			wp_delete_file( $tmp );
+		}
+	}
+
+	/**
+	 * After a build in one format, the live files of the other one go: a shop that moved from XML to CSV no longer
+	 * serves yesterday's XML as if it were current (its address now redirects, CX_Sidrena_Feed_Routes). Archived files
+	 * of either format stay, they were published.
+	 *
+	 * @param string $format The format just built, xml|csv.
+	 * @return int Files removed.
+	 */
+	public function remove_other_format_live( $format ) {
+		$dir = $this->get_public_dir();
+		if ( '' === $dir || ! is_dir( $dir ) ) {
+			return 0;
+		}
+
+		$other   = 'csv' === $this->sanitize_ext( $format ) ? 'xml' : 'csv';
+		$stem    = trailingslashit( $dir ) . CX_Sidrena_Export::PUBLIC_STEM;
+		$found   = array_merge( glob( $stem . '.' . $other ) ?: array(), glob( $stem . '-*.' . $other ) ?: array() );
+		$removed = 0;
+		foreach ( $found as $path ) {
+			if ( is_file( $path ) ) {
+				wp_delete_file( $path );
+				$removed += file_exists( $path ) ? 0 : 1;
+			}
+		}
+
+		return $removed;
+	}
+
+	/**
+	 * An empty index.php in a folder, when it has none. uploads/cx-sidrena holds the kept folder, whose random name is
+	 * its protection: on a host that lists folders (Apache Options Indexes, nginx autoindex) the listing would show it
+	 * (Argus N1, CX-SID-27; arhiva/ and cuvano-* have their own).
+	 *
+	 * @param string $dir Folder.
+	 */
+	public function ensure_dir_index( $dir ) {
+		$index = trailingslashit( $dir ) . 'index.php';
+		if ( is_dir( $dir ) && ! file_exists( $index ) ) {
+			@file_put_contents( $index, "<?php\n// Silence.\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPress.PHP.NoSilencedErrors.Discouraged -- a read-only folder: the build reports its own error
+		}
+	}
+
+	/**
+	 * Remove every live price list (webshop and outlets, both formats) and its HTML table: a shop that sells only to
+	 * businesses publishes none (CX-SID-28). The archive folders are not touched: what was published stays as CX-SID-27
+	 * keeps it.
+	 *
+	 * @return int Files removed.
+	 */
+	public function remove_live_files() {
+		$dir = $this->get_public_dir();
+		if ( '' === $dir || ! is_dir( $dir ) ) {
+			return 0;
+		}
+
+		$stem    = trailingslashit( $dir ) . CX_Sidrena_Export::PUBLIC_STEM;
+		$removed = 0;
+		foreach ( glob( $stem . '*' ) ?: array() as $path ) {
+			if ( is_file( $path ) && preg_match( '/\.(xml|csv|html)$/', $path ) ) {
+				wp_delete_file( $path );
+				$removed += file_exists( $path ) ? 0 : 1;
+			}
+		}
+
+		return $removed;
 	}
 
 	/**
@@ -607,7 +779,7 @@ class CX_Sidrena_Feed_Files {
 			}
 		);
 		$body = '<!-- sidrena-count:' . count( $rows ) . " -->\n" . $html;
-		$written = file_put_contents( $path, $body ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		$written = $this->write_atomic( $path, $body );
 
 		if ( false === $written ) {
 			return new WP_Error( 'sidrena_cjenik_write', __( 'The HTML price list could not be saved.', 'cx-sidrena' ) );
@@ -648,7 +820,8 @@ class CX_Sidrena_Feed_Files {
 			return $html;
 		}
 
-		$columns = $this->cjenik_visible_columns( $rows );
+		$columns    = $this->cjenik_visible_columns( $rows );
+		$with_stock = isset( $columns['dostupnost'] );
 
 		$html .= '<div class="cjenik-table-wrap"><table class="cjenik-table">';
 		$html .= '<thead><tr>';
@@ -673,7 +846,7 @@ class CX_Sidrena_Feed_Files {
 			$stock_label = 'nedostupno' === $dostupnost
 				? __( 'Out of stock', 'cx-sidrena' )
 				: __( 'In stock', 'cx-sidrena' );
-			$search_src  = $naziv . ' ' . $sku . ' ' . $marka . ' ' . $barkod . ' ' . $jedinica . ' ' . $oblik . ' ' . $vrsta_label . ' ' . $stock_label;
+			$search_src  = $naziv . ' ' . $sku . ' ' . $marka . ' ' . $barkod . ' ' . $jedinica . ' ' . $oblik . ' ' . $vrsta_label . ( $with_stock ? ' ' . $stock_label : '' );
 			$search      = function_exists( 'mb_strtolower' ) ? mb_strtolower( $search_src, 'UTF-8' ) : strtolower( $search_src );
 
 			$naziv_html = '' !== $url
@@ -912,6 +1085,11 @@ JS;
 			}
 		}
 
+		// The availability column only when the owner turned it on, as in the files (CX-SID-28).
+		if ( ! CX_Sidrena_Settings::instance()->feed_has_dostupnost() ) {
+			unset( $filled['dostupnost'] );
+		}
+
 		$out = array();
 		foreach ( $all as $key => $column ) {
 			if ( ! empty( $column['always'] ) || isset( $filled[ $key ] ) ) {
@@ -958,6 +1136,11 @@ JS;
 	 * @return string
 	 */
 	public function cjenik_snapshot_embed( $oznaka, $dom_id ) {
+		// A shop that sells only to businesses publishes no price list, so the shortcode prints nothing (CX-SID-28).
+		if ( CX_Sidrena_Settings::instance()->is_b2b_only() ) {
+			return '';
+		}
+
 		$oznaka = CX_Sidrena_Settings::instance()->normalize_oznaka( $oznaka );
 		if ( '' !== $oznaka ) {
 			$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );

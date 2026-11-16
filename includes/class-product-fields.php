@@ -41,22 +41,11 @@ class CX_Sidrena_Product_Fields {
 
 		echo '<div class="options_group sidrena-cijena-admin-fields">';
 
-		echo '<div class="sidrena-cijena-price-row">';
-
-		woocommerce_wp_text_input(
-			array(
-				'id'          => 'sidrena_cijena',
-				'name'        => 'sidrena_cijena',
-				'label'       => __( 'Sidrena cijena', 'cx-sidrena' ) . ' (' . get_woocommerce_currency_symbol() . ')',
-				'desc_tip'    => true,
-				'description' => __( 'Regular retail price on the reference day (2 May 2025 for FMCG, 10 September 2026 for everything else). Enter it in the same format as the regular price (with or without VAT, per WooCommerce tax settings). Do not enter the sale price.', 'cx-sidrena' ),
-				'value'       => $meta->get_price( $product_id ),
-				'data_type'   => 'price',
-				'wrapper_class' => 'sidrena-cijena-price-field',
-			)
-		);
+		// Bazna cijena: read-only line + Change (spec §1.6); no free field that could change it by accident.
+		$this->render_bazna( (int) $product_id, null );
 
 		if ( $cjm_on ) {
+			echo '<div class="sidrena-cijena-price-row">';
 			$this->render_cjm_controls(
 				$product_id,
 				'sidrena_cijena_cjm',
@@ -64,21 +53,8 @@ class CX_Sidrena_Product_Fields {
 				$meta->is_cjm_enabled( $product_id ),
 				$meta->get_cjm_suffix( $product_id )
 			);
+			echo '</div>';
 		}
-
-		echo '</div>';
-
-		woocommerce_wp_text_input(
-			array(
-				'id'          => 'sidrena_cijena_datum',
-				'name'        => 'sidrena_cijena_datum',
-				'label'       => __( 'Reference date', 'cx-sidrena' ),
-				'placeholder' => CX_Sidrena_Settings::instance()->get( 'default_date' ),
-				'desc_tip'    => true,
-				'description' => __( 'Leave empty for the default date from settings. For food, beverages, cosmetics, and household: 02.05.2025.', 'cx-sidrena' ),
-				'value'       => $meta->get_date( $product_id ),
-			)
-		);
 
 		woocommerce_wp_text_input(
 			array(
@@ -117,6 +93,91 @@ class CX_Sidrena_Product_Fields {
 		);
 
 		echo '</div>';
+	}
+
+	/**
+	 * The bazna cijena of one product or variation, read-only, with Change (spec §1.6, CX-SID-24).
+	 *
+	 * Change opens three fields whose inputs stay disabled until then, so an unopened line posts nothing and a save can
+	 * never change the bazna by accident (MJDD's free field, and the empty field that wiped a new variation's bazna).
+	 * Saved by CX_Sidrena_Fields::save_change() through CX_Sidrena_History::set_bazna() (history and source: CX-SID-20).
+	 *
+	 * @param int      $id   Product or variation.
+	 * @param int|null $loop Variation loop index; null for a simple product.
+	 */
+	public function render_bazna( $id, $loop ) {
+		$meta    = CX_Sidrena_Product_Meta::instance();
+		$product = wc_get_product( $id );
+		$amount  = $meta->get_price( $id );
+		$rule    = CX_Sidrena_Dates::date_for( $id );
+		$name    = null === $loop ? 'cx_bazna' : 'cx_bazna_var[' . (int) $loop . ']';
+		$dom     = 'cx-bazna-' . ( null === $loop ? 'p' : 'v' . (int) $loop );
+		$own     = trim( $meta->get_date( $id ) );
+
+		if ( '' !== trim( $amount ) ) {
+			$from  = isset( $rule['from'] ) ? (string) $rule['from'] : '';
+			$where = 'added' === $from ? __( '(day added)', 'cx-sidrena' ) : ( in_array( $from, array( 'category', 'other' ), true ) ? __( '(from category)', 'cx-sidrena' ) : '' );
+			$parts = array(
+				wc_price( (float) $amount ),
+				esc_html( self::short_date( (string) $rule['date'] ) ) . ( '' !== $where ? ' <small>' . esc_html( $where ) . '</small>' : '' ),
+				esc_html( CX_Sidrena_History::izvor_label( CX_Sidrena_History::izvor( $id ) ) ),
+			);
+			$text  = implode( ' · ', array_filter( $parts ) );
+			$class = 'cx-bazna';
+		} elseif ( $product && CX_Sidrena_Dates::fills_on_save( $product ) ) {
+			$text  = esc_html__( 'No bazna cijena yet. It will be set from the regular price when you save.', 'cx-sidrena' );
+			$class = 'cx-bazna cx-bazna--missing';
+		} elseif ( $product && '' !== (string) $product->get_regular_price() ) {
+			// An existing product the rule will not fill (MJDD's trap: today's date on an old product): Status lists it.
+			$text  = esc_html__( 'No bazna cijena. It is listed on Status under Needs attention.', 'cx-sidrena' )
+				. ' <a href="' . esc_url( CX_Sidrena_Admin_Status::url() . '#cx-attention' ) . '">' . esc_html__( 'Open Status', 'cx-sidrena' ) . '</a>';
+			$class = 'cx-bazna cx-bazna--missing';
+		} else {
+			$text  = esc_html__( 'No bazna cijena.', 'cx-sidrena' );
+			$class = 'cx-bazna cx-bazna--missing';
+		}
+
+		$prefill  = '' !== trim( $amount ) ? $amount : ( $product ? (string) $product->get_regular_price() : '' );
+		$row_open = null === $loop ? '<p class="form-field %s">' : '<p class="form-row form-row-full %s">';
+		?>
+		<div class="<?php echo esc_attr( $class ); ?>" id="<?php echo esc_attr( $dom ); ?>">
+			<?php printf( $row_open, 'cx-bazna__line' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+				<label><?php echo esc_html__( 'Bazna cijena', 'cx-sidrena' ); ?></label>
+				<span class="cx-bazna__text"><?php echo wp_kses_post( $text ); ?></span>
+				<button type="button" class="button-link cx-bazna__toggle" aria-expanded="false" aria-controls="<?php echo esc_attr( $dom . '-edit' ); ?>"><?php echo esc_html__( 'Change', 'cx-sidrena' ); ?></button>
+			</p>
+			<div class="cx-bazna__edit" id="<?php echo esc_attr( $dom . '-edit' ); ?>" hidden>
+				<input type="hidden" name="<?php echo esc_attr( $name . '[open]' ); ?>" value="1" disabled />
+				<?php printf( $row_open, 'cx-bazna__field' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+					<label for="<?php echo esc_attr( $dom . '-amount' ); ?>"><?php echo esc_html__( 'Bazna cijena', 'cx-sidrena' ) . ' (' . esc_html( get_woocommerce_currency_symbol() ) . ')'; ?></label>
+					<input type="text" class="short wc_input_price" id="<?php echo esc_attr( $dom . '-amount' ); ?>" name="<?php echo esc_attr( $name . '[amount]' ); ?>" value="<?php echo esc_attr( wc_format_localized_price( $prefill ) ); ?>" disabled />
+				</p>
+				<?php printf( $row_open, 'cx-bazna__field' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+					<label for="<?php echo esc_attr( $dom . '-date' ); ?>"><?php echo esc_html__( 'Date', 'cx-sidrena' ); ?></label>
+					<input type="text" class="short cx-bazna__date" id="<?php echo esc_attr( $dom . '-date' ); ?>" name="<?php echo esc_attr( $name . '[date]' ); ?>" value="<?php echo esc_attr( '' !== $own ? self::short_date( $own ) : '' ); ?>" placeholder="<?php echo esc_attr( self::short_date( (string) $rule['date'] ) ); ?>" autocomplete="off" disabled />
+					<?php /* translators: %s: the date by the rule, e.g. 10.9.2026. */ ?>
+					<span class="description"><?php echo esc_html( sprintf( __( 'Empty: the date by the rule (%s).', 'cx-sidrena' ), self::short_date( (string) $rule['date'] ) ) ); ?></span>
+				</p>
+				<?php printf( $row_open, 'cx-bazna__field' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+					<label for="<?php echo esc_attr( $dom . '-reason' ); ?>"><?php echo esc_html__( 'Reason', 'cx-sidrena' ); ?></label>
+					<input type="text" class="short" id="<?php echo esc_attr( $dom . '-reason' ); ?>" name="<?php echo esc_attr( $name . '[reason]' ); ?>" value="" maxlength="200" disabled />
+					<span class="description"><?php echo esc_html__( 'Optional. Kept in the price history.', 'cx-sidrena' ); ?></span>
+				</p>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * "10.09.2026." as the owner reads it: "10.9.2026.".
+	 *
+	 * @param string $date Stored date.
+	 * @return string
+	 */
+	public static function short_date( $date ) {
+		$d = DateTime::createFromFormat( '!d.m.Y', rtrim( trim( (string) $date ), '.' ) );
+
+		return $d ? $d->format( 'j.n.Y.' ) : trim( (string) $date );
 	}
 
 	/**
@@ -163,12 +224,9 @@ class CX_Sidrena_Product_Fields {
 		$cjm    = $meta->is_cjm_enabled( $id );
 		?>
 		<div class="sidrena-cijena-variation-fields">
-			<p class="form-row form-row-first">
-				<label><?php echo esc_html__( 'Sidrena cijena', 'cx-sidrena' ) . ' (' . esc_html( get_woocommerce_currency_symbol() ) . ')'; ?></label>
-				<input type="text" class="short wc_input_price" name="sidrena_cijena[<?php echo esc_attr( (string) $loop ); ?>]" value="<?php echo esc_attr( wc_format_localized_price( $meta->get_price( $id ) ) ); ?>" />
-			</p>
+			<?php $this->render_bazna( (int) $id, (int) $loop ); ?>
 			<?php if ( $cjm_on ) : ?>
-				<p class="form-row form-row-last sidrena-cijena-cjm">
+				<p class="form-row form-row-full sidrena-cijena-cjm">
 					<label><?php echo esc_html__( 'CJM', 'cx-sidrena' ); ?></label>
 					<?php
 					CX_Sidrena_Admin::instance()->render_toggle(
@@ -186,18 +244,14 @@ class CX_Sidrena_Product_Fields {
 				</p>
 			<?php endif; ?>
 			<p class="form-row form-row-first">
-				<label><?php echo esc_html__( 'Reference date', 'cx-sidrena' ); ?></label>
-				<input type="text" class="short" name="sidrena_cijena_datum[<?php echo esc_attr( (string) $loop ); ?>]" value="<?php echo esc_attr( $meta->get_date( $id ) ); ?>" placeholder="<?php echo esc_attr( CX_Sidrena_Settings::instance()->get( 'default_date' ) ); ?>" />
-			</p>
-			<p class="form-row form-row-last">
 				<label><?php echo esc_html__( 'Name of special form of sale', 'cx-sidrena' ); ?></label>
 				<input type="text" class="short" name="sidrena_naziv_posebnog_oblika[<?php echo esc_attr( (string) $loop ); ?>]" value="<?php echo esc_attr( $meta->get_oblik( $id ) ); ?>" placeholder="akcija" />
 			</p>
-			<p class="form-row form-row-first">
+			<p class="form-row form-row-last">
 				<label><?php echo esc_html__( 'Unit of measure', 'cx-sidrena' ); ?></label>
 				<input type="text" class="short" name="sidrena_jedinica_mjere[<?php echo esc_attr( (string) $loop ); ?>]" value="<?php echo esc_attr( $meta->get_jedinica( $id ) ); ?>" placeholder="kg" />
 			</p>
-			<p class="form-row form-row-last">
+			<p class="form-row form-row-first">
 				<label><?php echo esc_html__( 'Unit price', 'cx-sidrena' ) . ' (' . esc_html( get_woocommerce_currency_symbol() ) . ')'; ?></label>
 				<input type="text" class="short wc_input_price" name="sidrena_cijena_jedinice_mjere[<?php echo esc_attr( (string) $loop ); ?>]" value="<?php echo esc_attr( wc_format_localized_price( $meta->get_jedinica_cijena( $id ) ) ); ?>" />
 			</p>

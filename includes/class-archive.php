@@ -13,6 +13,31 @@ defined( 'ABSPATH' ) || exit;
 class CX_Sidrena_Archive {
 
 	/**
+	 * The clock of the law the plugin is for.
+	 */
+	const LEGAL_TIMEZONE = 'Europe/Zagreb';
+
+	/**
+	 * Days before the newest file of a price list that its files stay public (nacrt 10332 čl. 3 st. 5).
+	 */
+	const PUBLIC_DAYS = 30;
+
+	/**
+	 * Folder of the kept files: uploads/cx-sidrena/cuvano-<random>, out of public reach.
+	 */
+	const KEPT_PREFIX = 'cuvano-';
+
+	/**
+	 * admin-post action that sends one kept file to the owner.
+	 */
+	const KEPT_ACTION = 'cx_sidrena_kept_download';
+
+	/**
+	 * Kept files listed on the Settings screen.
+	 */
+	const KEPT_LIST_MAX = 100;
+
+	/**
 	 * Singleton.
 	 *
 	 * @var self|null
@@ -31,11 +56,46 @@ class CX_Sidrena_Archive {
 	}
 
 	/**
+	 * The owner's download of a kept file. Also without WooCommerce (a shop that only presents its prices).
+	 */
+	public static function register() {
+		add_action( 'admin_post_' . self::KEPT_ACTION, array( __CLASS__, 'download_kept' ) );
+	}
+
+	/**
+	 * Time zone of everything an inspector reads: the time in a file name, "today" of the archive, the morning build,
+	 * the generated time in a file and on the public pages. Croatian law, Croatian clock, whatever zone the site is set
+	 * to (a shop left on UTC named its files an hour or two early and started "today" after midnight). Admin screens
+	 * keep the site's own settings.
+	 *
+	 * @return DateTimeZone
+	 */
+	public static function legal_timezone() {
+		$name = apply_filters( 'cx_sidrena_legal_timezone', self::LEGAL_TIMEZONE );
+		try {
+			return new DateTimeZone( is_string( $name ) && '' !== $name ? $name : self::LEGAL_TIMEZONE );
+		} catch ( Exception $e ) {
+			return new DateTimeZone( self::LEGAL_TIMEZONE );
+		}
+	}
+
+	/**
+	 * A time on the legal clock.
+	 *
+	 * @param string   $format    PHP date format.
+	 * @param int|null $timestamp Unix time, null = now.
+	 * @return string
+	 */
+	public static function legal_date( $format, $timestamp = null ) {
+		return wp_date( $format, null === $timestamp ? time() : (int) $timestamp, self::legal_timezone() );
+	}
+
+	/**
 	 * Archive name from the 18 September 2026 ministry example:
 	 * prodavaonica_Ilica 150 Zagreb_P-01_104_01.10.2026_07:45.xml
 	 *
 	 * Spaces, hyphens, and the typed case stay. Date is DD.MM.YYYY and time
-	 * is HH:MM in the site timezone. A Windows disk cannot store the colon,
+	 * is HH:MM on the legal clock (legal_timezone). A Windows disk cannot store the colon,
 	 * so that server writes 07-45 instead.
 	 *
 	 * @param string              $format    xml|csv.
@@ -47,7 +107,7 @@ class CX_Sidrena_Archive {
 	public function legal_filename( $format = '', $timestamp = 0, $pohrana = 0, $outlet = null ) {
 		$settings = CX_Sidrena_Settings::instance();
 		$format   = '' === $format ? CX_Sidrena_Feed_Files::instance()->export_format() : CX_Sidrena_Feed_Files::instance()->sanitize_ext( $format );
-		$tz       = wp_timezone();
+		$tz       = self::legal_timezone();
 		$dt       = $timestamp > 0 ? new DateTime( '@' . (int) $timestamp ) : new DateTime( 'now', $tz );
 		$dt->setTimezone( $tz );
 
@@ -124,25 +184,27 @@ class CX_Sidrena_Archive {
 	}
 
 	/**
-	 * Copy today's live feed into the rolling 30-day archive.
+	 * Publish one price list, the webshop's or one outlet's (CX-SID-27). A new archive file whenever what it says
+	 * differs from the newest file of that object code, and with the first build of each day (the morning file); the
+	 * live file is then a byte copy of it. An archive file is never written over: a new one gets the next storage
+	 * number and the time of this build in its name.
 	 *
-	 * A calendar day keeps one file per object code. Regenerating that day
-	 * replaces the file and does not advance the storage number.
+	 * The same content as the newest file, which is from today and has the same name parts and format: nothing new is
+	 * written (an order that only moved a stock count), the live file is made sure to be that file. "The same" leaves
+	 * out the generated time in the XML.
 	 *
-	 * @return string|WP_Error Destination path or error.
+	 * @param string                    $body      Price list in $format.
+	 * @param string                    $format    xml|csv.
+	 * @param array<string, mixed>|null $outlet    Outlet, or null for the webshop.
+	 * @param int                       $timestamp When the body was made (its generated time), 0 = now.
+	 * @return array{filename:string,pohrana:int,generated:int,published:int,new:bool,bytes:int}|WP_Error
+	 *         generated = this build; published = the moment of the file now live (its name's time).
 	 */
-	public function archive_public_xml() {
-		if ( CX_Sidrena_Settings::instance()->is_multi_poslovnica() ) {
-			return $this->archive_poslovnice();
-		}
-
-		$format = CX_Sidrena_Feed_Files::instance()->export_format();
-		$source = CX_Sidrena_Feed_Files::instance()->get_public_path( $format );
-		if ( ! file_exists( $source ) ) {
-			return new WP_Error( 'sidrena_xml_archive_source', __( 'The public price list does not exist yet.', 'cx-sidrena' ) );
-		}
-
-		$dir = $this->get_archive_dir();
+	public function publish( $body, $format, $outlet = null, $timestamp = 0 ) {
+		$ff        = CX_Sidrena_Feed_Files::instance();
+		$format    = $ff->sanitize_ext( $format );
+		$timestamp = $timestamp > 0 ? (int) $timestamp : time();
+		$dir       = $this->get_archive_dir();
 		if ( '' === $dir || ! wp_mkdir_p( $dir ) ) {
 			return new WP_Error( 'sidrena_xml_archive_mkdir', __( 'The archive folder could not be created.', 'cx-sidrena' ) );
 		}
@@ -152,25 +214,220 @@ class CX_Sidrena_Archive {
 			file_put_contents( $index, "<?php\ndefined( 'ABSPATH' ) || exit;\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 		}
 
+		$oznaka = $this->scope_oznaka( $outlet );
+		$live   = $ff->get_public_path( $format, is_array( $outlet ) && isset( $outlet['oznaka'] ) ? $outlet['oznaka'] : '' );
+		$newest = $this->newest_file( $oznaka );
+
+		if ( null !== $newest && $this->is_current( $newest, $body, $format, $outlet, $timestamp ) ) {
+			if ( ! file_exists( $live ) || hash_file( 'sha256', $live ) !== hash_file( 'sha256', $newest['path'] ) ) {
+				if ( ! $ff->copy_atomic( $newest['path'], $live ) ) {
+					return new WP_Error( 'sidrena_xml_write', __( 'The public price list could not be saved.', 'cx-sidrena' ) );
+				}
+			}
+
+			return array(
+				'filename'  => $newest['name'],
+				'pohrana'   => $this->archive_pohrana_from_name( $newest['name'] ),
+				'generated' => $timestamp,
+				'published' => $this->archive_file_timestamp( $newest['name'], $newest['path'] ),
+				'new'       => false,
+				'bytes'     => (int) filesize( $newest['path'] ),
+			);
+		}
+
+		$pohrana = $this->next_pohrana( $oznaka, $outlet );
+		$name    = $this->legal_filename( $format, $timestamp, $pohrana, $outlet );
+		for ( $tries = 0; $this->name_taken( $name ) && $tries < 1000; $tries++ ) {
+			++$pohrana;
+			$name = $this->legal_filename( $format, $timestamp, $pohrana, $outlet );
+		}
+		if ( $this->name_taken( $name ) ) {
+			return new WP_Error( 'sidrena_xml_archive_copy', __( 'The archive price list could not be saved.', 'cx-sidrena' ) );
+		}
+
+		$path    = trailingslashit( $dir ) . $name;
+		$written = $ff->write_atomic( $path, $body );
+		if ( false === $written ) {
+			return new WP_Error( 'sidrena_xml_archive_copy', __( 'The archive price list could not be saved.', 'cx-sidrena' ) );
+		}
+		if ( ! $ff->copy_atomic( $path, $live ) ) {
+			return new WP_Error( 'sidrena_xml_write', __( 'The public price list could not be saved.', 'cx-sidrena' ) );
+		}
+
+		if ( is_array( $outlet ) && isset( $outlet['id'] ) ) {
+			CX_Sidrena_Poslovnice::instance()->set_pohrana( $outlet['id'], $pohrana + 1 );
+		} else {
+			CX_Sidrena_Settings::instance()->save( array( 'file_pohrana' => $pohrana + 1 ) );
+		}
+
+		// The new file can push older ones out of the public 30 days.
+		$this->move_old();
+
+		return array(
+			'filename'  => $name,
+			'pohrana'   => $pohrana,
+			'generated' => $timestamp,
+			'published' => $timestamp,
+			'new'       => true,
+			'bytes'     => (int) $written,
+		);
+	}
+
+	/**
+	 * Whether the newest file already is this price list: same format, same name parts, from today, same content.
+	 *
+	 * @param array<string, mixed>      $newest    Newest archive file of the object code.
+	 * @param string                    $body      New body.
+	 * @param string                    $format    xml|csv.
+	 * @param array<string, mixed>|null $outlet    Outlet, or null.
+	 * @param int                       $timestamp This build.
+	 * @return bool
+	 */
+	private function is_current( $newest, $body, $format, $outlet, $timestamp ) {
+		if ( $newest['ext'] !== $format ) {
+			return false;
+		}
+		if ( $this->name_key( $newest['name'] ) !== $this->name_key( $this->legal_filename( $format, $timestamp, 1, $outlet ) ) ) {
+			return false;
+		}
+		if ( $newest['date'] !== self::legal_date( 'd-m-Y', $timestamp ) ) {
+			return false; // the first build of a day always leaves its own file
+		}
+
+		$old = file_get_contents( $newest['path'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+
+		return is_string( $old ) && self::without_generated( $old ) === self::without_generated( $body );
+	}
+
+	/**
+	 * A price list without the moment it was made (the XML root's generated attribute).
+	 *
+	 * @param string $body File content.
+	 * @return string
+	 */
+	public static function without_generated( $body ) {
+		return (string) preg_replace( '/(<cjenik\b[^>]*?)\s+generated="[^"]*"/', '$1', (string) $body, 1 );
+	}
+
+	/**
+	 * What a file name says besides storage number, date and time: oblik_adresa_oznaka and the format.
+	 *
+	 * @param string $name Legal basename.
+	 * @return string
+	 */
+	public function name_key( $name ) {
+		$parts = explode( '_', (string) pathinfo( $name, PATHINFO_FILENAME ) );
+
+		return implode( '_', array_slice( $parts, 0, 3 ) ) . '.' . strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) );
+	}
+
+	/**
+	 * Name key of the next file with the settings as they are now, for the webshop or one outlet.
+	 *
+	 * @param array<string, mixed>|null $outlet Outlet, or null for the webshop.
+	 * @return string
+	 */
+	public function current_name_key( $outlet = null ) {
+		return $this->name_key( $this->legal_filename( '', time(), 1, $outlet ) );
+	}
+
+	/**
+	 * Object code a scope's files carry.
+	 *
+	 * @param array<string, mixed>|null $outlet Outlet, or null for the webshop.
+	 * @return string
+	 */
+	private function scope_oznaka( $outlet ) {
 		$settings = CX_Sidrena_Settings::instance();
-		$pohrana  = $settings->sanitize_pohrana( $settings->get( 'file_pohrana', 1 ) );
-		$placed   = $this->place_daily_archive( $dir, $source, $format, $pohrana, null );
-		if ( is_wp_error( $placed ) ) {
-			return $placed;
+		$oznaka   = is_array( $outlet )
+			? $settings->normalize_oznaka( isset( $outlet['oznaka'] ) ? $outlet['oznaka'] : '' )
+			: $settings->normalize_oznaka( $settings->get( 'file_oznaka', '001' ) );
+
+		return '' !== $oznaka ? $oznaka : '001';
+	}
+
+	/**
+	 * Newest archive file of an object code.
+	 *
+	 * @param string $oznaka Object code.
+	 * @return array<string, mixed>|null
+	 */
+	private function newest_file( $oznaka ) {
+		foreach ( $this->get_archive_files() as $file ) {
+			if ( $this->archive_oznaka_from_name( $file['name'] ) === $oznaka ) {
+				return $file;
+			}
 		}
 
-		if ( empty( $placed['replaced'] ) ) {
-			$settings->save( array( 'file_pohrana' => $pohrana + 1 ) );
+		return null;
+	}
+
+	/**
+	 * Every archive file name of the shop, for the storage numbers and for names already used.
+	 *
+	 * @return array<int, string>
+	 */
+	private function all_archive_names() {
+		$names = array();
+		foreach ( $this->get_archive_files() as $file ) {
+			$names[] = $file['name'];
+		}
+		foreach ( $this->kept_files() as $file ) {
+			$names[] = $file['name'];
 		}
 
-		$meta             = CX_Sidrena_Export::instance()->get_public_meta();
-		$meta['filename'] = $placed['filename'];
-		$meta['pohrana']  = $placed['pohrana'];
-		update_option( CX_Sidrena_Export::PUBLIC_OPTION, $meta );
+		return $names;
+	}
 
-		$this->prune_archive();
+	/**
+	 * Whether a file of that name exists already.
+	 *
+	 * @param string $name Legal basename.
+	 * @return bool
+	 */
+	private function name_taken( $name ) {
+		return in_array( $name, $this->all_archive_names(), true );
+	}
 
-		return $placed['path'];
+	/**
+	 * Next storage number of an object code: the stored counter, or one above the highest number in a file name of
+	 * that code, whichever is higher. So a shop whose settings were lost (uninstalled and installed again) goes on
+	 * from its files, and an owner who typed a higher number keeps it.
+	 *
+	 * @param string                    $oznaka Object code.
+	 * @param array<string, mixed>|null $outlet Outlet, or null for the webshop.
+	 * @return int
+	 */
+	public function next_pohrana( $oznaka, $outlet = null ) {
+		$settings = CX_Sidrena_Settings::instance();
+		$stored   = is_array( $outlet )
+			? $settings->sanitize_pohrana( isset( $outlet['pohrana'] ) ? $outlet['pohrana'] : 1 )
+			: $settings->sanitize_pohrana( $settings->get( 'file_pohrana', 1 ) );
+		$highest  = 0;
+		foreach ( $this->all_archive_names() as $name ) {
+			if ( $this->archive_oznaka_from_name( $name ) === $oznaka ) {
+				$highest = max( $highest, $this->archive_pohrana_from_name( $name ) );
+			}
+		}
+
+		return max( $stored, $highest + 1 );
+	}
+
+	/**
+	 * The archive is written by the build itself (publish(), under the rebuild lock). Kept for callers that still run
+	 * it after regenerate_public_xml(): the webshop's newest published file.
+	 *
+	 * @return string|WP_Error Path or error.
+	 */
+	public function archive_public_xml() {
+		$meta = CX_Sidrena_Export::instance()->get_public_meta();
+		$name = isset( $meta['filename'] ) ? $this->sanitize_archive_name( $meta['filename'] ) : '';
+		$path = '' !== $name ? trailingslashit( $this->get_archive_dir() ) . $name : '';
+		if ( '' === $path || ! file_exists( $path ) ) {
+			return new WP_Error( 'sidrena_xml_archive_source', __( 'The public price list does not exist yet.', 'cx-sidrena' ) );
+		}
+
+		return $path;
 	}
 
 	/**
@@ -221,42 +478,17 @@ class CX_Sidrena_Archive {
 				if ( 0 !== $cmp ) {
 					return $cmp;
 				}
+				// Two files in the same minute: the higher storage number is the later one ("_10_" sorts before "_9_").
+				$cmp = $this->archive_pohrana_from_name( $b['name'] ) <=> $this->archive_pohrana_from_name( $a['name'] );
+				if ( 0 !== $cmp ) {
+					return $cmp;
+				}
 
 				return strcmp( $b['name'], $a['name'] );
 			}
 		);
 
 		return $files;
-	}
-
-	/**
-	 * Keep at most 30 archive files; drop the oldest.
-	 */
-	public function prune_archive() {
-		$files = $this->get_archive_files();
-		if ( CX_Sidrena_Settings::instance()->is_multi_poslovnica() ) {
-			$groups = array();
-			foreach ( $files as $file ) {
-				$key               = $this->archive_group_key( $file['name'] );
-				$groups[ $key ][]  = $file;
-			}
-			foreach ( $groups as $group ) {
-				$extra = array_slice( $group, CX_Sidrena_Export::ARCHIVE_MAX );
-				foreach ( $extra as $old ) {
-					if ( ! empty( $old['path'] ) && file_exists( $old['path'] ) ) {
-						wp_delete_file( $old['path'] );
-					}
-				}
-			}
-			return;
-		}
-
-		while ( count( $files ) > CX_Sidrena_Export::ARCHIVE_MAX ) {
-			$old = array_pop( $files );
-			if ( ! empty( $old['path'] ) && file_exists( $old['path'] ) ) {
-				wp_delete_file( $old['path'] );
-			}
-		}
 	}
 
 	/**
@@ -368,7 +600,7 @@ class CX_Sidrena_Archive {
 		}
 
 		if ( preg_match( '/_(\d{8})_\d{4}\.(xml|csv)$/', $name, $match ) ) {
-			$parsed = DateTime::createFromFormat( '!Ymd', $match[1], wp_timezone() );
+			$parsed = DateTime::createFromFormat( '!Ymd', $match[1], self::legal_timezone() );
 			return $parsed instanceof DateTime ? $parsed->format( 'd-m-Y' ) : $match[1];
 		}
 
@@ -388,14 +620,14 @@ class CX_Sidrena_Archive {
 	 */
 	public function archive_file_timestamp( $name, $path ) {
 		if ( preg_match( '/_(\d{2})\.(\d{2})\.(\d{4})_(\d{2})[:\-](\d{2})\.(xml|csv)$/', $name, $match ) ) {
-			$parsed = DateTime::createFromFormat( '!d.m.Y H:i', $match[1] . '.' . $match[2] . '.' . $match[3] . ' ' . $match[4] . ':' . $match[5], wp_timezone() );
+			$parsed = DateTime::createFromFormat( '!d.m.Y H:i', $match[1] . '.' . $match[2] . '.' . $match[3] . ' ' . $match[4] . ':' . $match[5], self::legal_timezone() );
 			if ( $parsed instanceof DateTime ) {
 				return $parsed->getTimestamp();
 			}
 		}
 
 		if ( preg_match( '/_(\d{8})_(\d{4})\.(xml|csv)$/', $name, $match ) ) {
-			$parsed = DateTime::createFromFormat( '!YmdHi', $match[1] . $match[2], wp_timezone() );
+			$parsed = DateTime::createFromFormat( '!YmdHi', $match[1] . $match[2], self::legal_timezone() );
 			if ( $parsed instanceof DateTime ) {
 				return $parsed->getTimestamp();
 			}
@@ -419,35 +651,8 @@ class CX_Sidrena_Archive {
 	 * @return int
 	 */
 	public function archive_date_timestamp( $date ) {
-		$parsed = DateTime::createFromFormat( '!d-m-Y', $date, wp_timezone() );
+		$parsed = DateTime::createFromFormat( '!d-m-Y', $date, self::legal_timezone() );
 		return $parsed instanceof DateTime ? $parsed->getTimestamp() : 0;
-	}
-
-	/**
-	 * Today's archive files for one object code, newest first.
-	 *
-	 * @param string $oznaka Object code.
-	 * @return array<int, array{date:string,ext:string,name:string,path:string,url:string,bytes:int,stamp:int}>
-	 */
-	public function same_day_archive_files( $oznaka ) {
-		$today  = wp_date( 'd-m-Y' );
-		$oznaka = CX_Sidrena_Settings::instance()->normalize_oznaka( $oznaka );
-		if ( '' === $oznaka ) {
-			$oznaka = '001';
-		}
-
-		$matches = array();
-		foreach ( $this->get_archive_files() as $file ) {
-			if ( ! isset( $file['date'] ) || $file['date'] !== $today ) {
-				continue;
-			}
-			if ( $this->archive_oznaka_from_name( $file['name'] ) !== $oznaka ) {
-				continue;
-			}
-			$matches[] = $file;
-		}
-
-		return $matches;
 	}
 
 	/**
@@ -468,141 +673,6 @@ class CX_Sidrena_Archive {
 	}
 
 	/**
-	 * Copy a live feed into the one archive file for this calendar day and object code.
-	 *
-	 * An existing file is replaced and keeps its name, time, and storage number.
-	 * A format change keeps that stem and swaps xml/csv. Extra files from the
-	 * same day are removed. A new day uses the next legal name.
-	 *
-	 * @param string                   $dir     Archive directory.
-	 * @param string                   $source  Live file.
-	 * @param string                   $format  xml|csv.
-	 * @param int                      $pohrana Next storage number when this is a new day.
-	 * @param array<string, mixed>|null $outlet Outlet row, or null for the webshop.
-	 * @return array{path:string,filename:string,pohrana:int,replaced:bool}|WP_Error
-	 */
-	private function place_daily_archive( $dir, $source, $format, $pohrana, $outlet = null ) {
-		$settings = CX_Sidrena_Settings::instance();
-		if ( is_array( $outlet ) ) {
-			$oznaka = $settings->normalize_oznaka( isset( $outlet['oznaka'] ) ? $outlet['oznaka'] : '' );
-		} else {
-			$oznaka = $settings->normalize_oznaka( $settings->get( 'file_oznaka', '001' ) );
-		}
-		if ( '' === $oznaka ) {
-			$oznaka = '001';
-		}
-
-		$format   = CX_Sidrena_Feed_Files::instance()->sanitize_ext( $format );
-		$today    = $this->same_day_archive_files( $oznaka );
-		$replaced = array() !== $today;
-
-		if ( $replaced ) {
-			$stem     = (string) pathinfo( $today[0]['name'], PATHINFO_FILENAME );
-			$filename = $stem . '.' . $format;
-			$used     = $this->archive_pohrana_from_name( $today[0]['name'] );
-			if ( $used < 1 ) {
-				$used = (int) $pohrana;
-			}
-		} else {
-			$filename = $this->legal_filename( $format, time(), $pohrana, $outlet );
-			$used     = (int) $pohrana;
-		}
-
-		$dest = trailingslashit( $dir ) . $filename;
-		if ( ! copy( $source, $dest ) ) {
-			return new WP_Error( 'sidrena_xml_archive_copy', __( 'The archive price list could not be saved.', 'cx-sidrena' ) );
-		}
-
-		foreach ( $today as $old ) {
-			if ( ! isset( $old['name'] ) || $old['name'] === $filename ) {
-				continue;
-			}
-			if ( ! empty( $old['path'] ) && file_exists( $old['path'] ) ) {
-				wp_delete_file( $old['path'] );
-			}
-		}
-
-		return array(
-			'path'     => $dest,
-			'filename' => $filename,
-			'pohrana'  => $used,
-			'replaced' => $replaced,
-		);
-	}
-
-	/**
-	 * Copy each outlet's live feed into the archive.
-	 *
-	 * A new calendar day advances that outlet's storage sequence. The same day
-	 * replaces its file and leaves the sequence where it is.
-	 *
-	 * @return true|WP_Error
-	 */
-	public function archive_poslovnice() {
-		$dir = $this->get_archive_dir();
-		if ( '' === $dir || ! wp_mkdir_p( $dir ) ) {
-			return new WP_Error( 'sidrena_xml_archive_mkdir', __( 'The archive folder could not be created.', 'cx-sidrena' ) );
-		}
-
-		$index = trailingslashit( $dir ) . 'index.php';
-		if ( ! file_exists( $index ) ) {
-			file_put_contents( $index, "<?php\ndefined( 'ABSPATH' ) || exit;\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-		}
-
-		$format  = CX_Sidrena_Feed_Files::instance()->export_format();
-		$meta    = CX_Sidrena_Export::instance()->get_public_meta();
-		$stored  = ( isset( $meta['outlets'] ) && is_array( $meta['outlets'] ) ) ? $meta['outlets'] : array();
-		$changed = false;
-
-		$web_source = CX_Sidrena_Feed_Files::instance()->get_public_path( $format, '' );
-		if ( file_exists( $web_source ) ) {
-			$settings = CX_Sidrena_Settings::instance();
-			$pohrana  = $settings->sanitize_pohrana( $settings->get( 'file_pohrana', 1 ) );
-			$placed   = $this->place_daily_archive( $dir, $web_source, $format, $pohrana, null );
-			if ( is_wp_error( $placed ) ) {
-				return $placed;
-			}
-			if ( empty( $placed['replaced'] ) ) {
-				$settings->save( array( 'file_pohrana' => $pohrana + 1 ) );
-			}
-			$meta['filename'] = $placed['filename'];
-			$meta['pohrana']  = $placed['pohrana'];
-			$changed          = true;
-		}
-
-		foreach ( CX_Sidrena_Poslovnice::instance()->with_products() as $outlet ) {
-			$source = CX_Sidrena_Feed_Files::instance()->get_public_path( $format, $outlet['oznaka'] );
-			if ( ! file_exists( $source ) ) {
-				continue;
-			}
-
-			$pohrana = CX_Sidrena_Settings::instance()->sanitize_pohrana( $outlet['pohrana'] );
-			$placed  = $this->place_daily_archive( $dir, $source, $format, $pohrana, $outlet );
-			if ( is_wp_error( $placed ) ) {
-				return $placed;
-			}
-
-			if ( empty( $placed['replaced'] ) ) {
-				CX_Sidrena_Poslovnice::instance()->set_pohrana( $outlet['id'], $pohrana + 1 );
-			}
-
-			$current                     = isset( $stored[ $outlet['oznaka'] ] ) && is_array( $stored[ $outlet['oznaka'] ] ) ? $stored[ $outlet['oznaka'] ] : array();
-			$current['filename']         = $placed['filename'];
-			$current['pohrana']          = $placed['pohrana'];
-			$stored[ $outlet['oznaka'] ] = $current;
-			$changed                     = true;
-		}
-
-		if ( $changed ) {
-			$meta['outlets'] = $stored;
-			update_option( CX_Sidrena_Export::PUBLIC_OPTION, $meta );
-			$this->prune_archive();
-		}
-
-		return true;
-	}
-
-	/**
 	 * Normalized object code from an archive basename, or empty when the name has none.
 	 *
 	 * @param string $name Basename.
@@ -610,6 +680,379 @@ class CX_Sidrena_Archive {
 	 */
 	public function archive_file_oznaka( $name ) {
 		return CX_Sidrena_Settings::instance()->normalize_oznaka( $this->archive_oznaka_from_name( $name ) );
+	}
+
+	/**
+	 * Archive files the public sees: of each price list (object code), every file from the 30 days before its newest
+	 * one. The anchor is the last publication, not today, so nothing goes while a shop publishes nothing. Names from
+	 * before the legal names have no code: their anchor is the newest file of the shop. Newest first.
+	 *
+	 * @param array<int, array<string, mixed>>|null $files Archive files, null = all in the archive folder.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function public_files( $files = null ) {
+		$files  = null === $files ? $this->get_archive_files() : $files;
+		$newest = array();
+		$all    = 0;
+		foreach ( $files as $file ) {
+			$key            = $this->archive_group_key( $file['name'] );
+			$newest[ $key ] = max( isset( $newest[ $key ] ) ? $newest[ $key ] : 0, (int) $file['stamp'] );
+			$all            = max( $all, (int) $file['stamp'] );
+		}
+
+		$out = array();
+		foreach ( $files as $file ) {
+			$key    = $this->archive_group_key( $file['name'] );
+			$anchor = 'legacy' === $key ? $all : $newest[ $key ];
+			if ( (int) $file['stamp'] >= $this->window_start( $anchor ) ) {
+				$out[] = $file;
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Whether one archive file is public now.
+	 *
+	 * @param string $name Basename.
+	 * @return bool
+	 */
+	public function is_public( $name ) {
+		foreach ( $this->public_files() as $file ) {
+			if ( $file['name'] === $name ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Midnight (legal clock) of the first public day for a newest file at $anchor.
+	 *
+	 * @param int $anchor Unix time of the newest file.
+	 * @return int
+	 */
+	private function window_start( $anchor ) {
+		$day = new DateTime( '@' . (int) $anchor );
+		$day->setTimezone( self::legal_timezone() );
+		$day->setTime( 0, 0, 0 );
+		$day->modify( '-' . self::PUBLIC_DAYS . ' days' );
+
+		return $day->getTimestamp();
+	}
+
+	/**
+	 * The folder of kept files, found by its prefix (its name is random, so nobody guesses it; a reinstall finds the
+	 * same one). Created on request, with a deny rule for Apache and IIS and an empty index.
+	 *
+	 * @param bool $create Create it when there is none.
+	 * @return string Path, or '' when there is none or it cannot be made.
+	 */
+	public function kept_dir( $create = false ) {
+		$base = CX_Sidrena_Feed_Files::instance()->get_public_dir();
+		if ( '' === $base ) {
+			return '';
+		}
+
+		if ( $create ) {
+			// The folder above the kept one, so a listing never shows its name (Argus N1, CX-SID-27).
+			CX_Sidrena_Feed_Files::instance()->ensure_dir_index( $base );
+		}
+
+		$found = glob( trailingslashit( $base ) . self::KEPT_PREFIX . '*', defined( 'GLOB_ONLYDIR' ) ? GLOB_ONLYDIR : 0 );
+		if ( is_array( $found ) && array() !== $found ) {
+			sort( $found );
+			foreach ( $found as $dir ) {
+				if ( is_dir( $dir ) ) {
+					return $dir;
+				}
+			}
+		}
+
+		if ( ! $create ) {
+			return '';
+		}
+
+		$dir = trailingslashit( $base ) . self::KEPT_PREFIX . strtolower( wp_generate_password( 20, false ) );
+		if ( ! wp_mkdir_p( $dir ) ) {
+			return '';
+		}
+		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		file_put_contents( $dir . '/.htaccess', "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n" );
+		file_put_contents( $dir . '/web.config', "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<configuration><system.webServer><authorization><deny users=\"*\" /></authorization></system.webServer></configuration>\n" );
+		file_put_contents( $dir . '/index.php', "<?php\n// Silence.\n" );
+		// phpcs:enable
+
+		return $dir;
+	}
+
+	/**
+	 * Move archive files that are no longer public into the kept folder, compressed when zlib is there. The original
+	 * goes only after the kept copy reads back to the same sha256. A copy that does not is removed and the original
+	 * stays public (logged), so a file is never lost.
+	 *
+	 * @return int Files moved.
+	 */
+	public function move_old() {
+		$files  = $this->get_archive_files();
+		$public = array();
+		foreach ( $this->public_files( $files ) as $file ) {
+			$public[ $file['name'] ] = true;
+		}
+
+		$moved = 0;
+		$dir   = '';
+		foreach ( $files as $file ) {
+			if ( isset( $public[ $file['name'] ] ) ) {
+				continue;
+			}
+			if ( '' === $dir ) {
+				$dir = $this->kept_dir( true );
+				if ( '' === $dir ) {
+					return $moved;
+				}
+			}
+			$moved += $this->keep_one( $file['path'], $dir ) ? 1 : 0;
+		}
+
+		return $moved;
+	}
+
+	/**
+	 * @param string $path Archive file.
+	 * @param string $dir  Kept folder.
+	 * @return bool Moved.
+	 */
+	private function keep_one( $path, $dir ) {
+		$body = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		if ( ! is_string( $body ) ) {
+			return false;
+		}
+
+		$sha  = hash( 'sha256', $body );
+		$gz   = function_exists( 'gzencode' ) && function_exists( 'gzdecode' );
+		$dest = trailingslashit( $dir ) . basename( $path ) . ( $gz ? '.gz' : '' );
+		$ff   = CX_Sidrena_Feed_Files::instance();
+
+		if ( file_exists( $dest ) ) {
+			// Kept before (a move cut short after the copy): the original goes only if that copy is this file.
+			$ok = $sha === $this->kept_sha( $dest );
+		} else {
+			$ok = false !== $ff->write_atomic( $dest, $gz ? gzencode( $body, 9 ) : $body ) && $sha === $this->kept_sha( $dest );
+			if ( ! $ok && file_exists( $dest ) ) {
+				wp_delete_file( $dest );
+			}
+		}
+
+		if ( ! $ok ) {
+			CX_Sidrena_Plugin::log_exception( new RuntimeException( 'CX Sidrena: an archive file was not moved, its kept copy did not read back the same: ' . basename( $path ) ) );
+			return false;
+		}
+
+		wp_delete_file( $path );
+
+		return ! file_exists( $path );
+	}
+
+	/**
+	 * sha256 of what a kept file holds (decompressed), or '' when it cannot be read.
+	 *
+	 * @param string $path Kept file.
+	 * @return string
+	 */
+	private function kept_sha( $path ) {
+		$body = $this->kept_body( $path );
+
+		return is_string( $body ) ? hash( 'sha256', $body ) : '';
+	}
+
+	/**
+	 * What a kept file holds, decompressed.
+	 *
+	 * @param string $path Kept file.
+	 * @return string|false
+	 */
+	private function kept_body( $path ) {
+		$raw = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		if ( ! is_string( $raw ) ) {
+			return false;
+		}
+		if ( '.gz' !== substr( $path, -3 ) ) {
+			return $raw;
+		}
+
+		return function_exists( 'gzdecode' ) ? @gzdecode( $raw ) : false; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+	}
+
+	/**
+	 * Kept files, newest first. name is the archive name (without .gz), bytes the size of the file as published.
+	 *
+	 * @return array<int, array{name:string,path:string,date:string,stamp:int,bytes:int,ext:string}>
+	 */
+	public function kept_files() {
+		$dir = $this->kept_dir();
+		if ( '' === $dir ) {
+			return array();
+		}
+
+		$found = array_merge(
+			glob( trailingslashit( $dir ) . '*.xml' ) ?: array(),
+			glob( trailingslashit( $dir ) . '*.csv' ) ?: array(),
+			glob( trailingslashit( $dir ) . '*.xml.gz' ) ?: array(),
+			glob( trailingslashit( $dir ) . '*.csv.gz' ) ?: array()
+		);
+
+		$files = array();
+		foreach ( $found as $path ) {
+			$gz   = '.gz' === substr( $path, -3 );
+			$name = basename( $path, $gz ? '.gz' : '' );
+			$size = (int) filesize( $path );
+			if ( $gz && $size >= 18 ) {
+				// The last four bytes of a gzip file are the size of what it holds (mod 4 GB).
+				$fh = fopen( $path, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen
+				if ( $fh ) {
+					fseek( $fh, -4, SEEK_END );
+					$tail = unpack( 'V', (string) fread( $fh, 4 ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fread
+					fclose( $fh ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+					$size = is_array( $tail ) ? (int) $tail[1] : $size;
+				}
+			}
+			$files[] = array(
+				'name'  => $name,
+				'path'  => $path,
+				'date'  => $this->archive_file_date( $name ),
+				'stamp' => $this->archive_file_timestamp( $name, $path ),
+				'bytes' => $size,
+				'ext'   => strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) ),
+			);
+		}
+
+		usort(
+			$files,
+			function ( $a, $b ) {
+				$cmp = $b['stamp'] <=> $a['stamp'];
+				return 0 !== $cmp ? $cmp : $this->archive_pohrana_from_name( $b['name'] ) <=> $this->archive_pohrana_from_name( $a['name'] );
+			}
+		);
+
+		return $files;
+	}
+
+	/**
+	 * Kept files by month on the legal clock (Y-m), newest month first, in each month newest file first.
+	 *
+	 * @return array<string, array<int, array<string, mixed>>>
+	 */
+	public function kept_months() {
+		$months = array();
+		foreach ( $this->kept_files() as $file ) {
+			$months[ $file['stamp'] ? self::legal_date( 'Y-m', $file['stamp'] ) : '0000-00' ][] = $file;
+		}
+		krsort( $months );
+
+		return $months;
+	}
+
+	/**
+	 * One kept file as published.
+	 *
+	 * @param string $name Archive name (without .gz).
+	 * @return string|WP_Error
+	 */
+	public function read_kept( $name ) {
+		$name = $this->sanitize_archive_name( $name );
+		foreach ( '' !== $name ? $this->kept_files() : array() as $file ) {
+			if ( $file['name'] === $name ) {
+				$body = $this->kept_body( $file['path'] );
+				if ( is_string( $body ) ) {
+					return $body;
+				}
+				break;
+			}
+		}
+
+		return new WP_Error( 'cx_sidrena_kept_missing', __( 'Archive price list not found.', 'cx-sidrena' ) );
+	}
+
+	/**
+	 * Days a kept file is kept (archive_keep_days): 0 = for ever, else at least 30.
+	 *
+	 * @return int
+	 */
+	public static function keep_days() {
+		return CX_Sidrena_Settings::instance()->sanitize_keep_days( CX_Sidrena_Settings::instance()->get( 'archive_keep_days', CX_Sidrena_Settings::KEEP_DAYS_DEFAULT ) );
+	}
+
+	/**
+	 * Delete kept files older than the owner's period (the morning build). Nothing else deletes them.
+	 *
+	 * @param int|null $now Unix time, null = now.
+	 * @return int Files deleted.
+	 */
+	public function purge_kept( $now = null ) {
+		$days = self::keep_days();
+		if ( 0 === $days ) {
+			return 0;
+		}
+
+		$limit = new DateTime( '@' . ( null === $now ? time() : (int) $now ) );
+		$limit->setTimezone( self::legal_timezone() );
+		$limit->setTime( 0, 0, 0 );
+		$limit->modify( '-' . $days . ' days' );
+
+		$deleted = 0;
+		foreach ( $this->kept_files() as $file ) {
+			if ( $file['stamp'] > 0 && $file['stamp'] < $limit->getTimestamp() ) {
+				wp_delete_file( $file['path'] );
+				$deleted += file_exists( $file['path'] ) ? 0 : 1;
+			}
+		}
+
+		return $deleted;
+	}
+
+	/**
+	 * The morning's upkeep: files out of the public 30 days are kept, kept files past their period go.
+	 */
+	public function maintain() {
+		$this->move_old();
+		$this->purge_kept();
+	}
+
+	/**
+	 * Link that sends one kept file (Settings).
+	 *
+	 * @param string $name Archive name.
+	 * @return string
+	 */
+	public static function kept_url( $name ) {
+		return wp_nonce_url( add_query_arg( array( 'action' => self::KEPT_ACTION, 'name' => rawurlencode( $name ) ), admin_url( 'admin-post.php' ) ), self::KEPT_ACTION );
+	}
+
+	/**
+	 * admin-post: one kept file to the owner, as it was published.
+	 */
+	public static function download_kept() {
+		check_admin_referer( self::KEPT_ACTION );
+		if ( ! CX_Sidrena_Plugin::current_user_can_manage() ) {
+			wp_die( esc_html__( 'You are not allowed to do this.', 'cx-sidrena' ), '', array( 'response' => 403 ) );
+		}
+
+		$name = isset( $_GET['name'] ) ? (string) wp_unslash( $_GET['name'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_archive_name() in read_kept()
+		$body = self::instance()->read_kept( $name );
+		if ( is_wp_error( $body ) ) {
+			wp_die( esc_html( $body->get_error_message() ), '', array( 'response' => 404, 'back_link' => true ) );
+		}
+
+		$name = self::instance()->sanitize_archive_name( $name );
+		nocache_headers();
+		header( 'Content-Type: ' . ( 'csv' === strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) ) ? 'text/csv' : 'application/xml' ) . '; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="' . str_replace( array( '"', "\r", "\n" ), '', $name ) . '"; filename*=UTF-8\'\'' . rawurlencode( $name ) );
+		header( 'Content-Length: ' . strlen( $body ) );
+		echo $body; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- the file as published.
+		exit;
 	}
 
 	/**
@@ -622,7 +1065,7 @@ class CX_Sidrena_Archive {
 	 * @return string
 	 */
 	public function get_archive_embed_html( $oznaka = '' ) {
-		$files  = $this->get_archive_files();
+		$files  = $this->public_files();
 		$oznaka = CX_Sidrena_Settings::instance()->normalize_oznaka( $oznaka );
 		if ( '' !== $oznaka ) {
 			$matched = array();
@@ -642,7 +1085,7 @@ class CX_Sidrena_Archive {
 		$html = '<ol class="sidrena-arhiva">';
 		foreach ( $files as $file ) {
 			$stamp = isset( $file['stamp'] ) ? (int) $file['stamp'] : 0;
-			$label = $stamp ? wp_date( 'd.m.Y. H:i', $stamp ) : ( isset( $file['date'] ) ? (string) $file['date'] : '' );
+			$label = $stamp ? self::legal_date( 'd.m.Y. H:i', $stamp ) : ( isset( $file['date'] ) ? (string) $file['date'] : '' );
 			$name  = isset( $file['name'] ) ? (string) $file['name'] : '';
 			$url   = isset( $file['url'] ) ? (string) $file['url'] : '';
 			$html .= '<li><a href="' . esc_url( $url ) . '">' . esc_html( $name ) . '</a>';

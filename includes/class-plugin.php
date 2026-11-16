@@ -53,6 +53,7 @@ final class CX_Sidrena_Plugin {
 			// From the bazna add-on 1.1.1: lowest price in 30 days before a sale, and the check page.
 			require_once CX_SIDRENA_PATH . 'includes/lowest-30.php';
 			require_once CX_SIDRENA_PATH . 'includes/check.php';
+			require_once CX_SIDRENA_PATH . 'includes/class-cart.php';
 		}
 
 		self::instance();
@@ -160,6 +161,7 @@ final class CX_Sidrena_Plugin {
 		CX_Sidrena_Catalog::instance();
 		CX_Sidrena_Admin::instance();
 		CX_Sidrena_Export::instance();
+		CX_Sidrena_Archive::register();
 		CX_Sidrena_Bulk_Import::instance();
 		CX_Sidrena_Frontend::instance();
 
@@ -167,11 +169,13 @@ final class CX_Sidrena_Plugin {
 			return;
 		}
 
-		add_action( 'cx_sidrena_snapshot_batch', array( 'CX_Sidrena_Activator', 'process_batch' ) );
-
 		CX_Sidrena_Product_Meta::instance();
 		CX_Sidrena_Compat::instance();
 		CX_Sidrena_Import_Export::instance();
+		// Cart, mini-cart and checkout blocks: one price per line, never the regular price struck (CX-SID-14).
+		CX_Sidrena_Cart::instance();
+		CX_Sidrena_Import::register();
+		CX_Sidrena_Sale_Rule::register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			require_once CX_SIDRENA_PATH . 'includes/class-cli.php';
@@ -185,7 +189,12 @@ final class CX_Sidrena_Plugin {
 	 * plugin list (CX_Sidrena_Migration::on_activated).
 	 */
 	public static function activate() {
+		CX_Sidrena_History::activate();
+
 		$took_over = CX_Sidrena_Migration::copy_from_mjdd();
+
+		// Dates per category: taken from the shop's data after a move from MJDD, else suggested (runs once).
+		CX_Sidrena_Dates::maybe_setup();
 
 		CX_Sidrena_Settings::add_defaults();
 
@@ -207,6 +216,8 @@ final class CX_Sidrena_Plugin {
 	 */
 	public static function deactivate() {
 		wp_clear_scheduled_hook( 'cx_sidrena_snapshot_batch' );
+		wp_clear_scheduled_hook( CX_Sidrena_Dates::SETUP_HOOK ); // an unfinished take-over goes on after reactivation
+		wp_clear_scheduled_hook( CX_Sidrena_Bulk::CRON_HOOK ); // a running job continues after reactivation (keep_going)
 		wp_clear_scheduled_hook( CX_Sidrena_Export::DAILY_HOOK );
 		wp_clear_scheduled_hook( CX_Sidrena_Export::GENERATE_HOOK );
 		wp_unschedule_hook( 'cx_sidrena_n30_seed' );
@@ -214,10 +225,13 @@ final class CX_Sidrena_Plugin {
 	}
 
 	/**
-	 * Delete our data: options, uploads, transients, cron (wp cx-sidrena purge).
+	 * Delete our data: options, the live price lists, transients, cron (wp cx-sidrena purge).
 	 *
 	 * Never product meta: bazna, date, price history and the lowest price are the evidence for an inspection, and
-	 * MJDD reads the same keys, so going back to it keeps every price.
+	 * MJDD reads the same keys, so going back to it keeps every price. For the same reason the price history tables
+	 * and the source of every bazna (CX_Sidrena_History) stay; deleting them would need its own command. And never the
+	 * archive of published price lists (arhiva/, cuvano-*): the shop must keep them (CX-SID-27), a reinstall goes on
+	 * with them and their storage numbers.
 	 */
 	public static function purge_all_data() {
 		global $wpdb;
@@ -247,15 +261,38 @@ final class CX_Sidrena_Plugin {
 		wp_cache_delete( 'alloptions', 'options' );
 		wp_cache_delete( 'notoptions', 'options' );
 
-		$uploads = wp_upload_dir( null, false );
-		if ( empty( $uploads['error'] ) && ! empty( $uploads['basedir'] ) ) {
-			self::delete_directory( trailingslashit( $uploads['basedir'] ) . 'cx-sidrena' );
-		}
+		self::delete_live_files();
 
 		wp_clear_scheduled_hook( 'cx_sidrena_snapshot_batch' );
 		wp_clear_scheduled_hook( CX_Sidrena_Export::DAILY_HOOK );
 		wp_clear_scheduled_hook( CX_Sidrena_Export::GENERATE_HOOK );
+		wp_clear_scheduled_hook( CX_Sidrena_Dates::SETUP_HOOK );
+		wp_clear_scheduled_hook( CX_Sidrena_Bulk::CRON_HOOK );
 		wp_unschedule_hook( 'cx_sidrena_n30_seed' );
+	}
+
+	/**
+	 * The live price lists, their HTML tables, temporary files of a write that was cut, and MJDD's old import folder.
+	 * The archive folders stay. Also called by uninstall.php.
+	 */
+	public static function delete_live_files() {
+		$uploads = wp_upload_dir( null, false );
+		if ( ! empty( $uploads['error'] ) || empty( $uploads['basedir'] ) ) {
+			return;
+		}
+
+		$base  = trailingslashit( $uploads['basedir'] ) . 'cx-sidrena';
+		$found = array_merge(
+			glob( $base . '/sidrena-cijena*' ) ?: array(),
+			glob( $base . '/.sidrena-cijena*.tmp-*' ) ?: array(),
+			glob( $base . '/*/.*.tmp-*' ) ?: array()
+		);
+		foreach ( $found as $file ) {
+			if ( is_file( $file ) ) {
+				wp_delete_file( $file );
+			}
+		}
+		self::delete_directory( $base . '/imports' );
 	}
 
 	/**

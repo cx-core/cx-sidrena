@@ -70,6 +70,7 @@ class CX_Sidrena_Fields {
 			return;
 		}
 
+		self::save_change( $product->get_id(), null );
 		self::save_posted( $product->get_id(), null );
 	}
 
@@ -80,7 +81,48 @@ class CX_Sidrena_Fields {
 	 * @param int $i            Loop index.
 	 */
 	public static function save_variation( $variation_id, $i ) {
+		self::save_change( $variation_id, (int) $i );
 		self::save_posted( $variation_id, $i );
+	}
+
+	/**
+	 * The product screen's Change (CX-SID-24): only when the owner opened it (its inputs are disabled until then, so
+	 * nothing is posted otherwise). Written through CX_Sidrena_History::set_bazna(), which records the history and the
+	 * source "Changed by …" with the reason (CX-SID-20). An empty date clears the product's own date, so the date is
+	 * the rule's again (A9), except when this same save changed the categories and CX-SID-21 kept the date the product
+	 * showed as its own (see below). A refused value never stops the product save: WooCommerce shows what was not saved.
+	 *
+	 * @param int      $product_id Product or variation.
+	 * @param int|null $index      Variation loop index; null for a simple product.
+	 */
+	private static function save_change( $product_id, $index ) {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- WooCommerce checked the product/variations nonce.
+		$posted = null === $index
+			? ( isset( $_POST['cx_bazna'] ) ? wp_unslash( $_POST['cx_bazna'] ) : null ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			: ( isset( $_POST['cx_bazna_var'][ $index ] ) ? wp_unslash( $_POST['cx_bazna_var'][ $index ] ) : null ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+		if ( ! is_array( $posted ) || empty( $posted['open'] ) || ! class_exists( 'CX_Sidrena_History' ) ) {
+			return;
+		}
+
+		$amount = isset( $posted['amount'] ) ? (string) $posted['amount'] : '';
+		$date   = isset( $posted['date'] ) ? trim( sanitize_text_field( (string) $posted['date'] ) ) : '';
+		$reason = isset( $posted['reason'] ) ? trim( sanitize_text_field( (string) $posted['reason'] ) ) : '';
+		// The date field was empty when the form was shown (no own date), and still is; meanwhile this same save changed
+		// the categories, and CX-SID-21 stored the date the product showed as its own so it does not move (Argus B3,
+		// round 2: WordPress sets the categories before WooCommerce saves the fields). An empty field here is not
+		// someone clearing that date: the date stays (null). A date typed in the field still wins.
+		if ( '' === $date && class_exists( 'CX_Sidrena_Dates' ) && '' !== CX_Sidrena_Dates::kept( $product_id ) ) {
+			$date = null;
+		}
+		$result = CX_Sidrena_History::set_bazna( $product_id, $amount, $date, '' !== $reason ? array( 'reason' => $reason ) : array() );
+
+		if ( is_wp_error( $result ) && class_exists( 'WC_Admin_Meta_Boxes' ) ) {
+			$product = wc_get_product( $product_id );
+			$what    = $product ? wp_strip_all_tags( $product->get_name() ) : '#' . $product_id;
+			/* translators: 1: product or variation name, 2: why */
+			WC_Admin_Meta_Boxes::add_error( sprintf( __( 'Bazna cijena of %1$s was not changed: %2$s', 'cx-sidrena' ), $what, $result->get_error_message() ) );
+		}
 	}
 
 	/**
@@ -94,6 +136,11 @@ class CX_Sidrena_Fields {
 		$cjm_on = ( 'yes' === CX_Sidrena_Settings::instance()->get( 'enable_cjm' ) );
 
 		foreach ( self::product_fields() as $field ) {
+			// Bazna and its date are changed only through Change (save_change), never from a posted free field.
+			if ( in_array( $field['setter'], array( 'set_price', 'set_date' ), true ) ) {
+				continue;
+			}
+
 			$needs_cjm = in_array( $field['setter'], array( 'set_cjm_enabled', 'set_cjm_suffix' ), true );
 			if ( $needs_cjm && ! $cjm_on ) {
 				continue;

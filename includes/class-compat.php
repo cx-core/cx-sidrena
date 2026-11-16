@@ -40,7 +40,7 @@ class CX_Sidrena_Compat {
 
 		add_filter( 'et_module_shortcode_output', array( $this, 'filter_divi_module' ), 20, 2 );
 		add_filter( 'et_pb_wc_price_shortcode_output', array( $this, 'append_html' ), 20 );
-		add_filter( 'render_block', array( $this, 'filter_price_block' ), 20, 2 );
+		add_filter( 'render_block', array( $this, 'filter_price_block' ), 20, 3 );
 		add_filter( 'do_shortcode_tag', array( $this, 'filter_price_shortcode' ), 20, 3 );
 		add_filter( 'bricks/element/render', array( $this, 'filter_bricks_element' ), 20, 2 );
 		add_filter( 'fl_builder_render_module_content', array( $this, 'filter_beaver_module' ), 20, 2 );
@@ -261,11 +261,12 @@ class CX_Sidrena_Compat {
 	/**
 	 * Gutenberg / Divi 5 / Woo blocks named like product-price.
 	 *
-	 * @param string $content Block HTML.
-	 * @param array  $block   Block data.
+	 * @param string        $content  Block HTML.
+	 * @param array         $block    Block data.
+	 * @param WP_Block|null $instance Block instance: in a product list its context names the card's product.
 	 * @return string
 	 */
-	public function filter_price_block( $content, $block ) {
+	public function filter_price_block( $content, $block, $instance = null ) {
 		$name = isset( $block['blockName'] ) ? (string) $block['blockName'] : '';
 		if ( '' === $name ) {
 			return $content;
@@ -278,6 +279,15 @@ class CX_Sidrena_Compat {
 
 		if ( ! in_array( $name, $known, true ) && false === strpos( $name, 'product-price' ) ) {
 			return $content;
+		}
+
+		// The block's own product, never the page's: on a card in a product list that is another product (Argus
+		// CX-SID-25 B1). A block without one (another builder's) keeps the old lookup.
+		if ( $instance instanceof WP_Block && CX_Sidrena_Plugin::woocommerce_active() ) {
+			$product = CX_Sidrena_Frontend::instance()->product_from_block( $block, $instance );
+			if ( $product ) {
+				return $this->insert_into_price_markup( $content, $product );
+			}
 		}
 
 		return $this->insert_into_price_markup( $content );
@@ -386,10 +396,11 @@ class CX_Sidrena_Compat {
 	/**
 	 * Put sidrena markup inside the first .price paragraph, or append.
 	 *
-	 * @param string $content Markup.
+	 * @param string          $content Markup.
+	 * @param WC_Product|null $product The product it belongs to; null = from the current context.
 	 * @return string
 	 */
-	private function insert_into_price_markup( $content ) {
+	private function insert_into_price_markup( $content, $product = null ) {
 		if ( ! CX_Sidrena_Settings::instance()->is_auto_display_enabled() ) {
 			return $content;
 		}
@@ -402,7 +413,7 @@ class CX_Sidrena_Compat {
 			return $content;
 		}
 
-		$html = CX_Sidrena_Frontend::instance()->get_html_for_context();
+		$html = CX_Sidrena_Frontend::instance()->get_html_for_context( $product );
 		if ( '' === $html ) {
 			return $content;
 		}

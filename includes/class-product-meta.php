@@ -37,6 +37,35 @@ class CX_Sidrena_Product_Meta {
 		add_action( 'init', array( $this, 'register_meta' ) );
 		add_action( 'woocommerce_after_product_object_save', array( $this, 'maybe_autofill' ), 20, 1 );
 		add_action( 'woocommerce_save_product_variation', array( $this, 'fill_new_variation' ), 20 );
+		add_filter( 'woocommerce_duplicate_product_exclude_meta', array( $this, 'exclude_from_duplicate' ) );
+	}
+
+	/**
+	 * What a copy made with "Copy to a new draft" (WooCommerce's duplicate) does not take from the original (CX-SID-44).
+	 *
+	 * The copy is a new product, so it starts without the original's bazna, its date and its source, and without the
+	 * original's price history and frozen lowest price. On its own save it gets its bazna and date by the rule
+	 * (maybe_autofill(), source "new"), and a copy on sale gets its lowest price in 30 days as any new product does.
+	 * Kept: the unit price and its switch, the unit of measure and the name of the form of sale (properties of the goods).
+	 *
+	 * WooCommerce applies this one list to the product and to every variation it copies, so the keys are always added,
+	 * also when the product itself has none of them: a variable product's bazna is on its variations.
+	 *
+	 * @param array $exclude Keys other code already leaves out; kept.
+	 * @return array
+	 */
+	public function exclude_from_duplicate( $exclude ) {
+		$ours = array(
+			CX_SIDRENA_META_PRICE,
+			CX_SIDRENA_META_DATE,
+			CX_Sidrena_History::IZVOR_META,
+			CX_SIDRENA_N30_HIST,
+			CX_SIDRENA_N30_START,
+			CX_SIDRENA_N30_LOWEST,
+			CX_SIDRENA_N30_SOURCE,
+		);
+
+		return array_values( array_unique( array_merge( (array) $exclude, $ours ) ) );
 	}
 
 	/**
@@ -52,11 +81,24 @@ class CX_Sidrena_Product_Meta {
 		if ( ! CX_Sidrena_Settings::instance()->is_auto_fill_enabled() ) {
 			return;
 		}
+		if ( self::existed_before_install( $variation_id ) ) {
+			return; // an old variation never gets today's bazna on a save (MJDD's trap); Status lists it (CX-SID-23)
+		}
 		$variation = wc_get_product( $variation_id );
 		if ( ! $variation ) {
 			return;
 		}
-		if ( $this->snapshot_if_empty( $variation, self::today_date() ) && class_exists( 'CX_Sidrena_Export' ) ) {
+		$date    = CX_Sidrena_Dates::date_for( $variation->get_id() );
+		$written = CX_Sidrena_History::with(
+			array(
+				'type'      => 'new',
+				'date_from' => $date['from'],
+			),
+			function () use ( $variation, $date ) {
+				return $this->snapshot_if_empty( $variation, $date['date'] );
+			}
+		);
+		if ( $written && class_exists( 'CX_Sidrena_Export' ) ) {
 			CX_Sidrena_Export::instance()->queue_feed_after_change();
 		}
 	}
@@ -470,12 +512,26 @@ class CX_Sidrena_Product_Meta {
 		if ( ! $product instanceof WC_Product ) {
 			return;
 		}
+		if ( self::existed_before_install( $product->get_id() ) ) {
+			return; // an old product never gets today's bazna on a save (MJDD's trap); Status lists it (CX-SID-23)
+		}
 
 		if ( $product->is_type( 'variable' ) || $product->is_type( 'grouped' ) || $product->is_type( 'variable-subscription' ) ) {
 			return;
 		}
 
-		$this->snapshot_if_empty( $product, self::today_date() );
+		// A new product's first price, dated by the rule (spec §1.3: the later of its category's date and the day it
+		// was added). Which products may still be filled this way: CX_Sidrena_Dates::fills_on_save().
+		$date = CX_Sidrena_Dates::date_for( $product->get_id() );
+		CX_Sidrena_History::with(
+			array(
+				'type'      => 'new',
+				'date_from' => $date['from'],
+			),
+			function () use ( $product, $date ) {
+				return $this->snapshot_if_empty( $product, $date['date'] );
+			}
+		);
 	}
 
 	/**
@@ -526,6 +582,25 @@ class CX_Sidrena_Product_Meta {
 	}
 
 	/**
+	 * Whether a product or variation was created before CX Sidrena first ran on this shop (cx_sidrena_migrated.first,
+	 * written on activation or on the first load). Only items created after that may be filled on a save; the date
+	 * rule for them is CX-SID-21's. Unknown install time: treated as old, so nothing is filled by guess.
+	 *
+	 * @param int $post_id Product or variation (a variation by its own creation time).
+	 * @return bool
+	 */
+	public static function existed_before_install( $post_id ) {
+		$done  = get_option( 'cx_sidrena_migrated', array() );
+		$since = is_array( $done ) && ! empty( $done['first'] ) ? (int) $done['first'] : 0;
+		if ( $since <= 0 ) {
+			return true;
+		}
+		$created = get_post_timestamp( (int) $post_id ); // post_date in the site's time zone; also right for an auto-draft
+
+		return false !== $created && $created < $since;
+	}
+
+	/**
 	 * Today's date in the Croatian d.m.Y. form (WordPress timezone).
 	 *
 	 * @return string
@@ -555,7 +630,7 @@ class CX_Sidrena_Product_Meta {
 	}
 
 	/**
-	 * Date shown in parentheses: product field, otherwise shop default.
+	 * Date shown with the bazna: the product's own date, otherwise the date by the rule (CX_Sidrena_Dates).
 	 *
 	 * @param int $product_id Product or variation ID.
 	 * @return string
@@ -566,7 +641,8 @@ class CX_Sidrena_Product_Meta {
 			return $this->normalize_date( $custom );
 		}
 
-		return $this->normalize_date( (string) CX_Sidrena_Settings::instance()->get( 'default_date' ) );
+		// No own date: the rule (category, day added; CX_Sidrena_Dates), no longer one date for the whole shop.
+		return $this->normalize_date( CX_Sidrena_Dates::date_for( (int) $product_id )['date'] );
 	}
 
 	/**

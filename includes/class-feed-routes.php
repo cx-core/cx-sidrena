@@ -140,6 +140,10 @@ class CX_Sidrena_Feed_Routes {
 	 * Schedule a single background rebuild. Repeat visits wait out the cooldown.
 	 */
 	public function schedule_public_rebuild() {
+		if ( CX_Sidrena_Settings::instance()->is_b2b_only() ) {
+			return; // nothing is published (CX-SID-28)
+		}
+
 		if ( get_transient( CX_Sidrena_Export::REBUILD_COOLDOWN ) || get_transient( CX_Sidrena_Export::REBUILD_LOCK ) ) {
 			return;
 		}
@@ -187,6 +191,9 @@ class CX_Sidrena_Feed_Routes {
 		}
 
 		if ( $this->is_cjenik_request() ) {
+			if ( CX_Sidrena_Settings::instance()->is_b2b_only() ) {
+				$this->serve_b2b_not_published();
+			}
 			$this->serve_cjenik_page();
 			return;
 		}
@@ -206,11 +213,16 @@ class CX_Sidrena_Feed_Routes {
 			return;
 		}
 
+		if ( CX_Sidrena_Settings::instance()->is_b2b_only() ) {
+			$this->serve_b2b_not_published();
+		}
+
 		$ext    = $this->requested_live_ext();
 		$oznaka = $this->requested_oznaka();
 		$multi  = CX_Sidrena_Settings::instance()->is_multi_poslovnica();
 
 		if ( $multi ) {
+			$this->redirect_old_format( $ext, $oznaka );
 			if ( '' === $oznaka ) {
 				$path = CX_Sidrena_Feed_Files::instance()->get_public_path( $ext, '' );
 				if ( ! file_exists( $path ) ) {
@@ -230,6 +242,8 @@ class CX_Sidrena_Feed_Routes {
 			exit;
 		}
 
+		$this->redirect_old_format( $ext, '' );
+
 		$path = CX_Sidrena_Feed_Files::instance()->get_public_path( $ext );
 
 		if ( ! file_exists( $path ) ) {
@@ -237,6 +251,47 @@ class CX_Sidrena_Feed_Routes {
 		}
 
 		CX_Sidrena_Feed_Files::instance()->send_public_file( $path, CX_Sidrena_Archive::instance()->published_filename( $ext ), $ext );
+	}
+
+	/**
+	 * A format change, at the price list's address. The format the shop no longer publishes: 302 to the current one,
+	 * once that file exists; its own file is gone after the first build in the new format (remove_other_format_live),
+	 * and the address a bot or an inspector kept leads to the current price list. Until that build, the old file is
+	 * still the price list: the old address serves it and the new one redirects to it, so neither answers 503 in
+	 * between (Argus I2, CX-SID-27; the Settings save queues that build, CX_Sidrena_Admin_Save).
+	 *
+	 * @param string $ext    Requested xml|csv.
+	 * @param string $oznaka Requested outlet code, empty for the webshop.
+	 */
+	public function redirect_old_format( $ext, $oznaka ) {
+		$ff      = CX_Sidrena_Feed_Files::instance();
+		$current = $ff->export_format();
+		$other   = 'csv' === $current ? 'xml' : 'csv';
+		if ( $ext !== $current ) {
+			if ( file_exists( $ff->get_public_path( $current, $oznaka ) ) ) {
+				wp_safe_redirect( $ff->get_public_url( $current, $oznaka ), 302, 'CX Sidrena' );
+				exit;
+			}
+			return; // the new format is not built yet: this file is still the price list
+		}
+
+		if ( ! file_exists( $ff->get_public_path( $current, $oznaka ) ) && file_exists( $ff->get_public_path( $other, $oznaka ) ) ) {
+			$this->schedule_public_rebuild();
+			wp_safe_redirect( $ff->get_public_url( $other, $oznaka ), 302, 'CX Sidrena' );
+			exit;
+		}
+	}
+
+	/**
+	 * 404 for the live price list and the HTML page of a shop that sells only to businesses (CX-SID-28): there is no
+	 * price list and none is coming, so not 503 with Retry-After. The archive's addresses keep answering (CX-SID-27).
+	 */
+	public function serve_b2b_not_published() {
+		status_header( 404 );
+		nocache_headers();
+		header( 'Content-Type: text/plain; charset=utf-8' );
+		echo esc_html__( 'This shop sells only to businesses and publishes no price list.', 'cx-sidrena' );
+		exit;
 	}
 
 	/**
@@ -530,7 +585,8 @@ class CX_Sidrena_Feed_Routes {
 		$path = '' !== $name ? trailingslashit( CX_Sidrena_Archive::instance()->get_archive_dir() ) . $name : '';
 		$ext  = '' !== $name ? strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) ) : 'xml';
 
-		if ( '' === $name || ! file_exists( $path ) ) {
+		// Older than the public 30 days: not public, also before the move has put it away (CX-SID-27).
+		if ( '' === $name || ! file_exists( $path ) || ! CX_Sidrena_Archive::instance()->is_public( $name ) ) {
 			status_header( 404 );
 			header( 'Content-Type: text/plain; charset=utf-8' );
 			echo esc_html__( 'Archive price list not found.', 'cx-sidrena' );
@@ -544,7 +600,7 @@ class CX_Sidrena_Feed_Routes {
 	 * Simple public HTML listing of archived XML files.
 	 */
 	public function serve_archive_page() {
-		$files = CX_Sidrena_Archive::instance()->get_archive_files();
+		$files = CX_Sidrena_Archive::instance()->public_files();
 		$shop  = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
 		$title = __( 'Sidrena cijena archive', 'cx-sidrena' );
 
@@ -569,12 +625,12 @@ class CX_Sidrena_Feed_Routes {
 		echo '<h1>' . esc_html( $title ) . '</h1>';
 		echo '<p>' . esc_html( $shop ) . ' - ' . esc_html(
 			CX_Sidrena_Settings::instance()->is_multi_poslovnica()
-				? __( 'Daily price lists (XML or CSV), up to 30 files per outlet.', 'cx-sidrena' )
-				: __( 'Daily price lists (XML or CSV), up to the last 30 files.', 'cx-sidrena' )
+				? __( 'Price lists from the last 30 days. A new file is made at each price change and every morning, for each outlet separately.', 'cx-sidrena' )
+				: __( 'Price lists from the last 30 days. A new file is made at each price change and every morning.', 'cx-sidrena' )
 		) . '</p>';
 
 		if ( empty( $files ) ) {
-			echo '<p class="empty">' . esc_html__( 'The archive is empty. Files are added with each daily generation after 00:00.', 'cx-sidrena' ) . '</p>';
+			echo '<p class="empty">' . esc_html__( 'The archive is still empty. The first price list will appear here the next morning or at the first price change.', 'cx-sidrena' ) . '</p>';
 		} elseif ( CX_Sidrena_Settings::instance()->is_multi_poslovnica() ) {
 			$this->render_archive_groups( $files );
 		} else {
@@ -635,7 +691,7 @@ class CX_Sidrena_Feed_Routes {
 	private function render_archive_file_items( $files ) {
 		foreach ( $files as $file ) {
 			$stamp = isset( $file['stamp'] ) ? (int) $file['stamp'] : CX_Sidrena_Archive::instance()->archive_date_timestamp( isset( $file['date'] ) ? $file['date'] : '' );
-			$label = $stamp ? wp_date( 'd.m.Y. H:i', $stamp ) : ( isset( $file['date'] ) ? (string) $file['date'] : '' );
+			$label = $stamp ? CX_Sidrena_Archive::legal_date( 'd.m.Y. H:i', $stamp ) : ( isset( $file['date'] ) ? (string) $file['date'] : '' );
 			$name  = isset( $file['name'] ) ? (string) $file['name'] : '';
 			$url   = isset( $file['url'] ) ? (string) $file['url'] : '';
 			echo '<li><a href="' . esc_url( $url ) . '">' . esc_html( $name ) . '</a>';
@@ -733,15 +789,20 @@ class CX_Sidrena_Feed_Routes {
 
 		$count     = (int) $snapshot['count'];
 		$shop      = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
-		$title     = __( 'Price list - sidrena cijena', 'cx-sidrena' );
-		$label     = $settings->get_preview_label();
+		$title     = __( 'Price list', 'cx-sidrena' );
 		$scope     = is_array( $outlet ) ? $this->outlet_label( $outlet ) : ( $settings->is_multi_poslovnica() ? $this->webshop_oznaka() : '' );
 		$format    = CX_Sidrena_Feed_Files::instance()->export_format();
 		$feed_lbl  = 'csv' === $format ? __( 'Download CSV', 'cx-sidrena' ) : __( 'Download XML', 'cx-sidrena' );
 		$generated = CX_Sidrena_Export::instance()->get_public_meta();
-		$stamp     = ! empty( $generated['generated'] )
-			? wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $generated['generated'] )
-			: wp_date( get_option( 'date_format' ) );
+		if ( '' !== $oznaka && isset( $generated['outlets'][ $oznaka ] ) && is_array( $generated['outlets'][ $oznaka ] ) ) {
+			$generated = $generated['outlets'][ $oznaka ];
+		}
+		// The moment of the file this page shows, as in its name (a build that found nothing changed keeps it), on
+		// the legal clock in the Croatian form: a site on UTC with English formats showed "November 15, 2026 2:30 pm".
+		$when      = ! empty( $generated['published'] ) ? (int) $generated['published'] : ( ! empty( $generated['generated'] ) ? (int) $generated['generated'] : 0 );
+		$stamp     = $when
+			? CX_Sidrena_Archive::legal_date( 'd.m.Y. H:i', $when )
+			: CX_Sidrena_Archive::legal_date( 'd.m.Y.' );
 
 		header( 'Content-Type: text/html; charset=utf-8' );
 		header( 'Cache-Control: public, max-age=300' );
@@ -764,7 +825,8 @@ class CX_Sidrena_Feed_Routes {
 		if ( '' !== $scope ) {
 			echo '<p>' . esc_html( $scope ) . '</p>';
 		}
-		echo '<p>' . esc_html( $label ) . '</p>';
+		// No single bazna date under the title (CX-SID-79): since CX-SID-21 each product has its own (by category, or the
+		// day it was added), and it is in its row. The old line showed MJDD's one reference date above rows with others.
 		echo '<p class="cjenik-meta">' . esc_html(
 			sprintf(
 				/* translators: 1: datetime, 2: count */
@@ -869,7 +931,7 @@ class CX_Sidrena_Feed_Routes {
 	 */
 	public function serve_cjenik_empty_page() {
 		$shop  = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
-		$title = __( 'Price list - sidrena cijena', 'cx-sidrena' );
+		$title = __( 'Price list', 'cx-sidrena' );
 
 		header( 'Content-Type: text/html; charset=utf-8' );
 		header( 'Cache-Control: public, max-age=300' );
@@ -897,7 +959,7 @@ class CX_Sidrena_Feed_Routes {
 	 */
 	public function serve_cjenik_pending_page() {
 		$shop  = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
-		$title = __( 'Price list - sidrena cijena', 'cx-sidrena' );
+		$title = __( 'Price list', 'cx-sidrena' );
 
 		header( 'Content-Type: text/html; charset=utf-8' );
 		header( 'Cache-Control: no-store' );

@@ -1,6 +1,6 @@
 <?php
 /**
- * Tools → Bazna cijena: provjera, and "wp cx-sidrena check".
+ * "wp cx-sidrena check" (the page under Tools is the Status tab now, CX-SID-23).
  *
  * Ported from the bazna add-on 1.1.1 (bazna-dodatak.php, point 3): bazna_dodatak_* became cx_sidrena_*. Lists what is
  * not in order: published simple products and variations with a price but no bazna, and items that existed on the
@@ -22,9 +22,8 @@ function cx_sidrena_check() {
 	if ( ! class_exists( 'CX_Sidrena_Product_Meta' ) ) {
 		return array( 'error' => __( 'WooCommerce is not active.', 'cx-sidrena' ) );
 	}
-	$ref_txt = (string) CX_Sidrena_Settings::instance()->get( 'default_date' );
-	$ref     = DateTime::createFromFormat( '!d.m.Y', rtrim( trim( $ref_txt ), '.' ), wp_timezone() );
-	$ref_end = $ref ? ( clone $ref )->modify( '+1 day' )->format( 'Y-m-d H:i:s' ) : '1970-01-01 00:00:00';
+	$dates   = CX_Sidrena_Dates::get();
+	$ref_txt = $dates ? $dates['other'] : (string) CX_Sidrena_Settings::instance()->get( 'default_date' );
 
 	$skip_types = "SELECT tr.object_id FROM {$wpdb->term_relationships} tr
 		JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_type'
@@ -69,12 +68,14 @@ function cx_sidrena_check() {
 			$missing[] = $item;
 			continue;
 		}
-		// Existed on the reference day, but its own date says the bazna was taken LATER. An earlier own date (e.g. a
-		// category whose day is 02.05.2025.) is correct and stays off the list; a date we cannot read stays on it.
+		// Its own date is LATER than the date the rule gives it (its category's date, or the day it was added when that
+		// is later; CX_Sidrena_Dates): MJDD's trap, today's date on an old product. An earlier own date (e.g. food on
+		// 02.05.2025.) is correct and stays off the list; a date we cannot read stays on it.
 		$own = trim( (string) $r->datum );
-		if ( '' !== $own && $r->post_date < $ref_end ) {
-			$own_date = cx_sidrena_check_parse_date( $own );
-			if ( null === $own_date || $own_date > $ref ) {
+		if ( '' !== $own ) {
+			$own_date  = cx_sidrena_check_parse_date( $own );
+			$rule_date = cx_sidrena_check_parse_date( CX_Sidrena_Dates::date_for( (int) $r->ID )['rule_date'] );
+			if ( null === $own_date || ( null !== $rule_date && $own_date > $rule_date ) ) {
 				$wrong[] = $item;
 			}
 		}
@@ -118,16 +119,11 @@ function cx_sidrena_check_parse_date( $text ) {
 	return $date ? $date : null;
 }
 
-add_action(
-	'admin_menu',
-	function () {
-		$title = __( 'Bazna cijena: check', 'cx-sidrena' );
-		add_management_page( $title, $title, 'manage_woocommerce', 'bazna-provjera', 'cx_sidrena_check_page' );
-	}
-);
+// The page under Tools is gone: its content is the Status tab (CX-SID-23, spec §1.0); its old address redirects there
+// (CX_Sidrena_Admin::redirect_old_check_page). cx_sidrena_check() stays for WP-CLI.
 
 /**
- * The check page under Tools.
+ * The former check page under Tools (kept for any caller; not registered).
  */
 function cx_sidrena_check_page() {
 	$c = cx_sidrena_check();
