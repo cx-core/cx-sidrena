@@ -1478,3 +1478,32 @@ button.cx-status__tile.is-active { border-color: #2271b1; box-shadow: inset 0 -3
 	content: "\2713\00a0";
 	color: #008a20;
 }
+
+/* CX-SID-110: the OIB field after a refused save shows what was typed, marked (Norman). */
+.sidrena-cijena-settings input.cx-field--invalid {
+	border-color: #d63638;
+	box-shadow: 0 0 0 1px #d63638;
+}
+/* The reason under the field, where the save lands (Norman 110-1); clear of the admin bar when landing on the row. */
+.sidrena-cijena-settings #cx-oib-row {
+	scroll-margin-top: 64px;
+}
+.sidrena-cijena-settings .cx-field__msg {
+	margin: 6px 0 0;
+	padding: 6px 10px;
+	border-left: 4px solid #d63638;
+	background: #fcf0f1;
+	max-width: 40em;
+}
+.sidrena-cijena-settings .cx-field__msg--warning {
+	border-left-color: #dba617;
+	background: #fcf9e8;
+}
+.sidrena-cijena-settings .cx-field__msg--success {
+	border-left-color: #00a32a;
+	background: #edfaef;
+}
+.sidrena-cijena-settings .cx-field__msg--info {
+	border-left-color: #72aee6;
+	background: #f0f6fc;
+}

@@ -164,7 +164,9 @@ class CX_Sidrena_Bulk_Import {
 					'jedinica'        => $parser->guess_named_field( $parsed['fields'], array( 'jedinica_mjere', 'jedinica', 'unit', 'unit_of_measure', 'mjerna_jedinica' ) ),
 					'jedinica_cijena' => $parser->guess_named_field( $parsed['fields'], array( 'cijena_jedinice_mjere', 'cijena_jedinice', 'cijena_za_jedinicu', 'cijena_za_jedinicu_mjere', 'unit_price' ) ),
 					'marka'           => $parser->guess_named_field( $parsed['fields'], array( 'marka', 'brand', 'proizvodjac', 'manufacturer' ) ),
-					'oblik'           => $parser->guess_named_field( $parsed['fields'], array( 'naziv_posebnog_oblika', 'poseban_oblik', 'oblik', 'naziv_posebnog_oblika_prodaje' ) ),
+					// Not 'poseban_oblik': since CX-SID-109 that column is DA/NE (is the retail price a special form's), never
+					// empty, so every row read as a sale (Argus 110-D; the rest is CX-SID-114).
+					'oblik'           => $parser->guess_named_field( $parsed['fields'], array( 'naziv_posebnog_oblika', 'oblik', 'naziv_posebnog_oblika_prodaje' ) ),
 					'cjm'             => $parser->guess_named_field( $parsed['fields'], array( 'cjm', 'sidrena_cijena_cjm' ) ),
 					'cjm_suffix'      => $parser->guess_named_field( $parsed['fields'], array( 'cjm_suffix', 'cjm_dodatak', 'sidrena_cijena_cjm_suffix' ) ),
 					'dostupnost'      => $parser->guess_named_field( $parsed['fields'], array( 'dostupnost', 'availability', 'stock_status', 'zaliha' ) ),
@@ -241,6 +243,7 @@ class CX_Sidrena_Bulk_Import {
 		$poslovnica         = $this->mapped_field( $map, 'poslovnica', $fields );
 		$retail_is_display  = $this->is_display_retail_column( $regular );
 		$sidrena_is_display = $this->file_has_display_retail( $fields );
+		$flag_field         = $this->special_form_flag_field( $fields );
 
 		$rows      = $payload['rows'];
 		$total     = count( $rows );
@@ -249,6 +252,7 @@ class CX_Sidrena_Bulk_Import {
 		$skipped   = isset( $_POST['skipped'] ) ? absint( wp_unslash( $_POST['skipped'] ) ) : 0;
 		$missing   = isset( $_POST['missing'] ) ? absint( wp_unslash( $_POST['missing'] ) ) : 0;
 		$created   = isset( $_POST['created'] ) ? absint( wp_unslash( $_POST['created'] ) ) : 0;
+		$special   = isset( $_POST['special'] ) ? absint( wp_unslash( $_POST['special'] ) ) : 0;
 		$processed = $offset;
 
 		if ( $woo ) {
@@ -276,6 +280,10 @@ class CX_Sidrena_Bulk_Import {
 					$name_value = trim( (string) ( $name && isset( $row[ $name ] ) ? $row[ $name ] : '' ) );
 					if ( '' === $sku && '' === $name_value && '' === $catalog_id ) {
 						++$skipped;
+						continue;
+					}
+					if ( $retail_is_display && $this->special_form_unnamed( $row, $flag_field, $oblik ) ) {
+						++$special;
 						continue;
 					}
 					if ( ! $catalog_started ) {
@@ -438,6 +446,10 @@ class CX_Sidrena_Bulk_Import {
 					++$skipped;
 					continue;
 				}
+				if ( $retail_is_display && $this->special_form_unnamed( $row, $flag_field, $oblik ) ) {
+					++$special;
+					continue;
+				}
 
 				$item = $this->catalog_item_from_map( $row, $sku_field, $name, $url, $regular, $sale, $sidrena, $dostupnost, $jedinica, $jedinica_cijena, $marka, $oblik, $cjm, $cjm_suffix, $vrsta, $datum, $poslovnica );
 				$id_raw = ( '' !== $id_field && isset( $row[ $id_field ] ) ) ? trim( (string) $row[ $id_field ] ) : '';
@@ -478,6 +490,7 @@ class CX_Sidrena_Bulk_Import {
 				'skipped'   => $skipped,
 				'missing'   => $missing,
 				'created'   => $created,
+				'special'   => $special,
 				'done'      => $done,
 				'percent'   => $total ? (int) round( ( $processed / $total ) * 100 ) : 100,
 			)
@@ -647,6 +660,36 @@ class CX_Sidrena_Bulk_Import {
 		}
 
 		$item[ $key ] = $value;
+	}
+
+	/**
+	 * The column that says whether the retail price is a special form of sale's (poseban_oblik, DA/NE since CX-SID-109;
+	 * da/ne before), or ''.
+	 *
+	 * @param array<int, string> $fields Header fields.
+	 * @return string
+	 */
+	private function special_form_flag_field( $fields ) {
+		return CX_Sidrena_Import_Parse::instance()->guess_named_field( $fields, array( 'poseban_oblik' ) );
+	}
+
+	/**
+	 * A row whose retail price is a special form of sale's (DA), with no name of that form in the file (the public price
+	 * list has none): which price it is cannot be told, so the row is not imported (Rook, 110-D). Else it went in as the
+	 * regular price.
+	 *
+	 * @param array<string, string> $row        Parsed row.
+	 * @param string                $flag_field The DA/NE column, or ''.
+	 * @param string                $oblik      The mapped name column, or ''.
+	 * @return bool
+	 */
+	private function special_form_unnamed( $row, $flag_field, $oblik ) {
+		$flag = $this->mapped_text( $row, $flag_field );
+		if ( null === $flag || ! in_array( strtolower( $flag ), array( 'da', 'yes', '1', 'true' ), true ) ) {
+			return false;
+		}
+
+		return null === $this->mapped_text( $row, $oblik );
 	}
 
 	/**

@@ -215,6 +215,7 @@
 					skipped: state.skipped,
 					missing: state.missing,
 					created: state.created,
+					special: state.special || 0,
 					import_poslovnica: outlet,
 					map: {
 						sku: sku,
@@ -255,6 +256,7 @@
 								skipped: data.skipped,
 								missing: data.missing,
 								created: data.created,
+								special: data.special,
 							});
 							return;
 						}
@@ -284,6 +286,12 @@
 										? " · " + data.created + " " + (i18n.created || "")
 										: "")
 							);
+						// CX-SID-110: rows whose retail price is a special form's, with no name of that form in the file.
+						if (data.special) {
+							$result.append(
+								$("<p>").text(data.special + " " + (i18n.special || ""))
+							);
+						}
 						job = null;
 					})
 					.fail(function (xhr) {
@@ -295,7 +303,7 @@
 					});
 			}
 
-			runBatch({ offset: 0, updated: 0, skipped: 0, missing: 0, created: 0 });
+			runBatch({ offset: 0, updated: 0, skipped: 0, missing: 0, created: 0, special: 0 });
 		});
 	}
 

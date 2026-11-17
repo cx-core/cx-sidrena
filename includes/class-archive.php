@@ -91,20 +91,22 @@ class CX_Sidrena_Archive {
 	}
 
 	/**
-	 * Archive name from the 18 September 2026 ministry example:
-	 * prodavaonica_Ilica 150 Zagreb_P-01_104_01.10.2026_07:45.xml
+	 * Name of a price list file by the Pravilnik o cjeniku (NN 132/2026-1584, art. 6(3)):
+	 * [OIB_]oblik_adresa_oznaka_ROBA|USLUGA_pohrana_GGGGMMDD_SSMM.xml, e.g.
+	 * 12345678903_prodavaonica_Ilica 150 Zagreb_P-01_ROBA_104_20261001_0745.xml
 	 *
-	 * Spaces, hyphens, and the typed case stay. Date is DD.MM.YYYY and time
-	 * is HH:MM on the legal clock (legal_timezone). A Windows disk cannot store the colon,
-	 * so that server writes 07-45 instead.
+	 * The OIB (or registration number) first when the shop has one (Settings::legal_id()); without it the part is left
+	 * out and the price list still goes out (CX-SID-110). Spaces, hyphens and the typed case stay. Date and time on the
+	 * legal clock (legal_timezone), with no separator, so no disk needs another name.
 	 *
 	 * @param string              $format    xml|csv.
 	 * @param int                 $timestamp Unix time of publication, 0 = now.
 	 * @param int                 $pohrana   Storage sequence, 0 = next unused number (does not consume).
 	 * @param array<string,mixed>|null $outlet Outlet row, or null for the single shop.
+	 * @param string              $vrsta     proizvod (ROBA) or usluga (USLUGA).
 	 * @return string
 	 */
-	public function legal_filename( $format = '', $timestamp = 0, $pohrana = 0, $outlet = null ) {
+	public function legal_filename( $format = '', $timestamp = 0, $pohrana = 0, $outlet = null, $vrsta = 'proizvod' ) {
 		$settings = CX_Sidrena_Settings::instance();
 		$format   = '' === $format ? CX_Sidrena_Feed_Files::instance()->export_format() : CX_Sidrena_Feed_Files::instance()->sanitize_ext( $format );
 		$tz       = self::legal_timezone();
@@ -130,9 +132,76 @@ class CX_Sidrena_Archive {
 			$oznaka = '001';
 		}
 
-		$name = $oblik . '_' . $adresa . '_' . $oznaka . '_' . (string) $seq . '_' . $dt->format( 'd.m.Y' ) . '_' . $dt->format( 'H:i' ) . '.' . $format;
+		$oib   = $settings->legal_id();
+		$parts = array( $oblik, $adresa, $oznaka, self::vrsta_token( $vrsta ), (string) $seq, $dt->format( 'Ymd' ), $dt->format( 'Hi' ) );
+		if ( '' !== $oib ) {
+			array_unshift( $parts, $oib );
+		}
 
-		return $this->archive_name_for_disk( $name );
+		return implode( '_', $parts ) . '.' . $format;
+	}
+
+	/**
+	 * ROBA or USLUGA, the part of the name that says what the file lists (art. 6(3)).
+	 *
+	 * @param string $vrsta proizvod|usluga.
+	 * @return string
+	 */
+	public static function vrsta_token( $vrsta ) {
+		return 'usluga' === $vrsta ? 'USLUGA' : 'ROBA';
+	}
+
+	/**
+	 * The parts of an archive file name, read from the end (Argus, CX-SID-110 note 1):
+	 * - since CX-SID-110: [OIB_]oblik_adresa_oznaka_ROBA|USLUGA_pohrana_GGGGMMDD_SSMM (7 or 8 parts);
+	 * - before it: oblik_adresa_oznaka_pohrana_DD.MM.YYYY_HH:MM (or HH-MM on Windows), and the earlier
+	 *   oblik_adresa_oznaka_pohrana_YYYYMMDD_HHMM (6 parts), both a file of goods.
+	 * Other names (sidrena-cijena_DD-MM-YYYY) have no parts: null.
+	 *
+	 * @param string $name Basename.
+	 * @return array{oib:string,oblik:string,adresa:string,oznaka:string,vrsta:string,pohrana:int,legal:bool}|null
+	 *         legal: a name of the Pravilnik (with ROBA|USLUGA).
+	 */
+	public function parse_name( $name ) {
+		$parts = explode( '_', (string) pathinfo( (string) $name, PATHINFO_FILENAME ) );
+		$n     = count( $parts );
+
+		if ( ( 7 === $n || 8 === $n )
+			&& preg_match( '/^\d{4}$/D', $parts[ $n - 1 ] ) && preg_match( '/^\d{8}$/D', $parts[ $n - 2 ] )
+			&& preg_match( '/^\d+$/D', $parts[ $n - 3 ] ) && in_array( $parts[ $n - 4 ], array( 'ROBA', 'USLUGA' ), true )
+			&& ( 7 === $n || preg_match( '/^\d+$/D', $parts[0] ) ) ) {
+			$o = 8 === $n ? 1 : 0;
+			return array(
+				'oib'     => 8 === $n ? $parts[0] : '',
+				'oblik'   => $parts[ $o ],
+				'adresa'  => $parts[ $o + 1 ],
+				'oznaka'  => $parts[ $o + 2 ],
+				'vrsta'   => 'USLUGA' === $parts[ $n - 4 ] ? 'usluga' : 'proizvod',
+				'pohrana' => absint( $parts[ $n - 3 ] ),
+				'legal'   => true,
+			);
+		}
+
+		if ( 6 !== $n ) {
+			return null;
+		}
+		$date = $parts[4];
+		$time = $parts[5];
+		$old  = (bool) preg_match( '/^\d{8}$/', $date ) && (bool) preg_match( '/^\d{4}$/', $time );
+		$new  = (bool) preg_match( '/^\d{2}\.\d{2}\.\d{4}$/', $date ) && (bool) preg_match( '/^\d{2}[:\-]\d{2}$/', $time );
+		if ( ! $old && ! $new ) {
+			return null;
+		}
+
+		return array(
+			'oib'     => '',
+			'oblik'   => $parts[0],
+			'adresa'  => $parts[1],
+			'oznaka'  => $parts[2],
+			'vrsta'   => 'proizvod',
+			'pohrana' => absint( $parts[3] ),
+			'legal'   => false,
+		);
 	}
 
 	/**
@@ -197,10 +266,14 @@ class CX_Sidrena_Archive {
 	 * @param string                    $format    xml|csv.
 	 * @param array<string, mixed>|null $outlet    Outlet, or null for the webshop.
 	 * @param int                       $timestamp When the body was made (its generated time), 0 = now.
+	 * @param string                    $vrsta     proizvod|usluga: which of the scope's two files (CX-SID-110).
+	 * @param int                       $pohrana   Storage number of this build, 0 = next_pohrana(). One build of goods
+	 *                                             and services gives both new files the same number.
+	 * @param string                    $live      Live path, '' = the kind's own (Feed_Files::get_public_path()).
 	 * @return array{filename:string,pohrana:int,generated:int,published:int,new:bool,bytes:int}|WP_Error
 	 *         generated = this build; published = the moment of the file now live (its name's time).
 	 */
-	public function publish( $body, $format, $outlet = null, $timestamp = 0 ) {
+	public function publish( $body, $format, $outlet = null, $timestamp = 0, $vrsta = 'proizvod', $pohrana = 0, $live = '' ) {
 		$ff        = CX_Sidrena_Feed_Files::instance();
 		$format    = $ff->sanitize_ext( $format );
 		$timestamp = $timestamp > 0 ? (int) $timestamp : time();
@@ -215,10 +288,12 @@ class CX_Sidrena_Archive {
 		}
 
 		$oznaka = $this->scope_oznaka( $outlet );
-		$live   = $ff->get_public_path( $format, is_array( $outlet ) && isset( $outlet['oznaka'] ) ? $outlet['oznaka'] : '' );
-		$newest = $this->newest_file( $oznaka );
+		if ( '' === $live ) {
+			$live = $ff->get_public_path( $format, is_array( $outlet ) && isset( $outlet['oznaka'] ) ? $outlet['oznaka'] : '', $vrsta );
+		}
+		$newest = $this->newest_file( $oznaka, $vrsta );
 
-		if ( null !== $newest && $this->is_current( $newest, $body, $format, $outlet, $timestamp ) ) {
+		if ( null !== $newest && $this->is_current( $newest, $body, $format, $outlet, $timestamp, $vrsta ) ) {
 			if ( ! file_exists( $live ) || hash_file( 'sha256', $live ) !== hash_file( 'sha256', $newest['path'] ) ) {
 				if ( ! $ff->copy_atomic( $newest['path'], $live ) ) {
 					return new WP_Error( 'sidrena_xml_write', __( 'The public price list could not be saved.', 'cx-sidrena' ) );
@@ -235,11 +310,11 @@ class CX_Sidrena_Archive {
 			);
 		}
 
-		$pohrana = $this->next_pohrana( $oznaka, $outlet );
-		$name    = $this->legal_filename( $format, $timestamp, $pohrana, $outlet );
+		$pohrana = $pohrana > 0 ? (int) $pohrana : $this->next_pohrana( $oznaka, $outlet );
+		$name    = $this->legal_filename( $format, $timestamp, $pohrana, $outlet, $vrsta );
 		for ( $tries = 0; $this->name_taken( $name ) && $tries < 1000; $tries++ ) {
 			++$pohrana;
-			$name = $this->legal_filename( $format, $timestamp, $pohrana, $outlet );
+			$name = $this->legal_filename( $format, $timestamp, $pohrana, $outlet, $vrsta );
 		}
 		if ( $this->name_taken( $name ) ) {
 			return new WP_Error( 'sidrena_xml_archive_copy', __( 'The archive price list could not be saved.', 'cx-sidrena' ) );
@@ -283,11 +358,11 @@ class CX_Sidrena_Archive {
 	 * @param int                       $timestamp This build.
 	 * @return bool
 	 */
-	private function is_current( $newest, $body, $format, $outlet, $timestamp ) {
+	private function is_current( $newest, $body, $format, $outlet, $timestamp, $vrsta = 'proizvod' ) {
 		if ( $newest['ext'] !== $format ) {
 			return false;
 		}
-		if ( $this->name_key( $newest['name'] ) !== $this->name_key( $this->legal_filename( $format, $timestamp, 1, $outlet ) ) ) {
+		if ( $this->name_key( $newest['name'] ) !== $this->name_key( $this->legal_filename( $format, $timestamp, 1, $outlet, $vrsta ) ) ) {
 			return false;
 		}
 		if ( $newest['date'] !== self::legal_date( 'd-m-Y', $timestamp ) ) {
@@ -310,15 +385,21 @@ class CX_Sidrena_Archive {
 	}
 
 	/**
-	 * What a file name says besides storage number, date and time: oblik_adresa_oznaka and the format.
+	 * What a file name says besides storage number, date and time: OIB, oblik, adresa, oznaka, ROBA|USLUGA and the
+	 * format. A name from before the Pravilnik never has the key of a new one, so the first build after the update
+	 * leaves a file with the legal name.
 	 *
-	 * @param string $name Legal basename.
+	 * @param string $name Basename.
 	 * @return string
 	 */
 	public function name_key( $name ) {
-		$parts = explode( '_', (string) pathinfo( $name, PATHINFO_FILENAME ) );
+		$ext = '.' . strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) );
+		$p   = $this->parse_name( $name );
+		if ( null === $p ) {
+			return 'other:' . (string) pathinfo( $name, PATHINFO_FILENAME ) . $ext;
+		}
 
-		return implode( '_', array_slice( $parts, 0, 3 ) ) . '.' . strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) );
+		return ( $p['legal'] ? '' : 'old:' ) . implode( '_', array( $p['oib'], $p['oblik'], $p['adresa'], $p['oznaka'], self::vrsta_token( $p['vrsta'] ) ) ) . $ext;
 	}
 
 	/**
@@ -329,6 +410,16 @@ class CX_Sidrena_Archive {
 	 */
 	public function current_name_key( $outlet = null ) {
 		return $this->name_key( $this->legal_filename( '', time(), 1, $outlet ) );
+	}
+
+	/**
+	 * Object code of a scope's files, the webshop's (null) or an outlet's.
+	 *
+	 * @param array<string, mixed>|null $outlet Outlet, or null for the webshop.
+	 * @return string
+	 */
+	public function oznaka_of( $outlet ) {
+		return $this->scope_oznaka( $outlet );
 	}
 
 	/**
@@ -347,14 +438,16 @@ class CX_Sidrena_Archive {
 	}
 
 	/**
-	 * Newest archive file of an object code.
+	 * Newest archive file of an object code and kind (a file from before the Pravilnik is one of goods).
 	 *
 	 * @param string $oznaka Object code.
+	 * @param string $vrsta  proizvod|usluga.
 	 * @return array<string, mixed>|null
 	 */
-	private function newest_file( $oznaka ) {
+	public function newest_file( $oznaka, $vrsta = 'proizvod' ) {
 		foreach ( $this->get_archive_files() as $file ) {
-			if ( $this->archive_oznaka_from_name( $file['name'] ) === $oznaka ) {
+			$p = $this->parse_name( $file['name'] );
+			if ( null !== $p && $p['oznaka'] === $oznaka && $p['vrsta'] === $vrsta ) {
 				return $file;
 			}
 		}
@@ -498,32 +591,25 @@ class CX_Sidrena_Archive {
 	 * @return string
 	 */
 	public function archive_group_key( $name ) {
-		$oznaka = $this->archive_oznaka_from_name( $name );
-		return '' !== $oznaka ? 'oznaka:' . $oznaka : 'legacy';
+		$p = $this->parse_name( $name );
+		if ( null === $p || '' === $p['oznaka'] ) {
+			return 'legacy';
+		}
+
+		// Goods keep the group of the files from before the Pravilnik, so those leave the public 30 days as before.
+		return 'oznaka:' . $p['oznaka'] . ( 'usluga' === $p['vrsta'] ? ':usluge' : '' );
 	}
 
 	/**
-	 * Object code from oblik_adresa_oznaka_pohrana_datum_vrijeme.
+	 * Object code from an archive file name (parse_name()), or empty.
 	 *
 	 * @param string $name Basename.
 	 * @return string
 	 */
 	public function archive_oznaka_from_name( $name ) {
-		$base  = (string) pathinfo( $name, PATHINFO_FILENAME );
-		$parts = explode( '_', $base );
-		if ( 6 !== count( $parts ) ) {
-			return '';
-		}
+		$p = $this->parse_name( $name );
 
-		$time = $parts[5];
-		$date = $parts[4];
-		$old  = (bool) preg_match( '/^\d{8}$/', $date ) && (bool) preg_match( '/^\d{4}$/', $time );
-		$new  = (bool) preg_match( '/^\d{2}\.\d{2}\.\d{4}$/', $date ) && (bool) preg_match( '/^\d{2}[:\-]\d{2}$/', $time );
-		if ( ! $old && ! $new ) {
-			return '';
-		}
-
-		return (string) $parts[2];
+		return null === $p ? '' : (string) $p['oznaka'];
 	}
 
 	/**
@@ -662,14 +748,9 @@ class CX_Sidrena_Archive {
 	 * @return int
 	 */
 	public function archive_pohrana_from_name( $name ) {
-		if ( '' === $this->archive_oznaka_from_name( $name ) ) {
-			return 0;
-		}
+		$p = $this->parse_name( $name );
 
-		$base  = (string) pathinfo( $name, PATHINFO_FILENAME );
-		$parts = explode( '_', $base );
-
-		return isset( $parts[3] ) ? absint( $parts[3] ) : 0;
+		return null === $p || '' === $p['oznaka'] ? 0 : (int) $p['pohrana'];
 	}
 
 	/**

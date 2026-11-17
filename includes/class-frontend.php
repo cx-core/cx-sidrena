@@ -663,6 +663,7 @@ class CX_Sidrena_Frontend {
 		);
 
 		$this->enqueue_cjenik_embed_style();
+		self::enqueue_cjenik_fit_script();
 
 		return CX_Sidrena_Export::instance()->get_cjenik_embed_html( (string) $atts['oznaka'] );
 	}
@@ -720,6 +721,27 @@ class CX_Sidrena_Frontend {
 		if ( did_action( 'wp_head' ) && ! wp_style_is( $handle, 'done' ) ) {
 			wp_print_styles( $handle );
 		}
+	}
+
+	/**
+	 * The price list's script that shows a table as a table where it fits in its frame and as cards where it does not
+	 * (CX-SID-104, assets/js/cjenik-fit.js), at the end of the page. Without it the stylesheet alone holds.
+	 */
+	public static function enqueue_cjenik_fit_script() {
+		$handle = 'sidrena-cijena-cjenik-fit';
+		if ( ! wp_script_is( $handle, 'registered' ) ) {
+			wp_register_script( $handle, CX_SIDRENA_URL . 'assets/js/cjenik-fit.js', array(), CX_SIDRENA_VERSION, true );
+		}
+
+		wp_enqueue_script( $handle );
+	}
+
+	/**
+	 * The same script printed at once, for the public price list page (it prints its own HTML, without wp_footer).
+	 */
+	public static function print_cjenik_fit_script() {
+		self::enqueue_cjenik_fit_script();
+		wp_print_scripts( 'sidrena-cijena-cjenik-fit' );
 	}
 
 	/**

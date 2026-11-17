@@ -27,6 +27,14 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 	<input type="hidden" name="sidrena_cijena_action" value="save_main_settings" />
 </form>
 
+<?php if ( ! $settings->is_b2b_only() && '' === $settings->legal_id() ) : ?>
+	<?php // CX-SID-110: the Status tab's yellow line here too; without WooCommerce there is no Status tab (Norman 110-2). ?>
+	<p class="cx-status__line">
+		<?php echo esc_html__( 'OIB, MBO or MIBPG is missing. The official name of the price list file must include it; now it does not.', 'cx-sidrena' ); ?>
+		<a href="#cx-oib-row"><?php echo esc_html__( 'Enter it', 'cx-sidrena' ); ?></a>
+	</p>
+<?php endif; ?>
+
 <?php if ( $woo && class_exists( 'CX_Sidrena_Dates' ) ) : ?>
 	<?php
 	// Dates per category (spec §1.3, §1.8): the model is CX-SID-21's; this screen only shows and posts them.
@@ -160,7 +168,14 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 	</div>
 	<div class="sidrena-cijena-feeds__grid">
 		<?php
-		$this->render_url_box( __( 'Price list file', 'cx-sidrena' ), $xml_url, $xml_url, $open_label, 'button button-secondary', 'dashicons-external', 'sidrena-cijena-public-url' );
+		// CX-SID-110: a shop with goods and services publishes two files; then each has its box (Norman).
+		if ( CX_Sidrena_Feed_Routes::instance()->scope_has_both( '' ) ) {
+			$this->render_url_box( __( 'Price list file: goods', 'cx-sidrena' ), $xml_url, $xml_url, $open_label, 'button button-secondary', 'dashicons-external', 'sidrena-cijena-public-url' );
+			$usluge_url = CX_Sidrena_Feed_Files::instance()->get_public_url( '', '', 'usluga' );
+			$this->render_url_box( __( 'Price list file: services', 'cx-sidrena' ), $usluge_url, $usluge_url, $open_label, 'button button-secondary', 'dashicons-external', 'sidrena-cijena-public-url-usluge' );
+		} else {
+			$this->render_url_box( __( 'Price list file', 'cx-sidrena' ), $xml_url, $xml_url, $open_label, 'button button-secondary', 'dashicons-external', 'sidrena-cijena-public-url' );
+		}
 		$cjenik_url = $export->get_cjenik_url();
 		$this->render_url_box( __( 'HTML price list', 'cx-sidrena' ), $cjenik_url, $cjenik_url, __( 'Open price list', 'cx-sidrena' ), 'button button-secondary', 'dashicons-external', 'sidrena-cijena-cjenik-url' );
 		$archive_url = $export->get_archive_url();
@@ -183,6 +198,31 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 			<td>
 				<input type="text" form="<?php echo esc_attr( $f ); ?>" class="regular-text" id="sidrena_cijena_file_adresa" name="sidrena_cijena_file_adresa" value="<?php echo esc_attr( (string) $settings->get( 'file_adresa', '' ) ); ?>" placeholder="<?php echo esc_attr( $settings->default_file_address() ); ?>" />
 				<p class="description"><?php echo esc_html__( 'Street and city, for the official name of the price list file. Empty: the store address from WooCommerce settings is used, or the web address.', 'cx-sidrena' ); ?></p>
+			</td>
+		</tr>
+		<tr id="cx-oib-row">
+			<th scope="row"><label for="sidrena_cijena_file_oib"><?php echo esc_html__( 'OIB, MBO or MIBPG', 'cx-sidrena' ); ?></label></th>
+			<td>
+				<?php
+				// After a refused save the field shows what was typed, marked, so one wrong digit is fixed there; the stored
+				// value is unchanged until a valid one is saved (Norman, CX-SID-110). The save lands on this row, and the
+				// reason (refused, or saved with a warning) stands under the field, tied to it for screen readers (110-1).
+				$oib_refused = isset( $_GET['cx_oib'] ) && 0 === strpos( sanitize_key( wp_unslash( $_GET['cx_oib'] ) ), 'refused' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				$oib_value   = $oib_refused ? self::oib_typed() : (string) $settings->get( 'file_oib', '' );
+				$oib_notice  = self::oib_notice();
+				?>
+				<input type="text" form="<?php echo esc_attr( $f ); ?>" class="regular-text<?php echo $oib_refused ? ' cx-field--invalid' : ''; ?>" id="sidrena_cijena_file_oib" name="sidrena_cijena_file_oib" inputmode="numeric" autocomplete="off" value="<?php echo esc_attr( $oib_value ); ?>"<?php echo $oib_refused ? ' aria-invalid="true"' : ''; ?><?php echo null !== $oib_notice ? ' aria-describedby="cx-oib-msg"' : ''; ?> />
+				<?php if ( null !== $oib_notice ) : ?>
+					<p class="cx-field__msg cx-field__msg--<?php echo esc_attr( $oib_notice[0] ); ?>" id="cx-oib-msg"><?php echo esc_html( $oib_notice[1] ); ?></p>
+					<?php
+					// "Save and generate now" with that save: what the build did, here too, since the page landed here (110-C).
+					$xml_notice = self::xml_notice();
+					?>
+					<?php if ( null !== $xml_notice ) : ?>
+						<p class="cx-field__msg cx-field__msg--<?php echo esc_attr( $xml_notice[0] ); ?>" id="cx-oib-xml-msg"><?php echo esc_html( $xml_notice[1] ); ?></p>
+					<?php endif; ?>
+				<?php endif; ?>
+				<p class="description"><?php echo esc_html__( 'Company (d.o.o., j.d.o.o.): OIB, 11 digits. Craft: MBO. Family farm: MIBPG. For the official name of the price list file. Empty: the name is without it.', 'cx-sidrena' ); ?></p>
 			</td>
 		</tr>
 		<tr>

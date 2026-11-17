@@ -240,35 +240,41 @@ a {
 
 /* Cards up to 1023 px, not only on a phone: from 721 px the table with up to 12 columns (3+ nowrap) was wider than
    its frame, and on an iPad held upright the sidrena cijena and its date were hidden behind a sideways scroll
-   (CX-SID-103). */
+   (CX-SID-103).
+   CX-SID-104: the script cjenik-fit.js (from 721 px) shows a table as a table where it fits in its frame and as cards
+   where it does not, at any width: .cjenik-fit keeps the table up to 1023 px, .cjenik-cards makes cards from 1024 px.
+   Without the script these rules hold as they are: cards up to 1023 px, a table from 1024. :where() keeps the
+   specificity of the rules as it was. In a card, a word longer than its line breaks where the cell wraps at all
+   (not in the columns kept on one line). */
 @media (max-width: 1023px) {
-	.cjenik-table thead {
+	.cjenik-table:where(:not(.cjenik-fit)) thead {
 		display: none;
 	}
 
-	.cjenik-table,
-	.cjenik-table tbody,
-	.cjenik-table tr,
-	.cjenik-table td {
+	.cjenik-table:where(:not(.cjenik-fit)),
+	.cjenik-table:where(:not(.cjenik-fit)) tbody,
+	.cjenik-table:where(:not(.cjenik-fit)) tr,
+	.cjenik-table:where(:not(.cjenik-fit)) td {
 		display: block;
 		width: 100%;
 	}
 
 	/* A card is as wide as its frame: with its padding outside a width of 100 % it was 28 px wider, the frame scrolled
 	   sideways and cut off the right edge (CX-SID-95). */
-	.cjenik-table tr {
+	.cjenik-table:where(:not(.cjenik-fit)) tr {
 		box-sizing: border-box;
 		padding: 12px 14px;
 		border-bottom: 1px solid #e6eef1;
 	}
 
-	.cjenik-table td {
+	.cjenik-table:where(:not(.cjenik-fit)) td {
 		padding: 6px 0;
 		border: 0;
 		white-space: normal;
+		overflow-wrap: anywhere;
 	}
 
-	.cjenik-table td::before {
+	.cjenik-table:where(:not(.cjenik-fit)) td::before {
 		content: attr(data-label);
 		display: block;
 		font-size: 0.72rem;
@@ -278,31 +284,32 @@ a {
 		margin-bottom: 2px;
 	}
 
-	.cjenik-upit thead {
+	.cjenik-upit:where(:not(.cjenik-fit)) thead {
 		display: none;
 	}
 
-	.cjenik-upit,
-	.cjenik-upit tbody,
-	.cjenik-upit tr,
-	.cjenik-upit td {
+	.cjenik-upit:where(:not(.cjenik-fit)),
+	.cjenik-upit:where(:not(.cjenik-fit)) tbody,
+	.cjenik-upit:where(:not(.cjenik-fit)) tr,
+	.cjenik-upit:where(:not(.cjenik-fit)) td {
 		display: block;
 		width: 100%;
 	}
 
-	.cjenik-upit tr {
+	.cjenik-upit:where(:not(.cjenik-fit)) tr {
 		box-sizing: border-box;
 		padding: 12px 14px;
 		border-bottom: 1px solid #e6eef1;
 	}
 
-	.cjenik-upit td {
+	.cjenik-upit:where(:not(.cjenik-fit)) td {
 		padding: 6px 0;
 		border: 0;
 		white-space: normal;
+		overflow-wrap: anywhere;
 	}
 
-	.cjenik-upit td::before {
+	.cjenik-upit:where(:not(.cjenik-fit)) td::before {
 		content: attr(data-label);
 		display: block;
 		font-size: 0.72rem;
@@ -311,4 +318,77 @@ a {
 		color: #6b7c86;
 		margin-bottom: 2px;
 	}
+}
+
+/* The same cards from 1024 px, for a table the script found too wide for its frame (CX-SID-104). */
+.cjenik-table:where(.cjenik-cards) thead {
+	display: none;
+}
+
+.cjenik-table:where(.cjenik-cards),
+.cjenik-table:where(.cjenik-cards) tbody,
+.cjenik-table:where(.cjenik-cards) tr,
+.cjenik-table:where(.cjenik-cards) td {
+	display: block;
+	width: 100%;
+}
+
+/* A card is as wide as its frame: with its padding outside a width of 100 % it was 28 px wider, the frame scrolled
+   sideways and cut off the right edge (CX-SID-95). */
+.cjenik-table:where(.cjenik-cards) tr {
+	box-sizing: border-box;
+	padding: 12px 14px;
+	border-bottom: 1px solid #e6eef1;
+}
+
+.cjenik-table:where(.cjenik-cards) td {
+	padding: 6px 0;
+	border: 0;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.cjenik-table:where(.cjenik-cards) td::before {
+	content: attr(data-label);
+	display: block;
+	font-size: 0.72rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #6b7c86;
+	margin-bottom: 2px;
+}
+
+.cjenik-upit:where(.cjenik-cards) thead {
+	display: none;
+}
+
+.cjenik-upit:where(.cjenik-cards),
+.cjenik-upit:where(.cjenik-cards) tbody,
+.cjenik-upit:where(.cjenik-cards) tr,
+.cjenik-upit:where(.cjenik-cards) td {
+	display: block;
+	width: 100%;
+}
+
+.cjenik-upit:where(.cjenik-cards) tr {
+	box-sizing: border-box;
+	padding: 12px 14px;
+	border-bottom: 1px solid #e6eef1;
+}
+
+.cjenik-upit:where(.cjenik-cards) td {
+	padding: 6px 0;
+	border: 0;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.cjenik-upit:where(.cjenik-cards) td::before {
+	content: attr(data-label);
+	display: block;
+	font-size: 0.72rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #6b7c86;
+	margin-bottom: 2px;
 }

@@ -57,7 +57,9 @@ class CX_Sidrena_Import_Parse {
 		}
 
 		$delimiter = $this->detect_delimiter( $lines[0] );
-		$headers   = $this->unique_fields( str_getcsv( $lines[0], $delimiter ) );
+		// The escape character given as it has always been (PHP 8.4 deprecates leaving it out; seen in the bulk import's
+		// log on PHP 8.4, CX-SID-110). The same parse as before.
+		$headers   = $this->unique_fields( str_getcsv( $lines[0], $delimiter, '"', '\\' ) );
 		$rows      = array();
 
 		for ( $i = 1, $max = count( $lines ); $i < $max; $i++ ) {
@@ -65,7 +67,7 @@ class CX_Sidrena_Import_Parse {
 				break;
 			}
 
-			$cells = str_getcsv( $lines[ $i ], $delimiter );
+			$cells = str_getcsv( $lines[ $i ], $delimiter, '"', '\\' );
 			$row   = array();
 			foreach ( $headers as $index => $field ) {
 				$row[ $field ] = isset( $cells[ $index ] ) ? trim( (string) $cells[ $index ] ) : '';
@@ -174,6 +176,12 @@ class CX_Sidrena_Import_Parse {
 		}
 
 		if ( 1 === count( $names ) && reset( $names ) > 1 ) {
+			return $children;
+		}
+
+		// Our own price list: goods and services side by side, each row under its own tag (CX-SID-110); both are rows,
+		// else an edited service went unread.
+		if ( array() === array_diff( array_keys( $names ), array( 'proizvod', 'usluga' ) ) && array_sum( $names ) > 1 ) {
 			return $children;
 		}
 

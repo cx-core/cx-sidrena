@@ -18,6 +18,27 @@ class CX_Sidrena_Feed_Files {
 	const CJENIK_PAGE_SIZE = 200;
 
 	/**
+	 * Columns of a public price list file for goods, in the order of the items of art. 3(2) of the Pravilnik o cjeniku
+	 * (NN 132/2026-1584): naziv, šifra, marka, neto količina, jedinica mjere, maloprodajna cijena and whether it is
+	 * one of a special form of sale, cijena za jedinicu mjere, barkod, EAN barkod, bazna cijena. Art. 3(4): this order.
+	 */
+	const COLUMNS_ROBA = array( 'naziv', 'sifra', 'marka', 'neto_kolicina', 'jedinica_mjere', 'maloprodajna_cijena', 'poseban_oblik', 'cijena_jedinice_mjere', 'barkod', 'ean_barkod', 'bazna_cijena' );
+
+	/**
+	 * Columns for services, art. 3(3): naziv, maloprodajna cijena and whether it is one of a special form of sale,
+	 * bazna cijena.
+	 */
+	const COLUMNS_USLUGA = array( 'naziv', 'maloprodajna_cijena', 'poseban_oblik', 'bazna_cijena' );
+
+	/**
+	 * Only in the price list downloaded from the admin, after the columns of the Pravilnik (CX-SID-110, Argus 110-D):
+	 * what the bulk import needs to put an edited row back where it came from (the id), to keep a service a service, and
+	 * to keep the sale and the date (whether the retail price is a sale price, and the bazna cijena's own date). The
+	 * public files, the archive and the stable addresses never have them: the legal price list is the public address.
+	 */
+	const COLUMNS_ADMIN = array( 'id', 'vrsta', 'naziv_posebnog_oblika', 'sidrena_datum' );
+
+	/**
 	 * Singleton.
 	 *
 	 * @var self|null
@@ -96,13 +117,13 @@ class CX_Sidrena_Feed_Files {
 	 *
 	 * @param string                             $filename File name.
 	 * @param array<int, array<string, string>>  $rows     Rows.
-	 * @param bool                               $public   Client cjenik columns, same as the public feed.
+	 * @param bool                               $public   Client cjenik columns, as the public feed, plus COLUMNS_ADMIN.
 	 */
 	public function send_csv( $filename, $rows, $public = false ) {
 		$this->headers( 'text/csv; charset=utf-8', $filename );
 
 		if ( $public ) {
-			echo $this->build_csv_string( $rows ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CSV download; fields formula-neutralized and quoted in csv_line().
+			echo $this->build_csv_string( $rows, true ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CSV download; fields formula-neutralized and quoted in csv_line().
 			exit;
 		}
 
@@ -194,7 +215,7 @@ class CX_Sidrena_Feed_Files {
 	 * @return array<int, string>
 	 */
 	public function csv_price_keys() {
-		return array( 'cijena_redovna', 'cijena_akcijska', 'cijena_jedinice_mjere', 'maloprodajna_cijena', 'sidrena_cijena' );
+		return array( 'cijena_redovna', 'cijena_akcijska', 'cijena_jedinice_mjere', 'maloprodajna_cijena', 'sidrena_cijena', 'bazna_cijena' );
 	}
 
 	/**
@@ -217,24 +238,31 @@ class CX_Sidrena_Feed_Files {
 	/**
 	 * Public CSV (semicolon, UTF-8 BOM), same columns as the public XML feed.
 	 *
-	 * @param array<int, array<string, string>> $rows Rows.
+	 * @param array<int, array<string, string>> $rows  Rows.
+	 * @param bool                              $admin The admin's download: COLUMNS_ADMIN after the legal ones.
 	 * @return string
 	 */
-	public function build_csv_string( $rows ) {
+	public function build_csv_string( $rows, $admin = false ) {
 		$keys  = $this->public_column_keys( $rows );
 		$lines = array();
-		$lines[] = $this->csv_line( $keys );
+		$lines[] = $this->csv_line( $admin ? array_merge( $keys, self::COLUMNS_ADMIN ) : $keys );
 
 		$price_keys = $this->csv_price_keys();
 
 		foreach ( $rows as $row ) {
+			$legal = $this->legal_row( $row );
+			// A service in a file with goods: the goods-only columns stay empty (art. 3(3) lists only these for services).
+			$own   = $this->public_column_keys( array(), $this->row_vrsta( $row ) );
 			$cells = array();
 			foreach ( $keys as $key ) {
-				$cell = isset( $row[ $key ] ) ? $row[ $key ] : '';
+				$cell = in_array( $key, $own, true ) ? $legal[ $key ] : '';
 				if ( in_array( $key, $price_keys, true ) ) {
 					$cell = $this->csv_amount( $cell );
 				}
 				$cells[] = $cell;
+			}
+			if ( $admin ) {
+				$cells = array_merge( $cells, array_values( $this->admin_row( $row ) ) );
 			}
 			$lines[] = $this->csv_line( $cells );
 		}
@@ -243,23 +271,91 @@ class CX_Sidrena_Feed_Files {
 	}
 
 	/**
-	 * Public CSV/XML columns. Service-only feeds drop goods fields. poseban_oblik (da|ne) says whether the row is in a
-	 * special form of sale (draft 10332 art. 3(2)); dostupnost only when the owner turned it on (CX-SID-28).
+	 * Public CSV/XML columns, by the Pravilnik o cjeniku (NN 132/2026-1584): art. 3(4) wants them in the order of the
+	 * items in art. 3(2) for goods and art. 3(3) for services, and nothing else is in the file. Without a type, the
+	 * columns of the whole file: services only when every row is one, else goods (a CSV has one header).
 	 *
-	 * @param array<int, array<string, string>> $rows Rows.
+	 * @param array<int, array<string, string>> $rows  Rows.
+	 * @param string|null                       $vrsta proizvod|usluga for one row's columns, null for the file's.
 	 * @return array<int, string>
 	 */
-	public function public_column_keys( $rows ) {
-		if ( $this->feed_is_services_only( $rows ) ) {
-			return array( 'id', 'vrsta', 'naziv', 'url', 'maloprodajna_cijena', 'poseban_oblik', 'naziv_posebnog_oblika', 'sidrena_cijena', 'sidrena_datum' );
+	public function public_column_keys( $rows, $vrsta = null ) {
+		if ( null === $vrsta ) {
+			$vrsta = $this->feed_is_services_only( $rows ) ? 'usluga' : 'proizvod';
 		}
 
-		$keys = array( 'id', 'vrsta', 'naziv', 'sku', 'marka', 'url', 'jedinica_mjere', 'cijena_jedinice_mjere', 'maloprodajna_cijena', 'poseban_oblik', 'naziv_posebnog_oblika', 'sidrena_cijena', 'sidrena_datum', 'barkod' );
-		if ( CX_Sidrena_Settings::instance()->feed_has_dostupnost() ) {
-			$keys[] = 'dostupnost';
+		return 'usluga' === $vrsta ? self::COLUMNS_USLUGA : self::COLUMNS_ROBA;
+	}
+
+	/**
+	 * A public row under the names of the price list file. The rows keep their own keys (sku, sidrena_cijena,
+	 * naziv_posebnog_oblika), which the HTML table, the shortcode and the admin read; only the file uses these.
+	 *
+	 * @param array<string, string> $row Public row (CX_Sidrena_Feed_Rows::finish_public_rows()).
+	 * @return array<string, string>
+	 */
+	public function legal_row( $row ) {
+		$value = static function ( $key ) use ( $row ) {
+			return isset( $row[ $key ] ) ? (string) $row[ $key ] : '';
+		};
+		$codes = $this->split_barcode( $value( 'barkod' ) );
+
+		return array(
+			'naziv'                 => $value( 'naziv' ),
+			'sifra'                 => $value( 'sku' ),
+			'marka'                 => $value( 'marka' ),
+			'neto_kolicina'         => '', // no such field yet (v0.3); the column is in its place, empty
+			'jedinica_mjere'        => $value( 'jedinica_mjere' ),
+			'maloprodajna_cijena'   => $value( 'maloprodajna_cijena' ),
+			'poseban_oblik'         => 'da' === $value( 'poseban_oblik' ) ? 'DA' : 'NE',
+			'cijena_jedinice_mjere' => $value( 'cijena_jedinice_mjere' ),
+			'barkod'                => $codes['barkod'],
+			'ean_barkod'            => $codes['ean_barkod'],
+			'bazna_cijena'          => $value( 'sidrena_cijena' ),
+		);
+	}
+
+	/**
+	 * COLUMNS_ADMIN of one row, as the rows hold them: the id (a manual row's with its "d" when WooCommerce is on), the
+	 * type, the name of the special form of sale (empty when the retail price is the regular one), the bazna cijena's
+	 * date.
+	 *
+	 * @param array<string, string> $row Public row.
+	 * @return array<string, string>
+	 */
+	public function admin_row( $row ) {
+		$out = array();
+		foreach ( self::COLUMNS_ADMIN as $key ) {
+			$out[ $key ] = 'vrsta' === $key ? $this->row_vrsta( $row ) : ( isset( $row[ $key ] ) ? (string) $row[ $key ] : '' );
 		}
 
-		return $keys;
+		return $out;
+	}
+
+	/**
+	 * The product's one code in its column: exactly 8 or 13 digits is an EAN (EAN-8, EAN-13), anything else (UPC-A's
+	 * 12, GTIN-14, letters) a barcode. The check digit is not checked.
+	 *
+	 * @param string $code Code from CX_Sidrena_Feed_Rows::product_barcode().
+	 * @return array{barkod:string,ean_barkod:string}
+	 */
+	public function split_barcode( $code ) {
+		$code = (string) $code;
+		if ( 1 === preg_match( '/^(?:\d{8}|\d{13})$/D', $code ) ) {
+			return array( 'barkod' => '', 'ean_barkod' => $code );
+		}
+
+		return array( 'barkod' => $code, 'ean_barkod' => '' );
+	}
+
+	/**
+	 * proizvod or usluga.
+	 *
+	 * @param array<string, string> $row Row.
+	 * @return string
+	 */
+	public function row_vrsta( $row ) {
+		return ( isset( $row['vrsta'] ) && 'usluga' === $row['vrsta'] ) ? 'usluga' : 'proizvod';
 	}
 
 	/**
@@ -314,9 +410,14 @@ class CX_Sidrena_Feed_Files {
 	 * @param string $format xml|csv.
 	 * @return string
 	 */
-	public function live_filename( $format = '', $oznaka = '' ) {
+	public function live_filename( $format = '', $oznaka = '', $vrsta = 'proizvod' ) {
 		$format = '' === $format ? $this->export_format() : $this->sanitize_ext( $format );
 		$oznaka = CX_Sidrena_Settings::instance()->normalize_oznaka( $oznaka );
+		if ( 'usluga' === $vrsta ) {
+			// Services (CX-SID-110). An underscore, which no object code can have, so the file of an outlet whose code
+			// is "usluge" is never this one; the address is sidrena-cijena-usluge[-oznaka] (get_public_url()).
+			return CX_Sidrena_Export::PUBLIC_STEM . '_usluge' . ( '' !== $oznaka ? '-' . $oznaka : '' ) . '.' . $format;
+		}
 		if ( '' !== $oznaka ) {
 			return CX_Sidrena_Export::PUBLIC_STEM . '-' . $oznaka . '.' . $format;
 		}
@@ -358,13 +459,13 @@ class CX_Sidrena_Feed_Files {
 	 * @param string $format xml|csv, empty = current setting.
 	 * @return string
 	 */
-	public function get_public_path( $format = '', $oznaka = '' ) {
+	public function get_public_path( $format = '', $oznaka = '', $vrsta = 'proizvod' ) {
 		$dir = $this->get_public_dir();
 		if ( '' === $dir ) {
 			return '';
 		}
 
-		return trailingslashit( $dir ) . $this->live_filename( $format, $oznaka );
+		return trailingslashit( $dir ) . $this->live_filename( $format, $oznaka, $vrsta );
 	}
 
 	/**
@@ -391,13 +492,15 @@ class CX_Sidrena_Feed_Files {
 	 * @param string $format xml|csv, empty = current setting.
 	 * @return string
 	 */
-	public function get_public_url( $format = '', $oznaka = '' ) {
+	public function get_public_url( $format = '', $oznaka = '', $vrsta = 'proizvod' ) {
 		$format     = '' === $format ? $this->export_format() : $this->sanitize_ext( $format );
 		$oznaka     = CX_Sidrena_Settings::instance()->normalize_oznaka( $oznaka );
 		$permalinks = get_option( 'permalink_structure' );
+		$usluge     = 'usluga' === $vrsta;
 
 		if ( is_string( $permalinks ) && '' !== $permalinks ) {
-			return home_url( '/' . $this->live_filename( $format, $oznaka ) );
+			$stem = CX_Sidrena_Export::PUBLIC_STEM . ( $usluge ? '-usluge' : '' );
+			return home_url( '/' . $stem . ( '' !== $oznaka ? '-' . $oznaka : '' ) . '.' . $format );
 		}
 
 		$args = array(
@@ -406,6 +509,9 @@ class CX_Sidrena_Feed_Files {
 		);
 		if ( '' !== $oznaka ) {
 			$args['sidrena_cijena_oznaka'] = $oznaka;
+		}
+		if ( $usluge ) {
+			$args['sidrena_cijena_vrsta'] = 'usluga';
 		}
 
 		return add_query_arg( $args, home_url( '/' ) );
@@ -499,7 +605,7 @@ class CX_Sidrena_Feed_Files {
 	 */
 	public function send_xml( $filename, $rows, $missing_only, $public = false ) {
 		$this->headers( 'application/xml; charset=utf-8', $filename );
-		echo $this->build_xml_string( $rows, $missing_only ? 'nedostaje' : 'cjenik', $public ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- XML download; values escaped with esc_xml() in xml_value().
+		echo $this->build_xml_string( $rows, $missing_only ? 'nedostaje' : 'cjenik', $public, 0, $public ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- XML download; values escaped with esc_xml() in xml_value().
 		exit;
 	}
 
@@ -508,31 +614,33 @@ class CX_Sidrena_Feed_Files {
 	 *
 	 * @param array<int, array<string, string>> $rows           Rows.
 	 * @param string                            $root           Root element name.
-	 * @param bool                              $public_fields  Include id and url.
+	 * @param bool                              $public_fields  The public price list's columns (public_column_keys()).
 	 * @param int                               $timestamp      Its generated time, 0 = now.
+	 * @param bool                              $admin          The admin's download: COLUMNS_ADMIN after the legal ones.
 	 * @return string
 	 */
-	public function build_xml_string( $rows, $root, $public_fields = false, $timestamp = 0 ) {
+	public function build_xml_string( $rows, $root, $public_fields = false, $timestamp = 0, $admin = false ) {
 		$root = preg_replace( '/[^a-z0-9_\-]/i', '', $root );
 		if ( '' === $root ) {
 			$root = 'cjenik';
 		}
 
-		$keys = $this->public_column_keys( $rows );
-		$tag  = $this->feed_is_services_only( $rows ) ? 'usluga' : 'proizvod';
-
 		$xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 		$xml .= '<' . $root . ' generated="' . $this->xml_value( CX_Sidrena_Archive::legal_date( 'c', $timestamp > 0 ? (int) $timestamp : null ) ) . '" count="' . $this->xml_value( (string) count( $rows ) ) . '" shop="' . $this->xml_value( home_url( '/' ) ) . '">' . "\n";
 
 		foreach ( $rows as $row ) {
-			$row_tag = ( isset( $row['vrsta'] ) && 'usluga' === $row['vrsta'] ) ? 'usluga' : $tag;
-			if ( ! $public_fields ) {
-				$row_tag = 'proizvod';
-			}
-			$xml .= "\t<" . $row_tag . ">\n";
+			// Public: each row its own columns, <proizvod> those of goods and <usluga> those of services (art. 3(2)-(3)).
+			$row_tag = $public_fields ? $this->row_vrsta( $row ) : 'proizvod';
+			$xml    .= "\t<" . $row_tag . ">\n";
 			if ( $public_fields ) {
-				foreach ( $keys as $key ) {
-					$xml .= "\t\t<" . $key . ">" . $this->xml_value( isset( $row[ $key ] ) ? $row[ $key ] : '' ) . "</" . $key . ">\n";
+				$legal = $this->legal_row( $row );
+				foreach ( $this->public_column_keys( array(), $row_tag ) as $key ) {
+					$xml .= "\t\t<" . $key . ">" . $this->xml_value( $legal[ $key ] ) . "</" . $key . ">\n";
+				}
+				if ( $admin ) {
+					foreach ( $this->admin_row( $row ) as $key => $value ) {
+						$xml .= "\t\t<" . $key . ">" . $this->xml_value( $value ) . "</" . $key . ">\n";
+					}
 				}
 			} else {
 				$xml .= "\t\t<naziv>" . $this->xml_value( $row['naziv'] ) . "</naziv>\n";
@@ -560,7 +668,6 @@ class CX_Sidrena_Feed_Files {
 	public function write_feed_file( $rows, $oznaka = '', $outlet = null ) {
 		$format = $this->export_format();
 		$now    = time(); // one instant: generated in the file, the time in its name, "Updated"
-		$body   = 'csv' === $format ? $this->build_csv_string( $rows ) : $this->build_xml_string( $rows, 'cjenik', true, $now );
 		$dir    = $this->get_public_dir();
 
 		if ( '' === $dir ) {
@@ -580,9 +687,31 @@ class CX_Sidrena_Feed_Files {
 				return new WP_Error( 'sidrena_poslovnica_missing', __( 'The outlet has no published price list.', 'cx-sidrena' ) );
 			}
 		}
-		$published = CX_Sidrena_Archive::instance()->publish( $body, $format, $outlet, $now );
-		if ( is_wp_error( $published ) ) {
-			return $published;
+		$kinds = $this->rows_by_vrsta( $rows );
+		$main  = array() !== $kinds['proizvod'] || array() === $kinds['usluga'] ? 'proizvod' : 'usluga';
+		$arch  = CX_Sidrena_Archive::instance();
+		// One storage number for this build, whichever of its files are new (art. 6(3); CX-SID-110).
+		$seq   = $arch->next_pohrana( $arch->oznaka_of( $outlet ), $outlet );
+		$code  = is_array( $outlet ) && isset( $outlet['oznaka'] ) ? (string) $outlet['oznaka'] : '';
+		$vrste = array();
+
+		foreach ( array( 'proizvod', 'usluga' ) as $vrsta ) {
+			// Goods have their file even when empty, unless the scope has only services: then the main address holds those.
+			if ( array() === $kinds[ $vrsta ] && $vrsta !== $main ) {
+				if ( 'usluga' === $vrsta ) {
+					$this->drop_live( $this->get_public_path( $format, $code, $vrsta ) );
+				}
+				continue; // goods: the main address gets the services file below, never left empty in between
+			}
+			$body      = 'csv' === $format ? $this->build_csv_string( $kinds[ $vrsta ] ) : $this->build_xml_string( $kinds[ $vrsta ], 'cjenik', true, $now );
+			$published = $arch->publish( $body, $format, $outlet, $now, $vrsta, $seq );
+			if ( is_wp_error( $published ) ) {
+				return $published;
+			}
+			$vrste[ $vrsta ] = $published + array( 'count' => count( $kinds[ $vrsta ] ) );
+		}
+		if ( 'usluga' === $main && ! $this->copy_atomic( $this->get_public_path( $format, $code, 'usluga' ), $this->get_public_path( $format, $code ) ) ) {
+			return new WP_Error( 'sidrena_xml_write', __( 'The public price list could not be saved.', 'cx-sidrena' ) );
 		}
 
 		$html_result = $this->write_cjenik_html( $rows, $oznaka );
@@ -590,16 +719,54 @@ class CX_Sidrena_Feed_Files {
 			return $html_result;
 		}
 
+		$first = $vrste[ $main ];
+		$new   = false;
+		$bytes = 0;
+		$top   = 0;
+		foreach ( $vrste as $one ) {
+			$new    = $new || $one['new'];
+			$bytes += (int) $one['bytes'];
+			$top    = max( $top, (int) $one['published'] );
+		}
+
 		return array(
-			'generated' => $published['generated'],
-			'published' => $published['published'],
+			'generated' => $first['generated'],
+			'published' => $top,
 			'count'     => count( $rows ),
-			'bytes'     => $published['bytes'],
+			'bytes'     => $bytes,
 			'format'    => $format,
-			'filename'  => $published['filename'],
-			'pohrana'   => $published['pohrana'],
-			'new'       => $published['new'],
+			'filename'  => $first['filename'], // the file at the main address (goods, or services in a shop of services)
+			'pohrana'   => $first['pohrana'],
+			'new'       => $new,
+			'main'      => $main,
+			'vrste'     => $vrste,
 		);
+	}
+
+	/**
+	 * Rows split into goods and services, each in its order.
+	 *
+	 * @param array<int, array<string, string>> $rows Rows.
+	 * @return array{proizvod: array<int, array<string, string>>, usluga: array<int, array<string, string>>}
+	 */
+	public function rows_by_vrsta( $rows ) {
+		$out = array( 'proizvod' => array(), 'usluga' => array() );
+		foreach ( $rows as $row ) {
+			$out[ $this->row_vrsta( $row ) ][] = $row;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Remove a live file of a kind the scope no longer has. Its archive files stay.
+	 *
+	 * @param string $path Live path.
+	 */
+	private function drop_live( $path ) {
+		if ( '' !== $path && is_file( $path ) ) {
+			wp_delete_file( $path );
+		}
 	}
 
 	/**
@@ -703,7 +870,7 @@ class CX_Sidrena_Feed_Files {
 
 		$other   = 'csv' === $this->sanitize_ext( $format ) ? 'xml' : 'csv';
 		$stem    = trailingslashit( $dir ) . CX_Sidrena_Export::PUBLIC_STEM;
-		$found   = array_merge( glob( $stem . '.' . $other ) ?: array(), glob( $stem . '-*.' . $other ) ?: array() );
+		$found   = array_merge( glob( $stem . '.' . $other ) ?: array(), glob( $stem . '-*.' . $other ) ?: array(), glob( $stem . '_usluge*.' . $other ) ?: array() );
 		$removed = 0;
 		foreach ( $found as $path ) {
 			if ( is_file( $path ) ) {
@@ -852,17 +1019,19 @@ class CX_Sidrena_Feed_Files {
 			$naziv_html = '' !== $url
 				? '<a href="' . esc_url( $url ) . '">' . esc_html( $naziv ) . '</a>'
 				: esc_html( $naziv );
+			$codes      = $this->split_barcode( $barkod );
 
 			$cells = array(
 				'naziv'                 => $naziv_html,
-				'vrsta'                 => esc_html( $vrsta_label ),
 				'sku'                   => esc_html( $sku ),
 				'marka'                 => esc_html( '' !== $marka ? $marka : '-' ),
-				'barkod'                => esc_html( '' !== $barkod ? $barkod : '-' ),
+				'neto_kolicina'         => '-',
 				'jedinica_mjere'        => esc_html( '' !== $jedinica ? $jedinica : '-' ),
-				'cijena_jedinice_mjere' => esc_html( $catalog->format_amount( isset( $row['cijena_jedinice_mjere'] ) ? $row['cijena_jedinice_mjere'] : '' ) ),
 				'maloprodajna_cijena'   => esc_html( $catalog->format_amount( isset( $row['maloprodajna_cijena'] ) ? $row['maloprodajna_cijena'] : '' ) ),
-				'naziv_posebnog_oblika' => esc_html( '' !== $oblik ? $oblik : '-' ),
+				'poseban_oblik'         => esc_html( ( isset( $row['poseban_oblik'] ) && 'da' === $row['poseban_oblik'] ) ? __( 'Yes', 'cx-sidrena' ) : __( 'No', 'cx-sidrena' ) ),
+				'cijena_jedinice_mjere' => esc_html( $catalog->format_amount( isset( $row['cijena_jedinice_mjere'] ) ? $row['cijena_jedinice_mjere'] : '' ) ),
+				'barkod'                => esc_html( '' !== $codes['barkod'] ? $codes['barkod'] : '-' ),
+				'ean_barkod'            => esc_html( '' !== $codes['ean_barkod'] ? $codes['ean_barkod'] : '-' ),
 				'sidrena_cijena'        => esc_html( $catalog->format_amount( isset( $row['sidrena_cijena'] ) ? $row['sidrena_cijena'] : '' ) ),
 				'sidrena_datum'         => esc_html( '' !== $datum ? $datum : '-' ),
 				'dostupnost'            => '<span class="cjenik-stock is-' . esc_attr( $dostupnost ) . '">' . esc_html( $stock_label ) . '</span>',
@@ -1051,7 +1220,8 @@ JS;
 	}
 
 	/**
-	 * HTML table columns that have at least one value. Name and prices stay.
+	 * HTML table columns that have at least one value. Name and prices stay. The order is the price list file's
+	 * (art. 3(4) of the Pravilnik o cjeniku), then the bazna date and availability, which only this page shows.
 	 *
 	 * @param array<int, array<string, string>> $rows Rows.
 	 * @return array<string, array{label:string}>
@@ -1059,21 +1229,25 @@ JS;
 	public function cjenik_visible_columns( $rows ) {
 		$all = array(
 			'naziv'                 => array( 'label' => __( 'Name', 'cx-sidrena' ), 'always' => true ),
-			'vrsta'                 => array( 'label' => __( 'Type', 'cx-sidrena' ), 'always' => false ),
 			'sku'                   => array( 'label' => __( 'SKU', 'cx-sidrena' ), 'always' => false ),
 			'marka'                 => array( 'label' => __( 'Brand', 'cx-sidrena' ), 'always' => false ),
-			'barkod'                => array( 'label' => __( 'Barcode', 'cx-sidrena' ), 'always' => false ),
+			'neto_kolicina'         => array( 'label' => __( 'Net quantity', 'cx-sidrena' ), 'always' => false ),
 			'jedinica_mjere'        => array( 'label' => __( 'Unit of measure', 'cx-sidrena' ), 'always' => false ),
-			'cijena_jedinice_mjere' => array( 'label' => __( 'Unit price', 'cx-sidrena' ), 'always' => false ),
 			'maloprodajna_cijena'   => array( 'label' => __( 'Retail price', 'cx-sidrena' ), 'always' => true ),
-			'naziv_posebnog_oblika' => array( 'label' => __( 'Special form of sale', 'cx-sidrena' ), 'always' => false ),
-			'sidrena_cijena'        => array( 'label' => __( 'Sidrena cijena', 'cx-sidrena' ), 'always' => true ),
-			'sidrena_datum'         => array( 'label' => __( 'Date of sidrena cijena', 'cx-sidrena' ), 'always' => false ),
+			'poseban_oblik'         => array( 'label' => __( 'Special form of sale', 'cx-sidrena' ), 'always' => true ),
+			'cijena_jedinice_mjere' => array( 'label' => __( 'Unit price', 'cx-sidrena' ), 'always' => false ),
+			'barkod'                => array( 'label' => __( 'Barcode', 'cx-sidrena' ), 'always' => false ),
+			'ean_barkod'            => array( 'label' => __( 'EAN barcode', 'cx-sidrena' ), 'always' => false ),
+			// The Pravilnik's term (Hrvoje, 109-2: "Po pravilniku idemo"), as in the file's bazna_cijena.
+			'sidrena_cijena'        => array( 'label' => __( 'Bazna cijena', 'cx-sidrena' ), 'always' => true ),
+			'sidrena_datum'         => array( 'label' => __( 'Date of bazna cijena', 'cx-sidrena' ), 'always' => false ),
 			'dostupnost'            => array( 'label' => __( 'Availability', 'cx-sidrena' ), 'always' => false ),
 		);
 
 		$filled = array();
 		foreach ( $rows as $row ) {
+			// One code, two columns: an EAN fills only EAN barcode, any other code only Barcode (as in the file).
+			$row = array_merge( $row, $this->split_barcode( isset( $row['barkod'] ) ? trim( (string) $row['barkod'] ) : '' ) );
 			foreach ( $all as $key => $column ) {
 				if ( isset( $filled[ $key ] ) ) {
 					continue;
@@ -1214,6 +1388,21 @@ JS;
 	 * @param string $filename Download name.
 	 * @param string $ext      xml|csv.
 	 */
+	/**
+	 * The plain filename= of a Content-Disposition header: ASCII only (RFC 6266), letters with diacritics without them
+	 * (Čakovec -> Cakovec), anything else non-ASCII as "_". The full name is in filename*, which browsers prefer. A raw
+	 * UTF-8 filename= is refused by some servers (the Playground's answered 500 for an address in Čakovec, CX-SID-110).
+	 *
+	 * @param string $filename Legal name.
+	 * @return string
+	 */
+	public static function ascii_filename( $filename ) {
+		$name = function_exists( 'remove_accents' ) ? remove_accents( (string) $filename ) : (string) $filename;
+		$name = (string) preg_replace( '/[^\x20-\x7E]/', '_', $name );
+
+		return str_replace( array( '"', '\\' ), '', $name );
+	}
+
 	public function send_public_file( $path, $filename, $ext ) {
 		if ( function_exists( 'nocache_headers' ) ) {
 			nocache_headers();
@@ -1226,8 +1415,7 @@ JS;
 			header( 'Content-Type: application/xml; charset=utf-8' );
 		}
 
-		$download = str_replace( array( '"', "\r", "\n" ), '', $filename );
-		header( 'Content-Disposition: inline; filename="' . $download . '"; filename*=UTF-8\'\'' . rawurlencode( $filename ) );
+		header( 'Content-Disposition: inline; filename="' . self::ascii_filename( $filename ) . '"; filename*=UTF-8\'\'' . rawurlencode( $filename ) );
 		header( 'X-Robots-Tag: noindex, follow' );
 		header( 'Cache-Control: public, max-age=300' );
 

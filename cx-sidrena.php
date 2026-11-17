@@ -3,7 +3,7 @@
  * Plugin Name: CX Sidrena
  * Plugin URI: https://github.com/cx-core/cx-sidrena
  * Description: Bazna cijena (sidrena cijena) for Croatian WooCommerce shops, with the lowest price in the 30 days before a sale and a public pricelist. Based on MJDD Sidrena i bazna cijena 1.26.0 by Jure Zadravec / MJDD (GPL-2.0-or-later).
- * Version: 0.2.1
+ * Version: 0.2.2
  * Author: Hrvoje Puzin
  * Author URI: https://github.com/hpuzin
  * Text Domain: cx-sidrena
@@ -19,7 +19,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CX_SIDRENA_VERSION', '0.2.1' );
+define( 'CX_SIDRENA_VERSION', '0.2.2' );
 // Schema of our own tables (includes/class-history.php). Raise it when a table changes; plugins_loaded then upgrades.
 define( 'CX_SIDRENA_DB_VERSION', 1 );
 define( 'CX_SIDRENA_FILE', __FILE__ );

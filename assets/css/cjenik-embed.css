@@ -179,35 +179,41 @@
 
 /* Cards up to 1023 px, not only on a phone: from 721 px the table with up to 12 columns (3+ nowrap) was wider than
    its frame, and on an iPad held upright the sidrena cijena and its date were hidden behind a sideways scroll
-   (CX-SID-103). */
+   (CX-SID-103).
+   CX-SID-104: the script cjenik-fit.js (from 721 px) shows a table as a table where it fits in its frame and as cards
+   where it does not, at any width: .cjenik-fit keeps the table up to 1023 px, .cjenik-cards makes cards from 1024 px.
+   Without the script these rules hold as they are: cards up to 1023 px, a table from 1024. :where() keeps the
+   specificity of the rules as it was. In a card, a word longer than its line breaks where the cell wraps at all
+   (not in the columns kept on one line). */
 @media (max-width: 1023px) {
-	.sidrena-cjenik .cjenik-table thead {
+	.sidrena-cjenik .cjenik-table:where(:not(.cjenik-fit)) thead {
 		display: none;
 	}
 
-	.sidrena-cjenik .cjenik-table,
-	.sidrena-cjenik .cjenik-table tbody,
-	.sidrena-cjenik .cjenik-table tr,
-	.sidrena-cjenik .cjenik-table td {
+	.sidrena-cjenik .cjenik-table:where(:not(.cjenik-fit)),
+	.sidrena-cjenik .cjenik-table:where(:not(.cjenik-fit)) tbody,
+	.sidrena-cjenik .cjenik-table:where(:not(.cjenik-fit)) tr,
+	.sidrena-cjenik .cjenik-table:where(:not(.cjenik-fit)) td {
 		display: block;
 		width: 100%;
 	}
 
 	/* A card is as wide as its frame: with its padding outside a width of 100 % it was 28 px wider, the frame scrolled
 	   sideways and cut off the right edge (CX-SID-95). */
-	.sidrena-cjenik .cjenik-table tr {
+	.sidrena-cjenik .cjenik-table:where(:not(.cjenik-fit)) tr {
 		box-sizing: border-box;
 		padding: 12px 14px;
 		border-bottom: 1px solid #e6eef1;
 	}
 
-	.sidrena-cjenik .cjenik-table td {
+	.sidrena-cjenik .cjenik-table:where(:not(.cjenik-fit)) td {
 		padding: 6px 0;
 		border: 0;
 		white-space: normal;
+		overflow-wrap: anywhere;
 	}
 
-	.sidrena-cjenik .cjenik-table td::before {
+	.sidrena-cjenik .cjenik-table:where(:not(.cjenik-fit)) td::before {
 		content: attr(data-label);
 		display: block;
 		font-size: 0.72rem;
@@ -217,31 +223,32 @@
 		margin-bottom: 2px;
 	}
 
-	.sidrena-cjenik .cjenik-upit thead {
+	.sidrena-cjenik .cjenik-upit:where(:not(.cjenik-fit)) thead {
 		display: none;
 	}
 
-	.sidrena-cjenik .cjenik-upit,
-	.sidrena-cjenik .cjenik-upit tbody,
-	.sidrena-cjenik .cjenik-upit tr,
-	.sidrena-cjenik .cjenik-upit td {
+	.sidrena-cjenik .cjenik-upit:where(:not(.cjenik-fit)),
+	.sidrena-cjenik .cjenik-upit:where(:not(.cjenik-fit)) tbody,
+	.sidrena-cjenik .cjenik-upit:where(:not(.cjenik-fit)) tr,
+	.sidrena-cjenik .cjenik-upit:where(:not(.cjenik-fit)) td {
 		display: block;
 		width: 100%;
 	}
 
-	.sidrena-cjenik .cjenik-upit tr {
+	.sidrena-cjenik .cjenik-upit:where(:not(.cjenik-fit)) tr {
 		box-sizing: border-box;
 		padding: 12px 14px;
 		border-bottom: 1px solid #e6eef1;
 	}
 
-	.sidrena-cjenik .cjenik-upit td {
+	.sidrena-cjenik .cjenik-upit:where(:not(.cjenik-fit)) td {
 		padding: 6px 0;
 		border: 0;
 		white-space: normal;
+		overflow-wrap: anywhere;
 	}
 
-	.sidrena-cjenik .cjenik-upit td::before {
+	.sidrena-cjenik .cjenik-upit:where(:not(.cjenik-fit)) td::before {
 		content: attr(data-label);
 		display: block;
 		font-size: 0.72rem;
@@ -250,4 +257,77 @@
 		color: #6b7c86;
 		margin-bottom: 2px;
 	}
+}
+
+/* The same cards from 1024 px, for a table the script found too wide for its frame (CX-SID-104). */
+.sidrena-cjenik .cjenik-table:where(.cjenik-cards) thead {
+	display: none;
+}
+
+.sidrena-cjenik .cjenik-table:where(.cjenik-cards),
+.sidrena-cjenik .cjenik-table:where(.cjenik-cards) tbody,
+.sidrena-cjenik .cjenik-table:where(.cjenik-cards) tr,
+.sidrena-cjenik .cjenik-table:where(.cjenik-cards) td {
+	display: block;
+	width: 100%;
+}
+
+/* A card is as wide as its frame: with its padding outside a width of 100 % it was 28 px wider, the frame scrolled
+   sideways and cut off the right edge (CX-SID-95). */
+.sidrena-cjenik .cjenik-table:where(.cjenik-cards) tr {
+	box-sizing: border-box;
+	padding: 12px 14px;
+	border-bottom: 1px solid #e6eef1;
+}
+
+.sidrena-cjenik .cjenik-table:where(.cjenik-cards) td {
+	padding: 6px 0;
+	border: 0;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.sidrena-cjenik .cjenik-table:where(.cjenik-cards) td::before {
+	content: attr(data-label);
+	display: block;
+	font-size: 0.72rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #6b7c86;
+	margin-bottom: 2px;
+}
+
+.sidrena-cjenik .cjenik-upit:where(.cjenik-cards) thead {
+	display: none;
+}
+
+.sidrena-cjenik .cjenik-upit:where(.cjenik-cards),
+.sidrena-cjenik .cjenik-upit:where(.cjenik-cards) tbody,
+.sidrena-cjenik .cjenik-upit:where(.cjenik-cards) tr,
+.sidrena-cjenik .cjenik-upit:where(.cjenik-cards) td {
+	display: block;
+	width: 100%;
+}
+
+.sidrena-cjenik .cjenik-upit:where(.cjenik-cards) tr {
+	box-sizing: border-box;
+	padding: 12px 14px;
+	border-bottom: 1px solid #e6eef1;
+}
+
+.sidrena-cjenik .cjenik-upit:where(.cjenik-cards) td {
+	padding: 6px 0;
+	border: 0;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.sidrena-cjenik .cjenik-upit:where(.cjenik-cards) td::before {
+	content: attr(data-label);
+	display: block;
+	font-size: 0.72rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #6b7c86;
+	margin-bottom: 2px;
 }

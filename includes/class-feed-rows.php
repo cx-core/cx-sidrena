@@ -84,7 +84,8 @@ class CX_Sidrena_Feed_Rows {
 	 * The rules every public row follows, whatever it came from (WooCommerce, the manual catalog, an outlet):
 	 * - no retail price, no row: a row the consumer cannot read a price from is not in the price list;
 	 * - the bazna date only next to a bazna;
-	 * - poseban_oblik: da when the row is in a special form of sale (draft 10332 art. 3(2)), ne otherwise.
+	 * - poseban_oblik: da when the row is in a special form of sale, ne otherwise (art. 3(2) of the Pravilnik o cjeniku,
+	 *   NN 132/2026-1584; the file writes it DA|NE, CX_Sidrena_Feed_Files::legal_row()).
 	 *
 	 * @param array<int, array<string, string>> $rows Public rows.
 	 * @return array<int, array<string, string>>

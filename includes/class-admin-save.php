@@ -161,6 +161,26 @@ class CX_Sidrena_Admin_Save {
 			}
 		}
 
+		// CX-SID-110: the OIB or registration number only when the field was posted, so a form without it (another tab,
+		// CX-SID-31) never clears it. A refused value is not stored (Settings::save() keeps the old one); a warned one is.
+		$oib_flag  = '';
+		$oib_typed = '';
+		if ( isset( $_POST['sidrena_cijena_file_oib'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked above
+			$oib_raw   = $text( 'sidrena_cijena_file_oib' );
+			$oib_check = CX_Sidrena_Settings::check_legal_id( $oib_raw );
+			if ( CX_Sidrena_Settings::LEGAL_ID_REFUSED === $oib_check['status'] ) {
+				$oib_flag = 'oib' === $oib_check['reason'] ? 'refused_oib' : 'refused_digits';
+				// The field shows what was typed, marked, so one wrong digit is fixed there (Norman); the stored value stays.
+				$oib_typed = 'oib' === $oib_check['reason'] ? CX_Sidrena_Settings::clean_legal_id( $oib_raw ) : $oib_raw;
+			} else {
+				$payload['file_oib'] = $oib_check['value'];
+				if ( CX_Sidrena_Settings::LEGAL_ID_WARN === $oib_check['status'] ) {
+					$oib_flag  = 'warn';
+					$oib_typed = $oib_check['value'];
+				}
+			}
+		}
+
 		$dates = $this->save_dates();
 
 		$name_before = CX_Sidrena_Archive::instance()->current_name_key();
@@ -176,19 +196,34 @@ class CX_Sidrena_Admin_Save {
 			exit;
 		}
 
+		// "Save and generate now": the price list is built before any return to the page, also when the OIB was refused or
+		// saved with a warning (Argus 110-C: the OIB's return came first, so with a warned MIBPG or MBO the button
+		// never built anything and said nothing). Its result goes with whichever return follows.
+		$xml_flag = '';
 		if ( isset( $_POST['cx_regenerate'] ) ) {
 			$result = CX_Sidrena_Export::instance()->regenerate_public_xml();
 			if ( ! is_wp_error( $result ) ) {
 				CX_Sidrena_Export::instance()->archive_public_xml();
 			}
-			$flag = '1';
+			$xml_flag = '1';
 			if ( is_wp_error( $result ) ) {
-				$flag = 'sidrena_poslovnice_empty' === $result->get_error_code() ? '2' : '0';
+				$xml_flag = 'sidrena_poslovnice_empty' === $result->get_error_code() ? '2' : '0';
 				if ( 'sidrena_b2b_only' === $result->get_error_code() ) {
-					$flag = 'b2b'; // CX-SID-28: not a failure, a B2B shop publishes no price list
+					$xml_flag = 'b2b'; // CX-SID-28: not a failure, a B2B shop publishes no price list
 				}
 			}
-			wp_safe_redirect( self::settings_url( 'cx-options', array( 'sidrena_xml' => $flag ) ) );
+		}
+		$xml_arg = '' !== $xml_flag ? array( 'sidrena_xml' => $xml_flag ) : array();
+
+		if ( '' !== $oib_flag ) {
+			$typed = function_exists( 'mb_substr' ) ? mb_substr( $oib_typed, 0, 40, 'UTF-8' ) : substr( $oib_typed, 0, 40 );
+			// To the field's row, where the reason is shown (Norman 110-1: at the section, the notice at the top was out of view).
+			wp_safe_redirect( self::settings_url( 'cx-oib-row', array_merge( array( 'updated' => '1', 'cx_oib' => $oib_flag, 'cx_oib_typed' => rawurlencode( $typed ) ), $xml_arg ) ) );
+			exit;
+		}
+
+		if ( '' !== $xml_flag ) {
+			wp_safe_redirect( self::settings_url( 'cx-options', $xml_arg ) );
 			exit;
 		}
 

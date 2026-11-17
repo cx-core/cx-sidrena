@@ -76,6 +76,9 @@ class CX_Sidrena_Settings {
 			'file_adresa'     => '',
 			'file_oznaka'     => '001',
 			'file_pohrana'    => 1,
+			// OIB or registration number (MBO of a craft, MIBPG of a family farm), first in the price list file's name
+			// (Pravilnik o cjeniku, NN 132/2026, art. 6(3)). Digits as a string: leading zeros are part of it (CX-SID-110).
+			'file_oib'        => '',
 			'brand_taxonomy'  => '',
 			'brand_manual'    => '',
 			'multi_poslovnica' => 'no',
@@ -198,7 +201,9 @@ class CX_Sidrena_Settings {
 	 * @param array<string, mixed> $settings Raw values.
 	 */
 	public function save( $settings ) {
+		$prev_oib = (string) $this->get( 'file_oib', '' );
 		$settings = array_merge( $this->all(), is_array( $settings ) ? $settings : array() );
+		$oib      = self::check_legal_id( isset( $settings['file_oib'] ) ? $settings['file_oib'] : '' );
 
 		$clean = array(
 			'prefix'         => isset( $settings['prefix'] ) ? self::strip_date_from_prefix( sanitize_text_field( $settings['prefix'] ) ) : self::defaults()['prefix'],
@@ -215,6 +220,8 @@ class CX_Sidrena_Settings {
 			'file_adresa'    => sanitize_text_field( isset( $settings['file_adresa'] ) ? $settings['file_adresa'] : '' ),
 			'file_oznaka'      => $this->normalize_oznaka( isset( $settings['file_oznaka'] ) ? $settings['file_oznaka'] : '001' ) ?: '001',
 			'file_pohrana'     => $this->sanitize_pohrana( isset( $settings['file_pohrana'] ) ? $settings['file_pohrana'] : 1 ),
+			// A value that may not be stored (not only digits, an OIB whose check digit is wrong) keeps the stored one.
+			'file_oib'         => self::LEGAL_ID_REFUSED === $oib['status'] ? $prev_oib : $oib['value'],
 			'brand_taxonomy'   => $this->sanitize_brand_taxonomy( isset( $settings['brand_taxonomy'] ) ? $settings['brand_taxonomy'] : '' ),
 			'brand_manual'     => sanitize_text_field( isset( $settings['brand_manual'] ) ? $settings['brand_manual'] : '' ),
 			'multi_poslovnica' => ( isset( $settings['multi_poslovnica'] ) && 'yes' === $settings['multi_poslovnica'] ) ? 'yes' : 'no',
@@ -423,6 +430,118 @@ class CX_Sidrena_Settings {
 		}
 
 		return $this->format_prefix_with_date( $prefix, $date );
+	}
+
+	/**
+	 * check_legal_id(): may be stored, nothing to say.
+	 */
+	const LEGAL_ID_OK = 'ok';
+
+	/**
+	 * check_legal_id(): stored, but the owner should look at it (not an OIB, and not a valid 8-digit MBO).
+	 */
+	const LEGAL_ID_WARN = 'warn';
+
+	/**
+	 * check_legal_id(): not stored (not only digits, or 11 digits whose OIB check digit is wrong).
+	 */
+	const LEGAL_ID_REFUSED = 'refused';
+
+	/**
+	 * What an OIB or registration number typed by the owner is (CX-SID-110, Kai on card note 2611, Rook 2622). Spaces,
+	 * dots and hyphens, and an "HR" in front (the VAT number), are dropped first without a word (Norman):
+	 * - empty: ok, the file name goes without it;
+	 * - anything but digits (spaces dropped): refused;
+	 * - 11 digits: an OIB, its check digit by ISO 7064 MOD 11,10 (the official algorithm), wrong = refused;
+	 * - 8 digits with a right MBO check digit: ok;
+	 * - other digits (an 8-digit MBO whose check digit is off, an MIBPG whose format is not known): stored, with a
+	 *   warning only. Kai checked the MBO rule on two numbers only, so it never blocks.
+	 *
+	 * @param mixed $raw Typed value.
+	 * @return array{status:string,value:string,reason:string} reason: empty|digits|oib|mbo|other
+	 */
+	public static function check_legal_id( $raw ) {
+		$value = is_string( $raw ) || is_int( $raw ) ? self::clean_legal_id( (string) $raw ) : '';
+		if ( '' === $value ) {
+			return array( 'status' => self::LEGAL_ID_OK, 'value' => '', 'reason' => 'empty' );
+		}
+		if ( 1 !== preg_match( '/^\d+$/D', $value ) ) {
+			return array( 'status' => self::LEGAL_ID_REFUSED, 'value' => '', 'reason' => 'digits' );
+		}
+		if ( 11 === strlen( $value ) ) {
+			return self::oib_valid( $value )
+				? array( 'status' => self::LEGAL_ID_OK, 'value' => $value, 'reason' => 'oib' )
+				: array( 'status' => self::LEGAL_ID_REFUSED, 'value' => '', 'reason' => 'oib' );
+		}
+		if ( 8 === strlen( $value ) && self::mbo_valid( $value ) ) {
+			return array( 'status' => self::LEGAL_ID_OK, 'value' => $value, 'reason' => 'mbo' );
+		}
+
+		return array( 'status' => self::LEGAL_ID_WARN, 'value' => $value, 'reason' => 'other' );
+	}
+
+	/**
+	 * A typed number without spaces, dots, hyphens and a leading "HR" (HR12345678903 is the VAT form of an OIB).
+	 *
+	 * @param string $raw Typed value.
+	 * @return string
+	 */
+	public static function clean_legal_id( $raw ) {
+		$value = (string) preg_replace( '/[\s.\-]+/u', '', (string) $raw );
+
+		return (string) preg_replace( '/^HR/i', '', $value );
+	}
+
+	/**
+	 * OIB check digit, ISO 7064 MOD 11,10.
+	 *
+	 * @param string $oib 11 digits.
+	 * @return bool
+	 */
+	public static function oib_valid( $oib ) {
+		if ( 1 !== preg_match( '/^\d{11}$/D', (string) $oib ) ) {
+			return false;
+		}
+		$a = 10;
+		for ( $i = 0; $i < 10; $i++ ) {
+			$a = ( $a + (int) $oib[ $i ] ) % 10;
+			$a = ( 0 === $a ? 10 : $a ) * 2 % 11;
+		}
+		$k = 11 - $a;
+
+		return ( 10 === $k ? 0 : $k ) === (int) $oib[10];
+	}
+
+	/**
+	 * MBO check digit (as the DZS registration number): weights 8 to 2 on the first seven digits, r = sum mod 11,
+	 * k = 11 - r, and 0 when r is 0 or 1.
+	 *
+	 * @param string $mbo 8 digits.
+	 * @return bool
+	 */
+	public static function mbo_valid( $mbo ) {
+		if ( 1 !== preg_match( '/^\d{8}$/D', (string) $mbo ) ) {
+			return false;
+		}
+		$sum = 0;
+		for ( $i = 0; $i < 7; $i++ ) {
+			$sum += (int) $mbo[ $i ] * ( 8 - $i );
+		}
+		$r = $sum % 11;
+
+		return ( $r <= 1 ? 0 : 11 - $r ) === (int) $mbo[7];
+	}
+
+	/**
+	 * The OIB or registration number for the price list file's name, or '' (none, or a stored value that may not be
+	 * used: written straight to the option, not through save()). A shop without it still publishes; Status says so.
+	 *
+	 * @return string
+	 */
+	public function legal_id() {
+		$check = self::check_legal_id( $this->get( 'file_oib', '' ) );
+
+		return self::LEGAL_ID_REFUSED === $check['status'] ? '' : $check['value'];
 	}
 
 	/**

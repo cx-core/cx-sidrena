@@ -24,10 +24,13 @@ class CX_Sidrena_Export {
 	const CJENIK_DOM_TOKEN = 'sidrena-cjenik-dom-7f3a9c';
 	const ARCHIVE_MAX      = 30;
 	const REWRITE_OPTION   = 'cx_sidrena_rewrite_ver';
-	const REWRITE_VERSION  = '10';
+	const REWRITE_VERSION  = '11';
 	const REBUILD_LOCK     = 'cx_sidrena_rebuild_lock';
 	const REBUILD_COOLDOWN = 'cx_sidrena_rebuild_cooldown';
 	const CHANGE_DELAY     = 60;
+	// The columns of the public files (CX_Sidrena_Feed_Files::COLUMNS_*). Every build stores it in the public meta; a
+	// shop whose meta has another one (an update) gets one rebuild on the next visit, not at 00:05 (CX-SID-109).
+	const FEED_LAYOUT      = '110'; // 110: the file names of art. 6(3), goods and services in their own files
 
 	/**
 	 * Singleton.
@@ -220,7 +223,7 @@ class CX_Sidrena_Export {
 	 *
 	 * @param array<int, array<string, string>> $rows           Rows.
 	 * @param string                            $root           Root element name.
-	 * @param bool                              $public_fields  Include id and url.
+	 * @param bool                              $public_fields  The public price list's columns.
 	 * @return string
 	 */
 	public function build_xml_string( $rows, $root, $public_fields = false ) {
@@ -565,7 +568,7 @@ class CX_Sidrena_Export {
 				return $result;
 			}
 
-			update_option( self::PUBLIC_OPTION, $result );
+			update_option( self::PUBLIC_OPTION, $result + array( 'layout' => self::FEED_LAYOUT ) );
 
 			return $result;
 		} catch ( Throwable $e ) {
@@ -618,6 +621,7 @@ class CX_Sidrena_Export {
 				'filename'  => $web['filename'],
 				'pohrana'   => $web['pohrana'],
 				'outlets'   => $stored,
+				'layout'    => self::FEED_LAYOUT,
 			);
 			$meta['webshop'] = $web;
 			update_option( self::PUBLIC_OPTION, $meta );

@@ -3,7 +3,7 @@ Tags: woocommerce, croatia, sidrena cijena, bazna cijena, consumer protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.2.1
+Stable tag: 0.2.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -41,11 +41,11 @@ A product created after installation gets its bazna cijena on its first save: th
 
 = Public price list =
 
-* Addresses: `/sidrena-cijena.xml` or `/sidrena-cijena.csv` (one format, a setting; XML by default), the page `/sidrena-cjenik/`, and the shortcode `[sidrena-cjenik]`.
+* Addresses: `/sidrena-cijena.xml` or `/sidrena-cijena.csv` (one format, a setting; XML by default) for goods, and `/sidrena-cijena-usluge.xml` (or `.csv`) for services (a place without services answers 404 there: "U ovom cjeniku nema usluga."); a shop that sells only services has them at the first address. With outlets, each has `/sidrena-cijena-<label>.xml` and `/sidrena-cijena-usluge-<label>.xml`. Each address stays the same and leads (a redirect) to the current file under its legal name. Also the page `/sidrena-cjenik/` and the shortcode `[sidrena-cjenik]`.
 * What is in it: everything any consumer can buy, at the price a visitor pays. It is always built as a visitor, whoever starts it, so prices for a role or for one customer stay out. Rows without a retail price are left out.
-* Columns: `id`, `vrsta`, `naziv`, `sku`, `marka`, `url`, `jedinica_mjere`, `cijena_jedinice_mjere`, `maloprodajna_cijena`, `poseban_oblik`, `naziv_posebnog_oblika`, `sidrena_cijena`, `sidrena_datum`, `barkod`. The column `dostupnost` only when you turn it on (Settings → Public price list → Availability; Postavke → Javni cjenik → Dostupnost).
+* Columns, in the order of the Pravilnik o cjeniku (NN 132/2026, art. 3) and nothing else: for goods `naziv`, `sifra`, `marka`, `neto_kolicina`, `jedinica_mjere`, `maloprodajna_cijena`, `poseban_oblik` (`DA`/`NE`), `cijena_jedinice_mjere`, `barkod`, `ean_barkod` (a code of exactly 8 or 13 digits), `bazna_cijena`; for services `naziv`, `maloprodajna_cijena`, `poseban_oblik`, `bazna_cijena`. `neto_kolicina` is empty for now. The page `/sidrena-cjenik/` has the same order, then the date of the bazna cijena and, when you turn it on, availability (Settings → Public price list → Availability; Postavke → Javni cjenik → Dostupnost).
 * When it is built: about a minute after a change of a price, a sale or stock, once more every morning after 00:05 Croatian time, and with **Update now** (Osvježi sada) on Status. A file is always replaced whole, never half written.
-* Archive: a price list with new content, and the first one of each day, is also stored under its legal name, e.g. `prodavaonica_Ilica 150 Zagreb_P-01_104_01.10.2026_07:45.xml`, and no published file is written over. Price lists from the last 30 days are public at `/arhiva-sidrene-cijene/` and through `[sidrena-arhiva]`. Older files are taken out of public reach and kept, compressed, for 4 years by default; Settings → Public price list → **Keep older price lists** (Postavke → Javni cjenik → Čuvanje starijih cjenika) sets anything from 30 days to forever, and **Saved older price lists** (Spremljeni stariji cjenici) lets you download them.
+* Archive: a price list with new content, and the first one of each day, is also stored under its legal name (Pravilnik o cjeniku, art. 6(3)): the shop's OIB, MBO or MIBPG, the kind of the place, its address and label, `ROBA` or `USLUGA`, the storage number and the time as `GGGGMMDD_SSMM`, e.g. `<OIB>_prodavaonica_Ilica 150 Zagreb_P-01_ROBA_104_20261001_0745.xml`. Enter the number in Settings → Public price list → **OIB, MBO or MIBPG** (Postavke → Javni cjenik); until then the name is without it, the price list still goes out, and Status and Settings say so. Goods and services are in separate files with one storage number per build, and no published file is written over. Price lists from the last 30 days are public at `/arhiva-sidrene-cijene/` and through `[sidrena-arhiva]`. Older files are taken out of public reach and kept, compressed, for 4 years by default; Settings → Public price list → **Keep older price lists** (Postavke → Javni cjenik → Čuvanje starijih cjenika) sets anything from 30 days to forever, and **Saved older price lists** (Spremljeni stariji cjenici) lets you download them.
 * The price list runs on WordPress's scheduled events, which run only when someone visits the site. **Set a server cron** (see the FAQ), or the morning price list waits for the first visit.
 
 = Responsibility =
@@ -144,6 +144,14 @@ CX Sidrena updates itself from the published releases at https://github.com/cx-c
 Deleting CX Sidrena in Plugins removes its settings (including Dates, outlets and the rows entered by hand), the live price lists and its scheduled tasks. `wp cx-sidrena purge` does the same, after asking, and deactivates the plugin. Neither ever removes the bazna prices, dates and sources on products, the lowest price data, the price history and confirmations, or the archive of published price lists: they are your record of the prices you published, and MJDD Sidrena i bazna cijena reads the same product fields.
 
 == Changelog ==
+
+= 0.2.2 =
+* Price list files follow the Pravilnik o cjeniku (NN 132/2026-1584, in force 17.11.2026.): the columns in its order and nothing else, for goods naziv, sifra, marka, neto_kolicina, jedinica_mjere, maloprodajna_cijena, poseban_oblik (DA/NE), cijena_jedinice_mjere, barkod, ean_barkod, bazna_cijena, and for services naziv, maloprodajna_cijena, poseban_oblik, bazna_cijena. id, vrsta, url, the date of the bazna cijena, availability and the name of the special form are no longer in the file. neto_kolicina stays empty until a product has a field for it. After the update the price list is built once more on the next page view, so the live file does not keep the old columns until the morning.
+* File names follow the Pravilnik (art. 6): the shop's OIB, MBO or MIBPG, the place, ROBA or USLUGA, the storage number and the time. Enter the number in Settings > Public price list > OIB, MBO or MIBPG; until then the price list still goes out, named without it, and Status and Settings show a yellow line. Goods and services are in separate files; services are at /sidrena-cijena-usluge.xml (and .csv). The stable addresses answer with a redirect to the current file, and the archive page lists goods and services under their own headings.
+* The public price list page shows the same columns in the same order, then the date of the bazna cijena; a place with goods and services has a download button for each.
+* Public price list from 721 px: a table where it fits, cards where it does not, also from 1024 px with many columns and for [sidrena-cjenik] in a narrow column, so the bazna cijena and its date are never hidden off to the right. Turning a tablet or phone, or resizing the window, no longer loses the reader's place: where the table turns into cards or back, the reader stays on the same row.
+* Without WooCommerce: the price list downloaded from the admin carries id, vrsta, naziv_posebnog_oblika and sidrena_datum after the legal columns, so it imports back unchanged; the bulk import no longer reads poseban_oblik as the name of the special form, and reads the services of our XML.
+* Import reads an underscore in a column name as a space (bazna_cijena, sifra).
 
 = 0.2.1 =
 * When a theme wraps the price in its own element, the bazna line and the lowest-price caption no longer go into the struck sale price: they stand after the theme's price, the caption first. On a sale whose struck price is not the regular price, or that is not lower, the theme's price element stays and only its amounts change.

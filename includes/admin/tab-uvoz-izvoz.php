@@ -147,7 +147,7 @@ defined( 'ABSPATH' ) || exit;
 		<section class="sidrena-cijena-card">
 			<div class="sidrena-cijena-card__head">
 				<h2><?php echo esc_html__( 'Price list export', 'cx-sidrena' ); ?></h2>
-				<p><?php echo esc_html__( 'The price list export is the same public CSV or XML: type, date, retail price, brand, whether the item is in a special form of sale and its name, unit of measure, unit price, bazna cijena, barcode, and availability when it is turned on in Settings. Only what a visitor can buy is included, with a retail price. Variations are separate rows, and additional items go at the end. The export without bazna cijena stays an internal list (name, SKU, regular, sale and bazna cijena).', 'cx-sidrena' ); ?></p>
+				<p><?php echo esc_html__( 'This download is for editing and importing back: the columns of the public price list, then id, type, the name of the special form of sale and the date of the bazna cijena, so an edited file goes back into the same rows. The legal price list is the public address, not this file. Only what a visitor can buy is included, with a retail price. Variations are separate rows, and additional items go at the end. The export without bazna cijena stays an internal list (name, SKU, regular, sale and bazna cijena).', 'cx-sidrena' ); ?></p>
 			</div>
 			<form method="post" action="<?php echo esc_url( $this->get_settings_tab_url( 'uvoz-izvoz' ) ); ?>">
 				<?php wp_nonce_field( 'sidrena_cijena_export', 'sidrena_cijena_export_nonce' ); ?>

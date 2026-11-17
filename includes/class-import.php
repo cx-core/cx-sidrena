@@ -113,7 +113,9 @@ final class CX_Sidrena_Import {
 		}
 		$cols = array();
 		foreach ( $records[0] as $i => $h ) {
-			$key = strtolower( remove_accents( trim( preg_replace( '/\s+/u', ' ', (string) $h ) ) ) );
+			// An underscore as a space: the price list downloaded from the admin names its columns bazna_cijena, sifra
+			// (CX-SID-109), and 0.2.1's sidrena_cijena; read back, they are this file's Bazna cijena and SKU (CX-SID-110).
+			$key = strtolower( remove_accents( trim( preg_replace( '/[\s_]+/u', ' ', (string) $h ) ) ) );
 			if ( isset( self::COLUMNS[ $key ] ) && ! isset( $cols[ self::COLUMNS[ $key ] ] ) ) {
 				$cols[ self::COLUMNS[ $key ] ] = $i;
 			}

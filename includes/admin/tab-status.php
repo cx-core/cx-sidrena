@@ -136,6 +136,15 @@ $fmt_time  = function ( $ts ) {
 		<p class="cx-status__line"><?php echo esc_html( CX_Sidrena_Export::b2b_message() ); ?></p>
 	<?php endif; ?>
 
+	<?php if ( ! CX_Sidrena_Settings::instance()->is_b2b_only() && '' === CX_Sidrena_Settings::instance()->legal_id() ) : ?>
+		<?php // CX-SID-110: the price list still goes out, named without the OIB (art. 6(3)); a yellow line, as the address. ?>
+		<p class="cx-status__line">
+			<?php echo esc_html__( 'OIB, MBO or MIBPG is missing. The official name of the price list file must include it; now it does not.', 'cx-sidrena' ); ?>
+			<?php // To the field's row, not the section: on a phone the field is three link boxes further down (Norman 110-3). ?>
+			<a href="<?php echo esc_url( $settings_url . '#cx-oib-row' ); ?>"><?php echo esc_html__( 'Open Settings', 'cx-sidrena' ); ?></a>
+		</p>
+	<?php endif; ?>
+
 	<?php if ( $status->address_missing() ) : ?>
 		<p class="cx-status__line">
 			<?php echo esc_html__( 'Shop address is missing. The price list file is named after the web address.', 'cx-sidrena' ); ?>

@@ -357,7 +357,34 @@ class CX_Sidrena_Catalog {
 			$row['sidrena_datum'] = $existing['sidrena_datum'];
 		}
 
+		// A value that is what the row shows now, not what it stores (CX-SID-110, Argus 110-D): the downloaded price list
+		// writes the shown brand (the default when the row has none), the shown name of a sale ("akcija" when the row
+		// has none of its own) and the shown date (the default date when the row has none). Read back unchanged, the row
+		// keeps what it stored, so it still follows the default when that changes.
+		$shown = $this->public_price_fields( $existing );
+		$same  = array(
+			'marka'                 => CX_Sidrena_Settings::instance()->row_marka( isset( $existing['marka'] ) ? $existing['marka'] : '' ),
+			'naziv_posebnog_oblika' => $shown['naziv_posebnog_oblika'],
+			'sidrena_datum'         => $this->display_date( $existing ),
+		);
+		foreach ( $same as $key => $value ) {
+			if ( array_key_exists( $key, $data ) && '' !== $value && $row[ $key ] === $this->normalize_shown( $key, $value ) ) {
+				$row[ $key ] = isset( $existing[ $key ] ) ? $existing[ $key ] : '';
+			}
+		}
+
 		return $row;
+	}
+
+	/**
+	 * A shown value as sanitize_row() would store it, so the two compare.
+	 *
+	 * @param string $key   Field.
+	 * @param string $value Shown value.
+	 * @return string
+	 */
+	private function normalize_shown( $key, $value ) {
+		return 'sidrena_datum' === $key ? $this->normalize_date( $value ) : sanitize_text_field( (string) $value );
 	}
 
 	/**

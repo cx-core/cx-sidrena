@@ -209,6 +209,18 @@ class CX_Sidrena_Admin {
 				<div class="notice notice-error"><p><?php echo esc_html__( 'Dates were not saved. Choose one of the two dates for every category.', 'cx-sidrena' ); ?></p></div>
 			<?php endif; ?>
 
+			<?php
+			// CX-SID-110: the OIB, MBO or MIBPG was refused (not stored) or stored with a warning. The same text stands
+			// under the field, where the save lands (Norman 110-1); here it is for whoever scrolls up.
+			$oib_notice = self::oib_notice();
+			if ( null !== $oib_notice && 'error' === $oib_notice[0] && '1' === $saved_part ) {
+				$saved_msgs['1'] = __( 'Other settings saved.', 'cx-sidrena' ); // the OIB was not: "Settings saved." next to the red said both
+			}
+			?>
+			<?php if ( null !== $oib_notice ) : ?>
+				<div class="notice notice-<?php echo esc_attr( $oib_notice[0] ); ?>"><p><?php echo esc_html( $oib_notice[1] ); ?></p></div>
+			<?php endif; ?>
+
 			<?php if ( isset( $saved_msgs[ $saved_part ] ) ) : ?>
 				<div class="notice notice-success is-dismissible"><p><?php echo esc_html( $saved_msgs[ $saved_part ] ); ?></p></div>
 			<?php endif; ?>
@@ -470,6 +482,68 @@ class CX_Sidrena_Admin {
 		echo $this->save_icon_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- static SVG.
 		echo esc_html( $label );
 		echo '</button></p>';
+	}
+
+	/**
+	 * After a save that refused the OIB, MBO or MIBPG or stored it with a warning (CX-SID-110): the notice's kind
+	 * (error, warning) and its text; else null. Shown at the top of the page and under the field (Norman 110-1).
+	 *
+	 * @return array{0:string, 1:string}|null
+	 */
+	public static function oib_notice() {
+		$flag  = isset( $_GET['cx_oib'] ) ? sanitize_key( wp_unslash( $_GET['cx_oib'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$typed = self::oib_typed();
+		switch ( $flag ) {
+			case 'refused_oib':
+				/* translators: %s: the number as typed. */
+				return array( 'error', sprintf( __( 'The OIB %s was not saved: its check digit does not match. Check the number.', 'cx-sidrena' ), $typed ) );
+			case 'refused_digits':
+				return array( 'error', __( 'The OIB, MBO or MIBPG was not saved: enter digits only.', 'cx-sidrena' ) );
+			case 'warn':
+				/* translators: %s: the number as saved. */
+				return array( 'warning', sprintf( __( 'The number %s was saved, but check it: it does not look like an OIB, MBO or MIBPG.', 'cx-sidrena' ), $typed ) );
+		}
+
+		return null;
+	}
+
+	/**
+	 * After "Save and generate now" (sidrena_xml): the notice's kind and its text, without the link; else null. Next to
+	 * the OIB field when the save landed there (Argus 110-C), the same words as at the top of the page.
+	 *
+	 * @return array{0:string, 1:string}|null
+	 */
+	public static function xml_notice() {
+		$flag = isset( $_GET['sidrena_xml'] ) ? sanitize_key( wp_unslash( $_GET['sidrena_xml'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		switch ( $flag ) {
+			case '1':
+				return array(
+					'success',
+					CX_Sidrena_Settings::instance()->is_multi_poslovnica()
+						? __( 'Public outlet price lists have been generated.', 'cx-sidrena' )
+						: __( 'The public price list has been generated.', 'cx-sidrena' ),
+				);
+			case '2':
+				return array( 'warning', __( 'No outlet has products added. Add products on the Outlets tab.', 'cx-sidrena' ) );
+			case 'b2b':
+				return array( 'info', CX_Sidrena_Export::b2b_message() );
+			case '0':
+				return array( 'error', __( 'The public price list could not be generated. Check uploads folder permissions.', 'cx-sidrena' ) );
+		}
+
+		return null;
+	}
+
+	/**
+	 * The OIB, MBO or MIBPG as typed, after a save that refused it or warned (CX-SID-110), else ''.
+	 *
+	 * @return string
+	 */
+	public static function oib_typed() {
+		$raw = isset( $_GET['cx_oib_typed'] ) ? (string) wp_unslash( $_GET['cx_oib_typed'] ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$raw = sanitize_text_field( $raw );
+
+		return function_exists( 'mb_substr' ) ? mb_substr( $raw, 0, 40, 'UTF-8' ) : substr( $raw, 0, 40 );
 	}
 
 	/**
@@ -819,6 +893,7 @@ class CX_Sidrena_Admin {
 						'skipped'      => __( 'skipped', 'cx-sidrena' ),
 						'missing'      => __( 'SKU not found', 'cx-sidrena' ),
 						'created'      => __( 'added', 'cx-sidrena' ),
+						'special'      => __( 'not imported: the retail price is a special form of sale, and the file has no name of that form (column naziv_posebnog_oblika), so it is not known which price it is. Import the price list downloaded from this page.', 'cx-sidrena' ),
 						'addProduct'    => __( 'Add product', 'cx-sidrena' ),
 						'duplicate'     => __( 'Duplicate', 'cx-sidrena' ),
 						'remove'        => __( 'Remove', 'cx-sidrena' ),
