@@ -198,6 +198,12 @@ class CX_Sidrena_Admin {
 					</a>
 				<?php endforeach; ?>
 			</nav>
+			<?php
+			// WordPress moves every notice on the page (other plugins' too) after .wp-header-end, or without one after
+			// the first h1: ours is in the blue header, so their white-on-header text sat there white on white
+			// (CX-SID-62, CX-SID-100). Here they stand below the tabs, where ours are.
+			?>
+			<hr class="wp-header-end" />
 
 			<?php if ( isset( $_GET['cx_dates_error'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 				<div class="notice notice-error"><p><?php echo esc_html__( 'Dates were not saved. Choose one of the two dates for every category.', 'cx-sidrena' ); ?></p></div>
@@ -785,7 +791,9 @@ class CX_Sidrena_Admin {
 					'importNonce'        => wp_create_nonce( 'sidrena_cijena_import' ),
 					'productSearchNonce' => wp_create_nonce( 'search-products' ),
 					'standalone'         => ! CX_Sidrena_Plugin::woocommerce_active(),
-					'catalogIdPrefix'    => CX_Sidrena_Plugin::woocommerce_active() ? 'd' : '',
+					// The table shows id="dN" in both modes (CX-SID-100): it works with and without WooCommerce, and a page
+					// keeps showing this row if WooCommerce is added later (id="N" would then name the product N).
+					'catalogIdPrefix'    => 'd',
 					'cjmEnabled'         => CX_Sidrena_Settings::instance()->is_cjm_enabled(),
 					'multiPoslovnica'    => CX_Sidrena_Settings::instance()->is_multi_poslovnica(),
 					'defaultDate'        => (string) CX_Sidrena_Settings::instance()->get( 'default_date' ),

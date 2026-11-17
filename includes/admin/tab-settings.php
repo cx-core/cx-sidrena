@@ -70,6 +70,10 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 								<?php /* translators: %s: parent category */ ?>
 								<span class="cx-dates__follows"<?php echo $follows ? '' : ' hidden'; ?>><?php echo esc_html( sprintf( __( 'same as %s', 'cx-sidrena' ), $dates_names[ $dr['parent'] ] ) ); ?></span>
 							<?php endif; ?>
+							<?php if ( ! empty( $dr['check'] ) ) : ?>
+								<?php // A category that may hold goods of both dates, while the Dates are only suggested (CX-SID-94). ?>
+								<span class="cx-dates__check"><?php echo esc_html__( 'Check: this category may hold goods with either date', 'cx-sidrena' ); ?></span>
+							<?php endif; ?>
 						</th>
 						<td class="cx-dates__count"><?php echo esc_html( (string) $dr['count'] ); ?></td>
 						<td>
@@ -275,6 +279,19 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 	<button type="submit" form="<?php echo esc_attr( $f ); ?>" class="button button-primary"><?php echo esc_html__( 'Save', 'cx-sidrena' ); ?></button>
 </p>
 
+<?php if ( ! $woo ) : ?>
+	<?php // Without WooCommerce the products and their import are the whole price list: here, not under Advanced (CX-SID-100). ?>
+	<div id="cx-items" class="cx-settings__sub">
+		<h2><?php echo esc_html__( 'Products', 'cx-sidrena' ); ?></h2>
+		<?php $this->render_tab_proizvodi(); ?>
+	</div>
+
+	<div id="cx-outlets-import" class="cx-settings__sub">
+		<h2><?php echo esc_html__( 'Import/Export', 'cx-sidrena' ); ?></h2>
+		<?php $this->render_tab_uvoz_izvoz(); ?>
+	</div>
+<?php endif; ?>
+
 <details class="cx-settings__advanced" id="cx-advanced">
 	<summary><?php echo esc_html__( 'Show advanced settings', 'cx-sidrena' ); ?></summary>
 
@@ -436,21 +453,25 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 		</p>
 	</section>
 
+	<?php if ( $woo ) : ?>
 	<div id="cx-items" class="cx-settings__sub">
-		<h2><?php echo esc_html( $woo ? __( 'Additional items', 'cx-sidrena' ) : __( 'Products', 'cx-sidrena' ) ); ?></h2>
+		<h2><?php echo esc_html__( 'Additional items', 'cx-sidrena' ); ?></h2>
 		<?php $this->render_tab_proizvodi(); ?>
 	</div>
+	<?php endif; ?>
 
 	<div id="cx-outlets" class="cx-settings__sub">
 		<h2><?php echo esc_html__( 'Outlets', 'cx-sidrena' ); ?></h2>
 		<?php $this->render_tab_poslovnice(); ?>
 	</div>
 
+	<?php if ( $woo ) : ?>
 	<div id="cx-outlets-import" class="cx-settings__sub">
 		<?php // With WooCommerce the section holds only the export: the bulk import is not there (CX-SID-43). ?>
-		<h2><?php echo esc_html( $woo ? __( 'Export', 'cx-sidrena' ) : __( 'Import/Export', 'cx-sidrena' ) ); ?></h2>
+		<h2><?php echo esc_html__( 'Export', 'cx-sidrena' ); ?></h2>
 		<?php $this->render_tab_uvoz_izvoz(); ?>
 	</div>
+	<?php endif; ?>
 
 	<p class="cx-settings__keep">
 		<?php echo esc_html__( 'Deleting the plugin keeps your bazna cijene and the price list archive.', 'cx-sidrena' ); ?>

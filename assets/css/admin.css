@@ -81,8 +81,11 @@
 	--sidrena-radius: 14px;
 	--sidrena-shadow: 0 8px 28px rgba(3, 105, 161, 0.1);
 	--sidrena-gradient: linear-gradient(135deg, #0369a1 0%, #0e7490 48%, #0d9488 100%);
-	--sidrena-gradient-btn: linear-gradient(135deg, #0284c7 0%, #0d9488 100%);
-	--sidrena-gradient-btn-hover: linear-gradient(135deg, #0369a1 0%, #0f766e 100%);
+	/* White text on these is at least 4.5:1 at every point (CX-SID-107: the old #0284c7 -> #0d9488 was 4.10-3.74). */
+	--sidrena-gradient-btn: linear-gradient(135deg, #0369a1 0%, #0f766e 100%);
+	--sidrena-gradient-btn-hover: linear-gradient(135deg, #075985 0%, #115e59 100%);
+	/* A field's border: at least 3:1 on white and on our lightest tints (CX-SID-107; --sidrena-line is 1.26:1). */
+	--sidrena-field-line: #748399;
 	max-width: none;
 	margin: 10px 20px 0;
 }
@@ -256,20 +259,29 @@ body.sidrena-cijena-screen #footer-left {
 }
 
 .sidrena-cijena-settings input[type="text"],
+.sidrena-cijena-settings input[type="url"],
+.sidrena-cijena-settings input[type="number"],
+.sidrena-cijena-settings input[type="date"],
 .sidrena-cijena-settings textarea,
 .sidrena-cijena-settings select {
-	border: 1.5px solid var(--sidrena-line);
+	border: 1.5px solid var(--sidrena-field-line);
 	border-radius: 8px;
 	box-shadow: none;
 	transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+/* A focused field: a solid teal ring around it (CX-SID-107). With the darker field border the teal border alone is
+   about 1:1 against it, so the ring is what shows focus: 3.7:1 on white, at least 3.2:1 on our tints. Forced colours
+   (Windows high contrast) draw no box-shadow; the transparent outline is what shows focus there, as in WordPress. */
 .sidrena-cijena-settings input[type="text"]:focus,
+.sidrena-cijena-settings input[type="url"]:focus,
+.sidrena-cijena-settings input[type="number"]:focus,
+.sidrena-cijena-settings input[type="date"]:focus,
 .sidrena-cijena-settings textarea:focus,
 .sidrena-cijena-settings select:focus {
 	border-color: var(--sidrena-teal);
-	box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.16);
-	outline: none;
+	box-shadow: 0 0 0 2px var(--sidrena-teal);
+	outline: 2px solid transparent;
 }
 
 .sidrena-cijena-settings textarea {
@@ -483,6 +495,22 @@ body.sidrena-cijena-screen #footer-left {
 .sidrena-cijena-settings .button:not(.button-primary):hover {
 	background: var(--sidrena-wash) !important;
 	color: var(--sidrena-blue-dark) !important;
+}
+
+/* An inactive tab is a link: WordPress's a:focus draws its own ring, which beside ours read as a double line. */
+.sidrena-cijena-tabs__item:not(.is-active):focus {
+	box-shadow: none;
+}
+
+/* Keyboard focus (CX-SID-107). The rules above take away WordPress's focus ring (box-shadow none !important, outline
+   none), and the active tab's own shadow replaces the one WordPress gives links, so a keyboard user could not see which
+   button or tab had focus. The ring stands outside the element, on what is behind it: --sidrena-blue-dark is over 5:1
+   on white, WordPress's grey and our tints. Only :focus-visible, so a mouse click draws none. */
+.sidrena-cijena-settings .button:focus-visible,
+.sidrena-cijena-settings .sidrena-cijena-icon-btn:focus-visible,
+.sidrena-cijena-settings .sidrena-cijena-tabs__item:focus-visible {
+	outline: 2px solid var(--sidrena-blue-dark) !important;
+	outline-offset: 2px !important;
 }
 
 .sidrena-cijena-feeds {
@@ -715,7 +743,7 @@ body.sidrena-cijena-screen #footer-left {
 .sidrena-cijena-preview th {
 	position: sticky;
 	top: 0;
-	background: linear-gradient(135deg, #0284c7 0%, #0d9488 100%);
+	background: var(--sidrena-gradient-btn);
 	color: #fff;
 	font-weight: 600;
 }
@@ -815,6 +843,7 @@ body.sidrena-cijena-screen #footer-left {
 }
 
 .sidrena-cijena-catalog-wrap {
+	position: relative; /* the actions header's screen-reader text stays inside the scrolling box (CX-SID-100: 2038 px page) */
 	overflow-x: auto;
 	margin: 0 0 16px;
 	border: 1px solid var(--sidrena-line);
@@ -1127,6 +1156,51 @@ body.sidrena-cijena-screen #footer-left {
 	.sidrena-poslovnica__grid {
 		grid-template-columns: 1fr;
 	}
+
+	/* Settings > Dates on a phone (CX-SID-108). On a desktop the product count (90 px) and the date cell (260 px, two
+	   buttons of at least 92 px) take about 350 px beside the category's name, more than a phone's card has: the table
+	   stuck out of the card and the page, and the name got what was left. Here each row has two lines: the category
+	   across the whole row, then its product count and date buttons. The head the same way, its "Products" and "Date"
+	   in the columns of the values below (subgrid; without subgrid each cell gets its own line). Whatever is in the
+	   name cell gets the row's width. One class more than the Dates rules further down, which come later in the file. */
+	.cx-dates .cx-dates__table {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+	}
+
+	.cx-dates .cx-dates__table thead,
+	.cx-dates .cx-dates__table tbody {
+		display: contents;
+	}
+
+	.cx-dates .cx-dates__table tr {
+		display: grid;
+		grid-column: 1 / -1;
+		grid-template-columns: subgrid;
+		align-items: center;
+	}
+
+	.cx-dates .cx-dates__table tr > :first-child {
+		grid-column: 1 / -1;
+		padding-bottom: 2px;
+	}
+
+	.cx-dates .cx-dates__table thead th:first-child {
+		border-bottom: 0;
+	}
+
+	.cx-dates .cx-dates__table .cx-dates__count,
+	.cx-dates .cx-dates__table td:last-child {
+		width: auto;
+	}
+
+	.cx-dates .cx-segment {
+		flex-wrap: wrap;
+	}
+
+	.cx-dates .cx-segment__item span {
+		min-width: 0;
+	}
 }
 
 /* Status (spec §1.4, sketch/status.png) and Settings (§1.8), CX-SID-23. WordPress admin colours. */
@@ -1335,6 +1409,7 @@ a.cx-status__tile:focus {
 .cx-dates__count { width: 90px; text-align: right; color: #50575e; }
 .cx-dates__table td:last-child { width: 260px; }
 .cx-dates__follows { margin-left: 6px; color: #646970; font-size: 12px; }
+.cx-dates__check { display: block; margin-top: 2px; padding-left: 6px; border-left: 3px solid #dba617; color: #50575e; font-size: 12px; }
 .cx-dates__row--other th { font-style: italic; }
 .cx-segment { display: inline-flex; margin: 0; padding: 0; border: 0; }
 .cx-segment__item { position: relative; }
@@ -1375,12 +1450,24 @@ button.cx-status__tile.is-active { border-color: #2271b1; box-shadow: inset 0 -3
 .cx-import__pages .button { margin-right: 4px; }
 .cx-import__skipped ul { margin-left: 1.4em; list-style: disc; }
 .cx-import [hidden], .cx-status-wrap [hidden], .cx-dates [hidden] { display: none !important; }
-/* A disabled fix looks disabled: the plugin's button colours above use !important. */
+/* What a customer sees (CX-SID-92): the frame it is measured in sits in this window's view (a theme that shows its
+   price only once it is in view, with an entrance animation, does so there too), but behind the screen, see-through
+   and not clickable. */
+.cx-display__frame { position: fixed; left: 0; top: 0; z-index: -1; height: 1000px; border: 0; opacity: 0; pointer-events: none; }
+.cx-display__where:not(:empty) { margin-right: 6px; font-weight: 600; }
+/* "Checked" is good news: not the yellow edge of the warnings (.cx-status__line), WordPress's green (Norman 92-5). */
+#cx-display-ok { border-left-color: #00a32a; }
+/* A disabled button looks disabled, one look for every button of ours (CX-SID-107: before, only Status and Import had
+   it; other disabled primaries kept WordPress's grey and the Products pager's Previous/Next looked enabled). The button
+   colours above use !important, so this does too; :hover because the plain button's hover rule is more specific.
+   A grey pill (1.24:1 against white) so it differs from an enabled secondary also without colour; text 4.82:1. */
 .sidrena-cijena-settings .cx-status-wrap .button:disabled,
-.sidrena-cijena-settings .cx-import .button:disabled {
-	background: #f6f7f7 !important;
-	color: #8c8f94 !important;
-	border-color: #dcdcde !important;
+.sidrena-cijena-settings .cx-import .button:disabled,
+.sidrena-cijena-settings .button:disabled,
+.sidrena-cijena-settings .button:disabled:hover {
+	background: #e5e7eb !important;
+	color: #5f646b !important;
+	border-color: #e5e7eb !important;
 	cursor: not-allowed;
 }
 /* Status, new install: a step already done (CX-SID-42, Norman) */

@@ -98,7 +98,7 @@ $fmt_time  = function ( $ts ) {
 				<a class="button" href="#cx-attention"><?php echo esc_html__( 'Show', 'cx-sidrena' ); ?></a></p>
 		</div>
 	<?php else : ?>
-		<div class="cx-status__banner cx-status__banner--green" role="status">
+		<div class="cx-status__banner cx-status__banner--green" id="cx-status-all-set" role="status"<?php echo ( $display && $display['missed'] ) ? ' hidden' : ''; ?>>
 			<p class="cx-status__headline">
 				<?php echo esc_html__( 'All set. Every product has a bazna cijena.', 'cx-sidrena' ); ?>
 				<?php if ( $feed ) : ?>
@@ -106,6 +106,29 @@ $fmt_time  = function ( $ts ) {
 					<?php echo esc_html( sprintf( __( 'Price list updated %s.', 'cx-sidrena' ), $fmt_time( $feed ) ) ); ?>
 				<?php endif; ?>
 			</p>
+		</div>
+	<?php endif; ?>
+
+	<?php if ( $display ) : ?>
+		<?php // What a customer sees on a product page, measured in a browser (CX-SID-92; assets/js/admin-display-check.js). ?>
+		<div class="cx-status__display" id="cx-display" data-state="<?php echo esc_attr( $display['state'] ); ?>">
+			<div class="cx-status__banner cx-status__banner--yellow" id="cx-display-bad" role="status"<?php echo $display['missed'] ? '' : ' hidden'; ?>>
+				<p class="cx-status__headline"><?php echo esc_html__( 'On the product page customers do not see the bazna cijena (or the struck lowest price next to its caption): the theme hides it or draws its own price.', 'cx-sidrena' ); ?></p>
+				<p>
+					<span class="cx-display__where"><?php echo esc_html( CX_Sidrena_Admin_Status::display_where( $display['missed'] ) ); ?></span>
+					<a class="cx-display__product" href="<?php echo esc_url( $display['url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html__( 'View the product', 'cx-sidrena' ); ?></a>
+					· <button type="button" class="button-link cx-display__again"><?php echo esc_html__( 'Check again', 'cx-sidrena' ); ?></button>
+				</p>
+			</div>
+			<p class="cx-status__line" id="cx-display-unchecked"<?php echo 'unchecked' === $display['state'] ? '' : ' hidden'; ?>>
+				<?php echo esc_html__( 'What customers see on a product page was not checked: the page could not be opened here.', 'cx-sidrena' ); ?>
+				<button type="button" class="button-link cx-display__again"><?php echo esc_html__( 'Check again', 'cx-sidrena' ); ?></button>
+			</p>
+			<p class="cx-status__line" id="cx-display-ok"<?php echo $display['seen'] ? '' : ' hidden'; ?>>
+				<?php echo esc_html__( 'Checked: customers see the bazna cijena on a product page.', 'cx-sidrena' ); ?>
+				<button type="button" class="button-link cx-display__again"><?php echo esc_html__( 'Check again', 'cx-sidrena' ); ?></button>
+			</p>
+			<p class="cx-status__line" id="cx-display-checking" hidden><?php echo esc_html__( 'Checking what customers see on a product page…', 'cx-sidrena' ); ?></p>
 		</div>
 	<?php endif; ?>
 

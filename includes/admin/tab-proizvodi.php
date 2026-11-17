@@ -99,23 +99,24 @@ defined( 'ABSPATH' ) || exit;
 					<table class="sidrena-cijena-catalog" id="sidrena-cijena-catalog">
 						<thead>
 							<tr>
+								<?php // The columns every row needs first, so they are in view without scrolling (CX-SID-100); admin-catalog.js rowHtml in the same order. ?>
 								<th><?php echo esc_html__( 'Name', 'cx-sidrena' ); ?></th>
+								<th><?php echo esc_html__( 'URL', 'cx-sidrena' ); ?></th>
+								<th><?php echo esc_html__( 'Regular price', 'cx-sidrena' ); ?></th>
+								<th><?php echo esc_html__( 'Bazna cijena', 'cx-sidrena' ); ?></th>
+								<th><?php echo esc_html__( 'Date of bazna cijena', 'cx-sidrena' ); ?></th>
+								<th><?php echo esc_html__( 'Shortcode', 'cx-sidrena' ); ?></th>
+								<th><?php echo esc_html__( 'Sale price', 'cx-sidrena' ); ?></th>
 								<th><?php echo esc_html__( 'Type', 'cx-sidrena' ); ?></th>
 								<th><?php echo esc_html__( 'SKU', 'cx-sidrena' ); ?></th>
 								<th><?php echo esc_html__( 'Brand', 'cx-sidrena' ); ?></th>
-								<th><?php echo esc_html__( 'URL', 'cx-sidrena' ); ?></th>
-								<th><?php echo esc_html__( 'Regular price', 'cx-sidrena' ); ?></th>
-								<th><?php echo esc_html__( 'Sale price', 'cx-sidrena' ); ?></th>
 								<th><?php echo esc_html__( 'Special form', 'cx-sidrena' ); ?></th>
 								<th><?php echo esc_html__( 'Unit of measure', 'cx-sidrena' ); ?></th>
 								<th><?php echo esc_html__( 'Price per unit', 'cx-sidrena' ); ?></th>
-								<th><?php echo esc_html__( 'Bazna cijena', 'cx-sidrena' ); ?></th>
-								<th><?php echo esc_html__( 'Date of bazna cijena', 'cx-sidrena' ); ?></th>
 								<?php if ( CX_Sidrena_Settings::instance()->is_cjm_enabled() ) : ?>
 								<th><?php echo esc_html__( 'CJM unit', 'cx-sidrena' ); ?></th>
 								<?php endif; ?>
 								<th><?php echo esc_html__( 'Availability', 'cx-sidrena' ); ?></th>
-								<th><?php echo esc_html__( 'Shortcode', 'cx-sidrena' ); ?></th>
 								<th><span class="screen-reader-text"><?php echo esc_html__( 'Actions', 'cx-sidrena' ); ?></span></th>
 							</tr>
 						</thead>

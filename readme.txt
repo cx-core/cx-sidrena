@@ -3,7 +3,7 @@ Tags: woocommerce, croatia, sidrena cijena, bazna cijena, consumer protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.2.0
+Stable tag: 0.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -144,6 +144,16 @@ CX Sidrena updates itself from the published releases at https://github.com/cx-c
 Deleting CX Sidrena in Plugins removes its settings (including Dates, outlets and the rows entered by hand), the live price lists and its scheduled tasks. `wp cx-sidrena purge` does the same, after asking, and deactivates the plugin. Neither ever removes the bazna prices, dates and sources on products, the lowest price data, the price history and confirmations, or the archive of published price lists: they are your record of the prices you published, and MJDD Sidrena i bazna cijena reads the same product fields.
 
 == Changelog ==
+
+= 0.2.1 =
+* When a theme wraps the price in its own element, the bazna line and the lowest-price caption no longer go into the struck sale price: they stand after the theme's price, the caption first. On a sale whose struck price is not the regular price, or that is not lower, the theme's price element stays and only its amounts change.
+* The chosen variation's bazna line is inside that variation's price, at 0.8 of its size, with the euro sign on the line.
+* Lines a theme adds after the page has loaded (quick view, "load more") get the same readable colour as on the product page, and the lowest-price caption stays right under the struck price there.
+* Public price list: on a phone each row fits its box (the right edge was cut off), also in the [sidrena-cjenik] shortcode and the "price on request" table; from 721 to 1023 px (a tablet upright) the rows are cards, so the bazna cijena and its date are no longer hidden off to the right.
+* Settings > Dates suggests 02.05.2025. for the six groups (food, drink, cosmetics, cleaning products, toiletries, household products) and 10.09.2026. for equipment, devices, parts, animals and pet food; a category that may hold goods of both dates is marked "Check". Dates already saved do not change. The Dates table fits a phone.
+* Status checks in a browser what a customer sees on a product page: when the theme hides the bazna cijena (or the struck lowest price next to its caption) or draws its own price, a yellow row says so, with a link to the product and "Check again".
+* Without WooCommerce: a [sidrena-cijena id="dN"] shortcode after text reads as one line ("Cijena knjige: 18,45 €") with the bazna line under it, an amount never breaks from its euro sign, and Products and Import are on Settings, not under advanced settings.
+* Admin: other plugins' notices are shown below the tabs and are readable; the Products table shows the required columns first; buttons, the active tab and fields are easier to read, with a visible keyboard focus, and a disabled button looks disabled.
 
 = 0.2.0 =
 * Price history: every change of a product's price, sale, bazna cijena and lowest price in 30 days is recorded (when, how and by whom), whatever wrote it, and every bazna cijena knows where it came from. Neither deleting the plugin nor `wp cx-sidrena purge` removes the history.

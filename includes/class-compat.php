@@ -100,9 +100,12 @@ class CX_Sidrena_Compat {
 	 *
 	 * @param string $content      Existing price markup.
 	 * @param string $sidrena_html Sidrena markup.
+	 * @param bool   $into_price   Whether the line may go inside an element with the class price in $content. False for
+	 *                             the price HTML of woocommerce_get_price_html (the price block): there such an element
+	 *                             is a theme's wrapper around the whole price, and the line goes after it (CX-SID-93).
 	 * @return string
 	 */
-	public static function merge_price_html( $content, $sidrena_html ) {
+	public static function merge_price_html( $content, $sidrena_html, $into_price = true ) {
 		if ( ! is_string( $content ) || '' === $content ) {
 			return $content;
 		}
@@ -124,18 +127,119 @@ class CX_Sidrena_Compat {
 			return $content . $sidrena_html;
 		}
 
-		$replaced = preg_replace(
-			'/(<(?:p|div|span)[^>]*\bclass=(["\'])[^"\']*(?:(?<=["\'\s])price(?=["\'\s]))[^"\']*\2[^>]*>)(.*?)(<\/(?:p|div|span)>)/s',
-			'$1$3' . $sidrena_html . '$4',
-			$content,
-			1
-		);
-
-		if ( is_string( $replaced ) && $replaced !== $content ) {
-			return $replaced;
+		if ( $into_price ) {
+			$inside = self::insert_at_end_of_price_element( $content, $sidrena_html );
+			if ( null !== $inside ) {
+				return $inside;
+			}
 		}
 
 		return $content . $sidrena_html;
+	}
+
+	/**
+	 * Opening tag of a p, div or span with the class price (the word, not woocommerce-Price-amount or price-wrap).
+	 */
+	const PRICE_ELEMENT = '/<(p|div|span)\b[^>]*\bclass=(["\'])[^"\']*(?<=["\'\s])price(?=["\'\s])[^"\']*\2[^>]*>/';
+
+	/**
+	 * Whether markup has an element with the class price. In the HTML of woocommerce_get_price_html that is not
+	 * WooCommerce's own (its classes are woocommerce-Price-amount and woocommerce-price-suffix): a theme wrapped the
+	 * price.
+	 *
+	 * @param string $content Markup.
+	 * @return bool
+	 */
+	public static function has_price_element( $content ) {
+		return is_string( $content ) && 1 === preg_match( self::PRICE_ELEMENT, $content );
+	}
+
+	/**
+	 * Put the line last inside the first element with the class price (a page builder's p.price around WooCommerce's
+	 * price): right before that element's own closing tag, found by counting the nested tags of its name. MJDD's lazy
+	 * match stopped at the first closing p, div or span, the currency symbol's </span>, so the line ended up inside the
+	 * first amount, and on a sale inside <del aria-hidden> (CX-SID-93).
+	 *
+	 * @param string $content      Markup.
+	 * @param string $sidrena_html Sidrena markup.
+	 * @return string|null Null when there is no such element, or it is never closed.
+	 */
+	private static function insert_at_end_of_price_element( $content, $sidrena_html ) {
+		if ( ! preg_match( self::PRICE_ELEMENT, $content, $open, PREG_OFFSET_CAPTURE ) ) {
+			return null;
+		}
+
+		$close = self::price_element_close( $content, $open );
+		if ( null === $close ) {
+			return null;
+		}
+
+		return substr( $content, 0, $close ) . $sidrena_html . substr( $content, $close );
+	}
+
+	/**
+	 * Replace what is inside the first element with the class price, keeping its own opening and closing tag: a theme's
+	 * wrapper around the price (S8's div.price) stays when the price block draws the amounts anew (CX-SID-99). The closing
+	 * tag is found as in insert_at_end_of_price_element, by counting the nested tags of its name.
+	 *
+	 * @param string $content Markup.
+	 * @param string $inner   What goes inside instead.
+	 * @return string|null Null when there is no such element, or it is never closed.
+	 */
+	public static function replace_price_element_content( $content, $inner ) {
+		if ( ! is_string( $content ) || ! preg_match( self::PRICE_ELEMENT, $content, $open, PREG_OFFSET_CAPTURE ) ) {
+			return null;
+		}
+
+		$close = self::price_element_close( $content, $open );
+		if ( null === $close ) {
+			return null;
+		}
+
+		$from = $open[0][1] + strlen( $open[0][0] );
+
+		return substr( $content, 0, $from ) . $inner . substr( $content, $close );
+	}
+
+	/**
+	 * Offset of the closing tag of the element with the class price that $open matched (PRICE_ELEMENT, with offsets).
+	 *
+	 * @param string $content Markup.
+	 * @param array  $open    preg_match result with PREG_OFFSET_CAPTURE.
+	 * @return int|null Null when it is never closed.
+	 */
+	private static function price_element_close( $content, $open ) {
+		$from = $open[0][1] + strlen( $open[0][0] );
+		if ( ! preg_match_all( '#<(/?)' . $open[1][0] . '\b[^>]*>#i', $content, $tags, PREG_SET_ORDER | PREG_OFFSET_CAPTURE, $from ) ) {
+			return null;
+		}
+
+		$depth = 1;
+		foreach ( $tags as $tag ) {
+			if ( '/' === $tag[1][0] ) {
+				--$depth;
+				if ( 0 === $depth ) {
+					return $tag[0][1];
+				}
+			} elseif ( '/>' !== substr( $tag[0][0], -2 ) ) {
+				++$depth;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Add a class to the first element of a piece of our markup (the caption, the bazna line).
+	 *
+	 * @param string $html       Markup that starts with an element with a class attribute in double quotes.
+	 * @param string $class_name Class to add.
+	 * @return string
+	 */
+	public static function add_class( $html, $class_name ) {
+		$out = preg_replace( '/^(<[a-z]+\b[^>]*?\bclass="[^"]*)"/', '$1 ' . $class_name . '"', (string) $html, 1 );
+
+		return is_string( $out ) ? $out : (string) $html;
 	}
 
 	/**

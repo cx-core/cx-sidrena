@@ -15,6 +15,12 @@ require_once __DIR__ . '/class-badge.php';
 class CX_Sidrena_Frontend {
 
 	/**
+	 * Class of our caption and bazna line when they stand after a theme's price wrapper: frontend.css gives each a row of
+	 * its own where the wrapper is in a flex row (S8's product page), as inside WooCommerce's p.price (CX-SID-93).
+	 */
+	const OWN_ROW = 'cx-sidrena-own-row';
+
+	/**
 	 * Singleton.
 	 *
 	 * @var self|null
@@ -173,9 +179,10 @@ class CX_Sidrena_Frontend {
 	 *
 	 * @param string     $price_html Price HTML.
 	 * @param WC_Product $product    Product.
+	 * @param bool       $own_row    The price is in a theme's wrapper (CX-SID-93): the line gets a row of its own.
 	 * @return string
 	 */
-	public function append_to_price_html( $price_html, $product ) {
+	public function append_to_price_html( $price_html, $product, $own_row = false ) {
 		if ( ! CX_Sidrena_Settings::instance()->is_auto_display_enabled() ) {
 			return $price_html;
 		}
@@ -201,7 +208,13 @@ class CX_Sidrena_Frontend {
 			return $price_html;
 		}
 
-		return CX_Sidrena_Compat::merge_price_html( $price_html, $html );
+		if ( $own_row ) {
+			$html = CX_Sidrena_Compat::add_class( $html, self::OWN_ROW );
+		}
+
+		// Never into an element with the class price: in this HTML that is a theme's wrapper around the whole price, and
+		// the line goes after it (CX-SID-93). WooCommerce's own price HTML has no such element, so there nothing changes.
+		return CX_Sidrena_Compat::merge_price_html( $price_html, $html, false );
 	}
 
 	/**
@@ -217,7 +230,13 @@ class CX_Sidrena_Frontend {
 			return $html;
 		}
 
-		return $this->append_to_price_html( $this->lowest_part( $html, $product ), $product );
+		// A theme that wraps the whole price in its own element with the class price (S8's: div.price, at 999) gets the
+		// caption and the bazna line after its wrapper, each on a row of its own: never inside it, where the first closing
+		// tag is the currency symbol's and on a sale the struck amount's <del aria-hidden> (CX-SID-93). With another
+		// lowest-price plugin the line keeps its place at that plugin's line, as before.
+		$own_row = CX_Sidrena_Compat::has_price_element( $html ) && ! CX_Sidrena_Compat::lowest_price_plugin_active();
+
+		return $this->append_to_price_html( $this->lowest_part( $html, $product, $own_row ), $product, $own_row );
 	}
 
 	/**
@@ -230,9 +249,10 @@ class CX_Sidrena_Frontend {
 	 *
 	 * @param string     $html    Price HTML.
 	 * @param WC_Product $product Product.
+	 * @param bool       $own_row The caption stands after a theme's price wrapper (CX-SID-93).
 	 * @return string
 	 */
-	private function lowest_part( $html, $product ) {
+	private function lowest_part( $html, $product, $own_row = false ) {
 		$state = $this->sale_state( $product );
 		if ( null === $state || 'range' === $state['kind'] ) {
 			return $html;
@@ -240,15 +260,31 @@ class CX_Sidrena_Frontend {
 
 		$sale = wc_get_price_to_display( $product, array( 'price' => $state['sale'] ) );
 		if ( 'not_lower' === $state['kind'] ) {
-			return wc_price( $sale ) . $product->get_price_suffix();
+			return $this->price_anew( $html, wc_price( $sale ) . $product->get_price_suffix(), $own_row );
 		}
 
 		if ( abs( (float) $state['prior'] - (float) $state['regular'] ) > 0.0001 ) {
 			$prior = wc_get_price_to_display( $product, array( 'price' => $state['prior'] ) );
-			$html  = wc_format_sale_price( $prior, $sale ) . $product->get_price_suffix();
+			$html  = $this->price_anew( $html, wc_format_sale_price( $prior, $sale ) . $product->get_price_suffix(), $own_row );
 		}
 
-		return $html . $this->caption_html( $product->is_type( 'variable' ) );
+		return $html . $this->caption_html( $product->is_type( 'variable' ), $own_row );
+	}
+
+	/**
+	 * The amounts drawn anew (a sale that is no reduction, or one whose struck amount is not the regular price). In a
+	 * theme's wrapper only its content changes, so the wrapper and the theme's look of the amounts stay (CX-SID-99);
+	 * otherwise, as before, the new amounts are the whole price HTML.
+	 *
+	 * @param string $html    Price HTML as WooCommerce and the theme gave it.
+	 * @param string $amounts The amounts drawn anew.
+	 * @param bool   $own_row The price is in a theme's wrapper.
+	 * @return string
+	 */
+	private function price_anew( $html, $amounts, $own_row ) {
+		$kept = $own_row ? CX_Sidrena_Compat::replace_price_element_content( $html, $amounts ) : null;
+
+		return null !== $kept ? $kept : $amounts;
 	}
 
 	/**
@@ -256,10 +292,11 @@ class CX_Sidrena_Frontend {
 	 * on a phone). Class kept from the bazna add-on, themes may style it.
 	 *
 	 * @param bool $on_parent Line of a variable parent: hidden by frontend.js when a size is chosen.
+	 * @param bool $own_row   After a theme's price wrapper: a row of its own (CX-SID-93).
 	 * @return string
 	 */
-	private function caption_html( $on_parent ) {
-		return '<span class="bazna-najniza30' . ( $on_parent ? ' bazna-najniza30--variable' : '' ) . '" style="display:block">'
+	private function caption_html( $on_parent, $own_row = false ) {
+		return '<span class="bazna-najniza30' . ( $on_parent ? ' bazna-najniza30--variable' : '' ) . ( $own_row ? ' ' . self::OWN_ROW : '' ) . '" style="display:block">'
 			. esc_html__( 'Lowest price in the 30 days before the discount', 'cx-sidrena' ) . '</span>';
 	}
 

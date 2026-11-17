@@ -38,6 +38,12 @@ span.price .sidrena-cijena,
 	text-decoration: none !important;
 }
 
+/* After a theme's own price wrapper (CX-SID-93: div.price, in a flex row on S8's product page): the caption and the bazna
+ * line each on a row of their own under the price, as inside WooCommerce's p.price. Nothing outside a flex row. */
+.cx-sidrena-own-row {
+	flex-basis: 100%;
+}
+
 .price .lowest_price,
 p.price .lowest_price,
 span.price .lowest_price {
@@ -74,6 +80,14 @@ p.price .sidrena-cijena .woocommerce-Price-amount.amount,
 	font-weight: inherit !important;
 	color: inherit !important;
 	text-decoration: none !important;
+}
+
+/* The currency symbol in a line sits on the line, at the line's size (CX-SID-101): a theme may shrink and raise the
+ * symbol of its prices (one: ".product-summary .woocommerce-Price-currencySymbol {font-size: .75em; vertical-align: top}"),
+ * and that rule reached the symbol in our line. :not(#cx-sidrena-none) counts as an id: see the colour rules below. */
+.sidrena-cijena:not(#cx-sidrena-none) .woocommerce-Price-currencySymbol {
+	font-size: inherit !important;
+	vertical-align: baseline !important;
 }
 
 /*
@@ -181,15 +195,27 @@ p.price .sidrena-cijena .woocommerce-Price-amount.amount,
 	outline-offset: 3px;
 }
 
+/* A standalone catalog row ([sidrena-cijena id="dN"]): price, then the bazna line under it. Inline, so a shortcode placed
+ * after text ("Cijena knjige: [sidrena-cijena id="d6"]") puts text and price on one line and the bazna line under both,
+ * from the left, as on a WooCommerce shop (CX-SID-96). As an inline-block the row's baseline was its last line, the bazna
+ * line: the text stood next to it and the price hung above. The bazna line is a block, so it starts its own row. */
 .sidrena-cijena-item {
-	display: inline-block;
-	max-width: 100%;
+	display: inline;
 }
 
 .sidrena-cijena-item__price {
-	display: block;
+	display: inline;
 	font-size: 1em;
 	line-height: 1.4;
+}
+
+/* Inline (CX-SID-96), the row may break wherever there is a space, and the catalog joins an amount and its sign with an
+ * ordinary one ("19,90 €"): on a phone the sign stood alone on the next row (CX-SID-106). The price part and the bazna
+ * amount of a row never break inside; when the price does not fit after the text it goes to the next row whole. Only
+ * inside a catalog row: WooCommerce's own lines are not touched. */
+.sidrena-cijena-item__price,
+.sidrena-cijena-item .sidrena-cijena__amount {
+	white-space: nowrap;
 }
 
 .sidrena-cijena-item__price del {

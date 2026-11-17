@@ -238,7 +238,10 @@ a {
 	border: 0;
 }
 
-@media (max-width: 720px) {
+/* Cards up to 1023 px, not only on a phone: from 721 px the table with up to 12 columns (3+ nowrap) was wider than
+   its frame, and on an iPad held upright the sidrena cijena and its date were hidden behind a sideways scroll
+   (CX-SID-103). */
+@media (max-width: 1023px) {
 	.cjenik-table thead {
 		display: none;
 	}
@@ -251,7 +254,10 @@ a {
 		width: 100%;
 	}
 
+	/* A card is as wide as its frame: with its padding outside a width of 100 % it was 28 px wider, the frame scrolled
+	   sideways and cut off the right edge (CX-SID-95). */
 	.cjenik-table tr {
+		box-sizing: border-box;
 		padding: 12px 14px;
 		border-bottom: 1px solid #e6eef1;
 	}
@@ -285,6 +291,7 @@ a {
 	}
 
 	.cjenik-upit tr {
+		box-sizing: border-box;
 		padding: 12px 14px;
 		border-bottom: 1px solid #e6eef1;
 	}

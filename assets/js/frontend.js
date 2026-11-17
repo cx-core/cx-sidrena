@@ -208,6 +208,16 @@
 			return true;
 		}
 
+		// A theme's own price wrapper: the price block put the line right after it, after the caption if there is one
+		// (CX-SID-93), so a selector that finds the wrapper must not add a second line inside it.
+		var next = el.nextElementSibling;
+		if (next && next.classList.contains("bazna-najniza30")) {
+			next = next.nextElementSibling;
+		}
+		if (next && next.classList.contains("sidrena-cijena")) {
+			return true;
+		}
+
 		return false;
 	}
 
@@ -406,6 +416,75 @@
 		});
 	}
 
+	// Lines a theme adds after the page has loaded (a quick view's popup, a side panel, "load more", endless lists) come
+	// from the server like any other, but none of the calls above sees them: they land outside the watched roots
+	// (CX-SID-102 minimog's popup 3.36:1, CX-SID-69 WoodMart's .mfp-content 2.85:1). One observer on <body>, once per
+	// frame however many nodes come:
+	// - checks the contrast of new lines (lines already checked are skipped);
+	// - ties the captions of the ADDED content to their struck amounts (CX-SID-105: a quick view's caption stood 8 px
+	//   under it, a loaded card's 5 px). Only the added nodes are measured, never the whole page (choosing a size adds
+	//   the size's box: only that box again), and whatever their classes: cx-sidrena-checked marks contrast, and a
+	//   theme that moves checked lines into a popup still gets them tied. Content not shown in that frame is left as it
+	//   is: tieCaptions clears a caption's margin before it looks whether the caption is shown.
+	// Both only set a class or a style on our lines and add no node, and the observer looks at added nodes only, so it
+	// never wakes itself.
+	var LINE = ".sidrena-cijena:not(.cx-sidrena-checked), .bazna-najniza30:not(.cx-sidrena-checked)";
+	var CAPTION = ".bazna-najniza30";
+
+	function watchAddedLines() {
+		if (typeof MutationObserver === "undefined" || !document.body) {
+			return;
+		}
+
+		var pending = false;
+		var contrast = false;
+		var roots = [];
+		var later = window.requestAnimationFrame || function (fn) {
+			return window.setTimeout(fn, 16);
+		};
+
+		function run() {
+			var todo = roots;
+			pending = false;
+			roots = [];
+			if (contrast) {
+				contrast = false;
+				ensureContrast();
+			}
+			todo.forEach(function (root) {
+				if (document.body.contains(root) && root.getClientRects().length) {
+					tieCaptions(root);
+				}
+			});
+		}
+
+		new MutationObserver(function (mutations) {
+			for (var i = 0; i < mutations.length; i++) {
+				var added = mutations[i].addedNodes;
+				for (var j = 0; j < added.length; j++) {
+					var node = added[j];
+					if (node.nodeType !== 1) {
+						continue;
+					}
+					if (node.matches(LINE) || node.querySelector(LINE)) {
+						contrast = true;
+					}
+					if (node.matches(CAPTION)) {
+						if (node.parentElement && roots.indexOf(node.parentElement) === -1) {
+							roots.push(node.parentElement);
+						}
+					} else if (node.querySelector(CAPTION) && roots.indexOf(node) === -1) {
+						roots.push(node);
+					}
+				}
+			}
+			if (!pending && (contrast || roots.length)) {
+				pending = true;
+				later(run);
+			}
+		}).observe(document.body, { childList: true, subtree: true });
+	}
+
 	function lineText(el) {
 		var text = el.querySelector(".sidrena-cijena__text");
 		return (text || el).textContent.replace(/\s+/g, " ").trim();
@@ -457,7 +536,14 @@
 				$form.find(".woocommerce-variation-price").append($line);
 				return;
 			}
-			$price.append($line);
+			// A theme's own price wrapper has the caption after it, not in it (CX-SID-93): the size's line goes after the
+			// caption, on a row of its own, as the price block puts a line there.
+			var $caption = $price.next(".bazna-najniza30");
+			if ($caption.length) {
+				$caption.after($line.addClass("cx-sidrena-own-row"));
+			} else {
+				$price.append($line);
+			}
 		}
 
 		ensureContrast(scope($form).get(0));
@@ -480,14 +566,22 @@
 			return;
 		}
 
+		// The size's line is already in the size's price: the server puts it into price_html (add_variation_data), inside
+		// WooCommerce's span.price, after the caption, where its 0.8 em is counted from the price. It stays there
+		// (CX-SID-101: moved next to span.price, 0.8 em was counted from the box around it, 0.53 of the price on a theme
+		// that sets the price bigger than its box, smaller than the caption above it). Only a price_html rebuilt without
+		// our line gets it here, into the size's price as well.
 		if (variation.sidrena_cijena_html) {
-			$variationPrice.find(".sidrena-cijena").remove();
-
-			var $lowest = $variationPrice.find(".lowest_price").first();
-			if ($lowest.length) {
-				$lowest.before(variation.sidrena_cijena_html);
-			} else {
-				$variationPrice.append(variation.sidrena_cijena_html);
+			if (!$variationPrice.find(".sidrena-cijena").length) {
+				var $lowest = $variationPrice.find(".lowest_price").first();
+				var $sizePrice = $variationPrice.children(".price").first();
+				if ($lowest.length) {
+					$lowest.before(variation.sidrena_cijena_html);
+				} else if ($sizePrice.length) {
+					$sizePrice.append(variation.sidrena_cijena_html);
+				} else {
+					$variationPrice.append(variation.sidrena_cijena_html);
+				}
 			}
 
 			dedupeIn($variationPrice.get(0));
@@ -539,6 +633,7 @@
 		injectBuilderPrices();
 		ensureContrast();
 		watchBuilderPrices();
+		watchAddedLines();
 
 		// Measure once the fonts are in: a web font changes the line boxes.
 		if (document.fonts && document.fonts.ready) {

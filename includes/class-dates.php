@@ -31,15 +31,52 @@ final class CX_Sidrena_Dates {
 	const CHOICES = array( '10.09.2026.', '02.05.2025.' );
 
 	/**
-	 * Words in a category name (or its parent's) that suggest the second date. Lower case, without diacritics, and
-	 * matched as the start of a word. Linus may add words.
+	 * Words in a category's own name that suggest the second date: the six groups of the draft (Kai, CX-SID-94): food,
+	 * drink, cosmetics (whatever goes on the skin, hair or lips), cleaning products, toiletries and household products.
+	 * Lower case, without diacritics, matched as the start of a word.
 	 */
 	const KEYWORDS = array(
-		'hrana', 'prehran', 'pice', 'napit', 'kava', 'caj', 'vino', 'pivo', 'kozmet', 'njega', 'sampon', 'krem',
-		'sapun', 'deterdzent', 'ciscen', 'kucanstv', 'higijen',
-		'food', 'drink', 'beverage', 'coffee', 'wine', 'beer', 'cosmetic', 'skincare', 'shampoo', 'cream', 'soap',
-		'detergent', 'cleaning', 'household', 'hygiene',
+		'hrana', 'prehran', 'namirnic', 'mlijek', 'mlijecn', 'kruh', 'pekar', 'tjestenin', 'slatkis', 'cokolad', 'grickal',
+		'zacin', 'konzerv', 'voce', 'povrc', 'meso', 'mesn', 'sok', 'pice', 'napit', 'kava', 'caj', 'vino', 'pivo', 'alkohol',
+		'kozmet', 'njega', 'sampon', 'krem', 'sapun', 'parfem', 'dezodor', 'losion', 'balzam', 'sminka', 'toalet', 'pelen',
+		'maramic', 'zubn', 'brijanj', 'higijen', 'deterdz', 'ciscen', 'dezinf', 'pranj', 'rublj', 'kucanstv', 'domacinstv',
+		'food', 'grocer', 'snack', 'dairy', 'bakery', 'sweets', 'chocolate', 'spice', 'juice', 'drink', 'beverage', 'coffee',
+		'wine', 'beer', 'cosmetic', 'skincare', 'shampoo', 'cream', 'soap', 'perfume', 'deodorant', 'lotion', 'makeup',
+		'toilet', 'diaper', 'nappies', 'tissue', 'toothpaste', 'shaving', 'hygiene', 'detergent', 'cleaning', 'disinfect',
+		'laundry', 'dishwash', 'household',
 	);
+
+	/** The same groups, as whole words only: parts of the body (cosmetics for them), short words that start others. */
+	const KEYWORDS_WHOLE = array(
+		'lice', 'lica', 'tijelo', 'tijela', 'kosa', 'kose', 'kosu', 'usne', 'nokti', 'noktiju',
+		'body', 'face', 'hair', 'lips', 'skin', 'nails', 'tea',
+	);
+
+	/**
+	 * Words that say a category is not for people or is equipment (devices, parts, tools, vehicles, aquariums and
+	 * ponds, animals and their food): 10.9.2026. even next to a word of KEYWORDS ("Auto kozmetika", "Hrana za pse",
+	 * a pond's "Čišćenje i održavanje"). Start of a word, or whole words in NOT_FOR_PEOPLE_WHOLE.
+	 */
+	const NOT_FOR_PEOPLE = array(
+		'uredaj', 'aparat', 'stroj', 'alat', 'oprem', 'dijelov', 'rezervn', 'pribor', 'auto', 'motor', 'vozil', 'bicikl',
+		'akvarij', 'jezer', 'ribnjak', 'zivotinj', 'ljubimc', 'za pse', 'za macke', 'za ptice', 'za ribe',
+		'equipment', 'device', 'appliance', 'spare', 'accessor', 'vehicle', 'aquarium', 'pond',
+	);
+
+	/** Whole words of the same kind. */
+	const NOT_FOR_PEOPLE_WHOLE = array( 'pet', 'pets', 'dog', 'dogs', 'cat', 'cats', 'tool', 'tools', 'car', 'cars' );
+
+	/**
+	 * Words of a category that may hold goods of both dates (gifts, sets, sales, "other"): its date follows its parent,
+	 * and the screen asks the owner to check it. Start of a word, or whole words in MIXED_WHOLE.
+	 */
+	const MIXED = array(
+		'poklon', 'gift', 'paket', 'akcij', 'snizen', 'rasprodaj', 'razno', 'ostal', 'nekategoriz', 'uncategoriz', 'outlet',
+		'bundle',
+	);
+
+	/** Whole words of the same kind. */
+	const MIXED_WHOLE = array( 'set', 'sets', 'novo', 'sale', 'mix', 'misc', 'other', 'others' );
 
 	/** WP-cron event that runs (and resumes) the take-over outside a customer's request. */
 	const SETUP_HOOK = 'cx_sidrena_dates_setup';
@@ -291,36 +328,78 @@ final class CX_Sidrena_Dates {
 	}
 
 	/**
-	 * Dates suggested from category names: the second choice where the name of the category or of a parent contains
-	 * a word of KEYWORDS, else the first. Only where a category would differ from its parent is it set directly.
+	 * Dates suggested from category names (CX-SID-94), parents before children:
+	 * - a word of NOT_FOR_PEOPLE in its own name: the first choice (10.9.2026.); checked when the name also has a word
+	 *   of KEYWORDS ("Auto kozmetika");
+	 * - a word of KEYWORDS in its own name: the second choice (2.5.2025.), but the first and checked when a parent's name
+	 *   has a word of NOT_FOR_PEOPLE (a pond's "Čišćenje i održavanje"); checked when the name also has a word of MIXED;
+	 * - only a word of MIXED: its parent's date, checked;
+	 * - none: its parent's date (at the top the first choice).
+	 * Only where a category would differ from its parent is it set directly. "Checked" means the screen asks the owner
+	 * to look at it while the Dates are only suggested.
 	 *
-	 * @return array{0:array<int,string>,1:string}
+	 * @return array{0:array<int,string>,1:string,2:array<int,bool>} The map, Other goods, the categories to check.
 	 */
 	public static function suggest() {
-		$map = array();
+		$map   = array();
+		$check = array();
+		$nfp   = array(); // categories whose own name or a parent's says: not for people
 		foreach ( self::categories() as $term ) {
-			$want   = self::is_keyword( $term->name ) ? self::CHOICES[1] : null;
+			$id     = (int) $term->term_id;
 			$parent = (int) $term->parent;
 			$has    = $parent ? self::date_of_category( $parent, $map, self::CHOICES[0] ) : self::CHOICES[0];
-			if ( null === $want ) {
+			$fmcg   = self::has_word( $term->name, self::KEYWORDS, self::KEYWORDS_WHOLE );
+			$own    = self::has_word( $term->name, self::NOT_FOR_PEOPLE, self::NOT_FOR_PEOPLE_WHOLE );
+			$mixed  = self::has_word( $term->name, self::MIXED, self::MIXED_WHOLE );
+			$above  = $parent && isset( $nfp[ $parent ] );
+			if ( $own || $above ) {
+				$nfp[ $id ] = true;
+			}
+			if ( $own ) {
+				$want = self::CHOICES[0];
+				if ( $fmcg ) {
+					$check[ $id ] = true;
+				}
+			} elseif ( $fmcg && $above ) {
+				$want         = self::CHOICES[0];
+				$check[ $id ] = true;
+			} elseif ( $fmcg ) {
+				$want = self::CHOICES[1];
+				if ( $mixed ) {
+					$check[ $id ] = true;
+				}
+			} else {
 				$want = $has; // follows its parent
+				if ( $mixed ) {
+					$check[ $id ] = true;
+				}
 			}
 			if ( ! $parent || $want !== $has ) {
-				$map[ (int) $term->term_id ] = $want;
+				$map[ $id ] = $want;
 			}
 		}
 
-		return array( $map, self::CHOICES[0] );
+		return array( $map, self::CHOICES[0], $check );
 	}
 
 	/**
-	 * @param string $name Category name.
+	 * Whether a category name has a word of a list: lower case, without diacritics, a word of $starts at the start of a
+	 * word, a word of $whole as a whole word.
+	 *
+	 * @param string             $name   Category name.
+	 * @param array<int,string>  $starts Words matched as the start of a word.
+	 * @param array<int,string>  $whole  Words matched as whole words.
 	 * @return bool
 	 */
-	private static function is_keyword( $name ) {
-		$name = strtolower( remove_accents( (string) $name ) );
-		foreach ( self::KEYWORDS as $word ) {
+	private static function has_word( $name, array $starts, array $whole ) {
+		$name = strtolower( remove_accents( wp_specialchars_decode( (string) $name, ENT_QUOTES ) ) );
+		foreach ( $starts as $word ) {
 			if ( preg_match( '/(^|[^a-z])' . preg_quote( $word, '/' ) . '/', $name ) ) {
+				return true;
+			}
+		}
+		foreach ( $whole as $word ) {
+			if ( preg_match( '/(^|[^a-z])' . preg_quote( $word, '/' ) . '($|[^a-z])/', $name ) ) {
 				return true;
 			}
 		}
@@ -966,12 +1045,15 @@ final class CX_Sidrena_Dates {
 	/**
 	 * Rows for Settings → Dates: categories with products, parents before children, then Other goods.
 	 *
-	 * @return array<int,array{term_id:int,name:string,parent:int,depth:int,count:int,date:string,set:bool,inherited_from:int|string}>
+	 * @return array<int,array{term_id:int,name:string,parent:int,depth:int,count:int,date:string,set:bool,inherited_from:int|string,check:bool}>
 	 */
 	public static function rows() {
 		$d      = self::get();
 		$map    = $d ? $d['map'] : self::suggest()[0];
 		$other  = $d ? $d['other'] : self::CHOICES[0];
+		// Categories to check (CX-SID-94): only while the Dates are suggested. Saved or taken Dates are the owner's or
+		// the shop's own; nothing is asked about them again.
+		$check  = ( ! $d || 'suggested' === $d['state'] ) ? self::suggest()[2] : array();
 		$counts = self::category_counts();
 		$rows   = array();
 		foreach ( self::categories( true ) as $t ) {
@@ -992,6 +1074,7 @@ final class CX_Sidrena_Dates {
 				'date'           => self::date_of_category( $id, $map, $other ),
 				'set'            => $from === $id,
 				'inherited_from' => $from === $id ? 0 : $from,
+				'check'          => isset( $check[ $id ] ),
 			);
 		}
 		$rows[] = array(
@@ -1003,6 +1086,7 @@ final class CX_Sidrena_Dates {
 			'date'           => $other,
 			'set'            => true,
 			'inherited_from' => 0,
+			'check'          => false,
 		);
 
 		return $rows;

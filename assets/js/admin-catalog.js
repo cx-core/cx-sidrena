@@ -164,21 +164,32 @@
 				'<input type="text" class="js-naziv regular-text" value="' +
 				escAttr(row.naziv) +
 				'" /></td>' +
-				vrstaCell(row) +
-				'<td><input type="text" class="js-sku" value="' +
-				escAttr(row.sku) +
-				'" /></td>' +
-				'<td><input type="text" class="js-marka" value="' +
-				escAttr(row.marka) +
-				'" /></td>' +
+				// The columns every row needs first (CX-SID-100), as the table head in tab-proizvodi.php. Reading and
+				// saving go by class, not by position.
 				'<td><input type="url" class="js-url" value="' +
 				escAttr(row.url) +
 				'" /></td>' +
 				'<td><input type="text" class="js-regular" inputmode="decimal" value="' +
 				escAttr(row.cijena_redovna) +
 				'" /></td>' +
+				'<td><input type="text" class="js-sidrena" inputmode="decimal" value="' +
+				escAttr(row.sidrena_cijena) +
+				'" /></td>' +
+				'<td><input type="text" class="js-datum" placeholder="' +
+				escAttr(i18n.datePlaceholder || "") +
+				'" value="' +
+				escAttr(row.sidrena_datum) +
+				'" /></td>' +
+				shortcodeCell(row.id) +
 				'<td><input type="text" class="js-sale" inputmode="decimal" value="' +
 				escAttr(row.cijena_akcijska) +
+				'" /></td>' +
+				vrstaCell(row) +
+				'<td><input type="text" class="js-sku" value="' +
+				escAttr(row.sku) +
+				'" /></td>' +
+				'<td><input type="text" class="js-marka" value="' +
+				escAttr(row.marka) +
 				'" /></td>' +
 				'<td><input type="text" class="js-oblik" placeholder="' +
 				escAttr(i18n.oblikPlaceholder || "akcija") +
@@ -193,14 +204,6 @@
 				'<td><input type="text" class="js-jedinica-cijena" inputmode="decimal" value="' +
 				escAttr(row.cijena_jedinice_mjere) +
 				'" /></td>' +
-				'<td><input type="text" class="js-sidrena" inputmode="decimal" value="' +
-				escAttr(row.sidrena_cijena) +
-				'" /></td>' +
-				'<td><input type="text" class="js-datum" placeholder="' +
-				escAttr(i18n.datePlaceholder || "") +
-				'" value="' +
-				escAttr(row.sidrena_datum) +
-				'" /></td>' +
 				cjmCell(row) +
 				'<td><select class="js-dostupnost">' +
 				'<option value="dostupno"' +
@@ -214,7 +217,6 @@
 				escAttr(i18n.nedostupno || "Out of stock") +
 				"</option>" +
 				"</select></td>" +
-				shortcodeCell(row.id) +
 				'<td class="sidrena-cijena-catalog-actions">' +
 				iconButton("js-add", "dashicons-plus-alt2", i18n.addRow || "Add row") +
 				iconButton("js-dup", "dashicons-admin-page", i18n.duplicate || "Duplicate") +

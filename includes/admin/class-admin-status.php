@@ -30,6 +30,18 @@ class CX_Sidrena_Admin_Status {
 	const NONCE            = 'cx_sidrena_status';
 
 	/**
+	 * What a customer sees on a product page, as measured in a browser from Status (CX-SID-92): the theme, its version,
+	 * ours, when, the product and the finding per width.
+	 */
+	const SEEN_DISPLAY = 'cx_sidrena_seen_display';
+
+	/** The widths a product page is measured at: a computer and a phone. */
+	const DISPLAY_WIDTHS = array( 1280, 390 );
+
+	/** A finding is checked again after this, and when the theme or a version changes. */
+	const DISPLAY_TTL = 7 * DAY_IN_SECONDS;
+
+	/**
 	 * Hour by which the day's price list must be public (NN 101/2026: before 08:00).
 	 */
 	const DEADLINE_HOUR = 8;
@@ -68,6 +80,7 @@ class CX_Sidrena_Admin_Status {
 		add_action( 'wp_ajax_cx_sidrena_status_fill', array( $this, 'ajax_fill' ) );
 		add_action( 'wp_ajax_cx_sidrena_status_progress', array( $this, 'ajax_progress' ) );
 		add_action( 'wp_ajax_cx_sidrena_two_cat_ok', array( $this, 'ajax_two_cat_ok' ) );
+		add_action( 'wp_ajax_cx_sidrena_display_seen', array( $this, 'ajax_display_seen' ) );
 	}
 
 	/**
@@ -607,8 +620,277 @@ class CX_Sidrena_Admin_Status {
 	 * The screen.
 	 */
 	public function render() {
-		$status = $this;
+		$status  = $this;
+		$display = $this->display_state();
+		if ( $display ) {
+			$this->enqueue_display_check( $display );
+		}
 		include CX_SIDRENA_PATH . 'includes/admin/tab-status.php';
+	}
+
+	// ----------------------------------------------------------------------------------------------------------------
+	// What a customer sees (CX-SID-92)
+	// ----------------------------------------------------------------------------------------------------------------
+
+	/**
+	 * The product whose page is measured: a published simple product with a bazna, at best one on sale with the lowest
+	 * price struck (so the struck amount is measured too); else a variable product whose page shows our line before a
+	 * size is chosen. One whose sizes have different labels or dates shows none there (each size shows its own once
+	 * chosen), so measuring it would read as a theme hiding our price; with no other, there is nothing to measure.
+	 *
+	 * @return array{id:int,url:string,sale:bool}|null Null when no product has a bazna.
+	 */
+	public function display_target() {
+		if ( ! function_exists( 'wc_get_product' ) ) {
+			return null;
+		}
+		$pick = null;
+		$args = array(
+			'post_status'    => 'publish',
+			'posts_per_page' => 40,
+			'fields'         => 'ids',
+			'has_password'   => false,
+			'orderby'        => 'ID',
+			'order'          => 'DESC',
+			'no_found_rows'  => true,
+			'meta_query'     => array( array( 'key' => CX_SIDRENA_META_PRICE, 'value' => '', 'compare' => '!=' ) ), // phpcs:ignore WordPress.DB.SlowDBQuery
+		);
+		$ids  = get_posts( array_merge( $args, array( 'post_type' => 'product', 'tax_query' => array( array( 'taxonomy' => 'product_type', 'field' => 'slug', 'terms' => array( 'simple' ) ) ) ) ) ); // phpcs:ignore WordPress.DB.SlowDBQuery
+		$front = class_exists( 'CX_Sidrena_Frontend' ) ? CX_Sidrena_Frontend::instance() : null;
+		foreach ( $ids as $id ) {
+			$product = wc_get_product( $id );
+			if ( ! $product || ! $product->is_visible() || '' === (string) $product->get_price() ) {
+				continue;
+			}
+			$state = $front ? $front->sale_state( $product ) : null;
+			if ( $state && 'sale' === $state['kind'] ) {
+				return array( 'id' => (int) $id, 'url' => (string) get_permalink( $id ), 'sale' => true );
+			}
+			if ( null === $pick ) {
+				$pick = array( 'id' => (int) $id, 'url' => (string) get_permalink( $id ), 'sale' => false );
+			}
+		}
+		if ( null === $pick && $front ) {
+			$tried = array();
+			foreach ( get_posts( array_merge( $args, array( 'post_type' => 'product_variation' ) ) ) as $vid ) {
+				$parent = wp_get_post_parent_id( $vid );
+				if ( ! $parent || isset( $tried[ $parent ] ) ) {
+					continue;
+				}
+				$tried[ $parent ] = true;
+				$p                = wc_get_product( $parent );
+				if ( $p && 'publish' === get_post_status( $parent ) && $p->is_visible() && '' === (string) get_post_field( 'post_password', $parent )
+					&& '' !== $front->get_html_for_product( $p ) ) {
+					$pick = array( 'id' => (int) $parent, 'url' => (string) get_permalink( $parent ), 'sale' => false );
+					break;
+				}
+			}
+		}
+
+		return $pick;
+	}
+
+	/**
+	 * The theme and the versions a finding is for: another theme, or a new version of the theme or of ours, is a new
+	 * check (a child theme's edits do not change its version: "Check again" is for that).
+	 *
+	 * @return array{theme:string,template:string,theme_version:string,plugin:string}
+	 */
+	private function display_context() {
+		$theme  = wp_get_theme();
+		$parent = $theme->parent();
+
+		return array(
+			'theme'         => (string) get_stylesheet(),
+			'template'      => (string) get_template(),
+			'theme_version' => (string) $theme->get( 'Version' ) . ( $parent ? '/' . (string) $parent->get( 'Version' ) : '' ),
+			'plugin'        => (string) CX_SIDRENA_VERSION,
+		);
+	}
+
+	/**
+	 * Whether a finding says a customer misses something: on some width, no bazna line with its amount in sight (while
+	 * the line is added automatically), or the caption in sight without the struck amount it is about.
+	 *
+	 * @param array $widths Finding per width.
+	 * @param bool  $line   Whether the line is expected on the product page (automatic display on).
+	 * @return array<int,int> The widths where something is missed.
+	 */
+	public static function display_missed( array $widths, $line ) {
+		$out = array();
+		foreach ( self::DISPLAY_WIDTHS as $w ) {
+			$r = isset( $widths[ $w ] ) && is_array( $widths[ $w ] ) ? $widths[ $w ] : null;
+			if ( ! $r ) {
+				continue;
+			}
+			if ( ( $line && empty( $r['line'] ) ) || ( ! empty( $r['caption'] ) && false === $r['struck'] ) ) {
+				$out[] = $w;
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Whether a finding says a customer sees our line, with its amount, on every width (and misses nothing): only then
+	 * does Status say so. With the automatic display off and no line on the page, nothing is missed, but nothing is
+	 * claimed either.
+	 *
+	 * @param array          $widths Finding per width.
+	 * @param array<int,int> $missed display_missed().
+	 * @return bool
+	 */
+	public static function display_seen( array $widths, array $missed ) {
+		if ( $missed ) {
+			return false;
+		}
+		foreach ( self::DISPLAY_WIDTHS as $w ) {
+			if ( empty( $widths[ $w ] ) || ! is_array( $widths[ $w ] ) || true !== ( $widths[ $w ]['line'] ?? null ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * What Status shows about the product page, or null when there is nothing to measure (no product has a bazna).
+	 *
+	 * @return array{target:array,due:bool,state:string,missed:array<int,int>,seen:bool,product:int,url:string}|null
+	 *         state: none (not measured yet), checked or unchecked (the page could not be measured here); seen: the
+	 *         finding says a customer sees our line (display_seen()).
+	 */
+	public function display_state() {
+		$target = $this->display_target();
+		if ( ! $target ) {
+			return null;
+		}
+		$ctx  = $this->display_context();
+		$seen = get_option( self::SEEN_DISPLAY, null );
+		$same = is_array( $seen ) && isset( $seen['theme'], $seen['template'] ) && $seen['theme'] === $ctx['theme'] && $seen['template'] === $ctx['template'];
+		$due  = ! $same || ! isset( $seen['theme_version'], $seen['plugin'], $seen['at'] ) || $seen['theme_version'] !== $ctx['theme_version']
+			|| $seen['plugin'] !== $ctx['plugin'] || time() - (int) $seen['at'] > self::DISPLAY_TTL;
+		$state  = $same && isset( $seen['state'] ) ? (string) $seen['state'] : 'none';
+		$missed = $same && 'checked' === $state && isset( $seen['missed'] ) && is_array( $seen['missed'] ) ? array_map( 'intval', $seen['missed'] ) : array();
+		$pid    = $same && ! empty( $seen['product'] ) ? (int) $seen['product'] : (int) $target['id'];
+		$widths = $same && 'checked' === $state && isset( $seen['widths'] ) && is_array( $seen['widths'] ) ? $seen['widths'] : array();
+
+		return array(
+			'target'  => $target,
+			'due'     => $due,
+			'state'   => $state,
+			'missed'  => $missed,
+			'seen'    => 'checked' === $state && self::display_seen( $widths, $missed ),
+			'product' => $pid,
+			'url'     => (string) get_permalink( $pid ),
+		);
+	}
+
+	/**
+	 * The words for where a customer misses it.
+	 *
+	 * @param array<int,int> $missed Widths.
+	 * @return string
+	 */
+	public static function display_where( array $missed ) {
+		if ( array( 390 ) === array_values( $missed ) ) {
+			return __( 'Only on a phone.', 'cx-sidrena' );
+		}
+		if ( array( 1280 ) === array_values( $missed ) ) {
+			return __( 'Only on a computer.', 'cx-sidrena' );
+		}
+
+		return '';
+	}
+
+	/**
+	 * The script that measures the page, on Status only.
+	 *
+	 * @param array $display display_state().
+	 */
+	private function enqueue_display_check( array $display ) {
+		wp_enqueue_script( 'cx-sidrena-display-check', CX_SIDRENA_URL . 'assets/js/admin-display-check.js', array(), CX_SIDRENA_VERSION, true );
+		wp_localize_script(
+			'cx-sidrena-display-check',
+			'cxDisplayCheck',
+			array(
+				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+				'nonce'   => wp_create_nonce( self::NONCE ),
+				'url'     => $display['target']['url'],
+				'product' => (int) $display['target']['id'],
+				'sale'    => (bool) $display['target']['sale'],
+				'due'     => (bool) $display['due'],
+				'widths'  => self::DISPLAY_WIDTHS,
+				't'       => array(
+					'phone'    => __( 'Only on a phone.', 'cx-sidrena' ),
+					'computer' => __( 'Only on a computer.', 'cx-sidrena' ),
+				),
+			)
+		);
+	}
+
+	/**
+	 * The script's finding: stored with the theme and versions it is for, then what Status shows. Only the measured
+	 * booleans are taken; the product is the one Status chose.
+	 */
+	public function ajax_display_seen() {
+		$this->ajax_guard();
+		$target = $this->display_target();
+		if ( ! $target ) {
+			wp_send_json_error( array( 'code' => 'nothing', 'message' => __( 'No product has a bazna cijena yet.', 'cx-sidrena' ) ) );
+		}
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- ajax_guard()
+		$state  = isset( $_POST['state'] ) && 'checked' === $_POST['state'] ? 'checked' : 'unchecked';
+		$raw    = isset( $_POST['widths'] ) ? json_decode( wp_unslash( (string) $_POST['widths'] ), true ) : null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- decoded, then only booleans are kept
+		$reason = isset( $_POST['reason'] ) ? sanitize_key( wp_unslash( $_POST['reason'] ) ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+		$widths = array();
+		$bool   = static function ( $r, $k ) {
+			return ! empty( $r[ $k ] ) && true === $r[ $k ];
+		};
+		if ( 'checked' === $state ) {
+			foreach ( self::DISPLAY_WIDTHS as $w ) {
+				$r = is_array( $raw ) && isset( $raw[ $w ] ) && is_array( $raw[ $w ] ) ? $raw[ $w ] : null;
+				if ( ! $r ) {
+					$state  = 'unchecked';
+					$reason = 'incomplete';
+					break;
+				}
+				$widths[ $w ] = array(
+					'found'   => $bool( $r, 'found' ),
+					'line'    => $bool( $r, 'line' ),
+					'caption' => $bool( $r, 'caption' ),
+					'struck'  => array_key_exists( 'struck', $r ) && is_bool( $r['struck'] ) ? $r['struck'] : null,
+				);
+			}
+		}
+		$line   = CX_Sidrena_Settings::instance()->is_auto_display_enabled();
+		$missed = 'checked' === $state ? self::display_missed( $widths, $line ) : array();
+		update_option(
+			self::SEEN_DISPLAY,
+			array_merge(
+				$this->display_context(),
+				array(
+					'at'      => time(),
+					'product' => (int) $target['id'],
+					'state'   => $state,
+					'reason'  => 'checked' === $state ? '' : $reason,
+					'widths'  => 'checked' === $state ? $widths : array(),
+					'line'    => $line,
+					'missed'  => $missed,
+				)
+			),
+			false
+		);
+		wp_send_json_success(
+			array(
+				'state'  => $state,
+				'missed' => $missed,
+				'seen'   => 'checked' === $state && self::display_seen( $widths, $missed ),
+				'where'  => self::display_where( $missed ),
+				'url'    => (string) get_permalink( $target['id'] ),
+			)
+		);
 	}
 
 	/**
