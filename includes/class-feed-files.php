@@ -1324,6 +1324,10 @@ JS;
 		}
 
 		$snapshot = $this->read_cjenik_snapshot( $oznaka );
+		if ( null === $snapshot && CX_Sidrena_Export::instance()->awaiting_bazna() ) {
+			// Before the first bazna: not being prepared, not published yet, and no build queued (CX-SID-68).
+			return '<p class="sidrena-cjenik-pending">' . esc_html( CX_Sidrena_Export::not_published_message() ) . '</p>';
+		}
 		if ( null === $snapshot ) {
 			CX_Sidrena_Feed_Routes::instance()->schedule_public_rebuild();
 			return '<p class="sidrena-cjenik-pending">' . esc_html__( 'The price list is being prepared. Refresh the page in a few minutes.', 'cx-sidrena' ) . '</p>';

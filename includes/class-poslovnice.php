@@ -186,23 +186,16 @@ class CX_Sidrena_Poslovnice {
 	}
 
 	/**
-	 * Set the next storage sequence for one outlet.
+	 * Raise the next storage number of one outlet, never lower it: its own counter row (CX_Sidrena_Archive::
+	 * raise_pohrana(), CX-SID-119 dopuna). The outlet list is not saved: a build that saved it, as read when it started,
+	 * undid an outlet change the owner saved meanwhile.
 	 *
 	 * @param string $id      Outlet id.
 	 * @param int    $pohrana Next sequence, 1+.
+	 * @return int The outlet's counter after.
 	 */
 	public function set_pohrana( $id, $pohrana ) {
-		$id      = preg_replace( '/[^a-z0-9]/i', '', (string) $id );
-		$pohrana = CX_Sidrena_Settings::instance()->sanitize_pohrana( $pohrana );
-		$rows    = $this->all();
-
-		foreach ( $rows as $index => $row ) {
-			if ( $row['id'] === $id ) {
-				$rows[ $index ]['pohrana'] = $pohrana;
-			}
-		}
-
-		$this->save( $rows );
+		return CX_Sidrena_Archive::instance()->raise_pohrana( (string) $id, $pohrana );
 	}
 
 	/**

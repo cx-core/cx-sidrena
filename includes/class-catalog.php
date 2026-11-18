@@ -222,8 +222,11 @@ class CX_Sidrena_Catalog {
 				$item['barkod']           = '';
 				$item['dostupnost']       = isset( $row['dostupnost'] ) ? $row['dostupnost'] : 'dostupno';
 				$item['jedinica_mjere']   = $legal['jedinica_mjere'];
-				$item['cijena_jedinice_mjere'] = $legal['cijena_jedinice_mjere'];
-				$item['maloprodajna_cijena']   = $legal['maloprodajna_cijena'];
+				// The amounts of the files with two decimals, as WooCommerce's rows have them (CX-SID-116): zeros added,
+				// never rounded. What is stored stays as it is.
+				$item['cijena_jedinice_mjere'] = CX_Sidrena_Money::two_decimals( $legal['cijena_jedinice_mjere'] );
+				$item['maloprodajna_cijena']   = CX_Sidrena_Money::two_decimals( $legal['maloprodajna_cijena'] );
+				$item['sidrena_cijena']        = CX_Sidrena_Money::two_decimals( $row['sidrena_cijena'] );
 				$item['naziv_posebnog_oblika'] = $legal['naziv_posebnog_oblika'];
 			}
 
@@ -235,9 +238,28 @@ class CX_Sidrena_Catalog {
 
 	/**
 	 * Start a batch upsert (one option write at commit).
+	 *
+	 * @param array<int, array<string, string>>|null $rows Rows to go on from, or null for the stored catalog.
 	 */
-	public function begin_batch() {
-		$this->working = $this->all();
+	public function begin_batch( $rows = null ) {
+		// A bulk import keeps its working copy between its requests (CX-SID-124): it goes on from there.
+		$this->working = is_array( $rows ) ? $rows : $this->all();
+	}
+
+	/**
+	 * The batch's rows as they stand, without writing them (the bulk import keeps them in its job until the end).
+	 *
+	 * @return array<int, array<string, string>>
+	 */
+	public function batch_rows() {
+		return is_array( $this->working ) ? $this->working : array();
+	}
+
+	/**
+	 * Forget the batch without writing it.
+	 */
+	public function drop_batch() {
+		$this->working = null;
 	}
 
 	/**
@@ -370,6 +392,14 @@ class CX_Sidrena_Catalog {
 		foreach ( $same as $key => $value ) {
 			if ( array_key_exists( $key, $data ) && '' !== $value && $row[ $key ] === $this->normalize_shown( $key, $value ) ) {
 				$row[ $key ] = isset( $existing[ $key ] ) ? $existing[ $key ] : '';
+			}
+		}
+
+		// An amount that is the same amount as the stored one keeps the stored text (CX-SID-116): Excel saves 23,50 as
+		// 23.5 and 19,00 as 19, and the price list must not get a new version when no price changed.
+		foreach ( array( 'cijena_redovna', 'cijena_akcijska', 'sidrena_cijena', 'cijena_jedinice_mjere' ) as $key ) {
+			if ( isset( $existing[ $key ] ) && '' !== $row[ $key ] && CX_Sidrena_Money::same_amount( $row[ $key ], $existing[ $key ] ) ) {
+				$row[ $key ] = $existing[ $key ];
 			}
 		}
 

@@ -427,6 +427,14 @@ class CX_Sidrena_Product_Meta {
 	/**
 	 * Name written to the public feed while the charged price is the sale price.
 	 *
+	 * Only where the customer's page shows a reduction (CX-SID-88, Kai): a sale price that is not lower than the lowest
+	 * price in the 30 days before the sale is shown on the page as a plain price, so the price list does not call it a
+	 * special form of sale either (ZZP art. 19(1); poseban_oblik NE, CX_Sidrena_Feed_Rows::finish_public_rows()). The
+	 * page's own rule decides, CX_Sidrena_Frontend::sale_state(), called, never changed here. Where we do not draw the
+	 * page's price (our lowest-price line turned off, another lowest-price plugin: sale_state() is null) the page shows
+	 * WooCommerce's sale, and so does the price list. The retail price is untouched: it is the price the customer pays.
+	 * A per-product name stays stored; it comes back when the sale becomes a real reduction.
+	 *
 	 * @param WC_Product $product Product or variation.
 	 * @return string akcija, a per-product override, or empty.
 	 */
@@ -439,8 +447,47 @@ class CX_Sidrena_Product_Meta {
 			return '';
 		}
 
+		if ( class_exists( 'CX_Sidrena_Frontend' ) ) {
+			$front = CX_Sidrena_Frontend::instance();
+			$state = $front->sale_state( $product );
+			if ( null !== $state && 'not_lower' === $state['kind'] ) {
+				return '';
+			}
+
+			// A size the page shows no price of its own for (every size costs the same) shows its product's block when
+			// chosen: a plain price there is a plain price for this size too (Kai: the list as the page for that size).
+			if ( null !== $state && $product->is_type( 'variation' ) && ! $this->size_price_shown( $product ) ) {
+				$parent = wc_get_product( $product->get_parent_id() );
+				$whole  = $parent ? $front->sale_state( $parent ) : null;
+				if ( null !== $whole && 'not_lower' === $whole['kind'] ) {
+					return '';
+				}
+			}
+		}
+
 		$override = trim( $this->get_oblik( $product->get_id() ) );
 		return '' !== $override ? $override : 'akcija';
+	}
+
+	/**
+	 * Whether a size, when chosen on its product's page, shows a price of its own: WooCommerce's own rule
+	 * (WC_Product_Variable::get_available_variation(), filter woocommerce_show_variation_price), so the price list
+	 * reads the same page the customer sees. Without one the product's price block stays.
+	 *
+	 * @param WC_Product $variation Variation.
+	 * @return bool
+	 */
+	private function size_price_shown( $variation ) {
+		$parent = wc_get_product( $variation->get_parent_id() );
+		if ( ! $parent instanceof WC_Product_Variable ) {
+			return true;
+		}
+
+		$shown = '' === (string) $variation->get_price()
+			|| $parent->get_variation_sale_price( 'min' ) !== $parent->get_variation_sale_price( 'max' )
+			|| $parent->get_variation_regular_price( 'min' ) !== $parent->get_variation_regular_price( 'max' );
+
+		return (bool) apply_filters( 'woocommerce_show_variation_price', $shown, $parent, $variation );
 	}
 
 	/**

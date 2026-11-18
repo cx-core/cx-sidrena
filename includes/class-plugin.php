@@ -77,11 +77,19 @@ final class CX_Sidrena_Plugin {
 	 * admin whose own profile language is English, by cron or by WP-CLI. Its language must be the shop's, never the
 	 * language of whoever started it.
 	 *
+	 * switch_to_locale() alone is not enough (CX-SID-121): it does nothing when the request is already in the shop's
+	 * language, and the build runs as a visitor (CX_Sidrena_Feed_Rows::as_visitor()), whose language is the shop's. Our
+	 * texts then stayed in whatever language they were first used in during this request: an English admin's Settings
+	 * page had loaded them in English, so the stored table was English (S5, 17.11.). In that case our text domain is
+	 * loaded again in the shop's language for the build, and afterwards it loads again in the request's own language.
+	 *
 	 * @param callable $build Work that produces customer-facing text.
 	 * @return mixed What $build returns.
 	 */
 	public static function in_shop_locale( $build ) {
-		$switched = switch_to_locale( get_locale() );
+		$locale   = get_locale();
+		$switched = switch_to_locale( $locale );
+		$own      = $switched ? null : self::load_textdomain_in( $locale );
 
 		try {
 			return $build();
@@ -89,6 +97,50 @@ final class CX_Sidrena_Plugin {
 			if ( $switched ) {
 				restore_previous_locale();
 			}
+			if ( null !== $own ) {
+				self::release_textdomain( $own );
+			}
+		}
+	}
+
+	/**
+	 * Our text domain in $locale, whatever language it was loaded in before. With no translation for $locale, the
+	 * source (English) texts, never the request's language.
+	 *
+	 * @param string $locale Locale.
+	 * @return string The translation controller's locale before (WordPress 6.5+), '' before 6.5.
+	 */
+	private static function load_textdomain_in( $locale ) {
+		global $l10n, $wp_textdomain_registry;
+
+		// load_textdomain() moves the translation controller to $locale: put back afterwards (release_textdomain()).
+		$before = class_exists( 'WP_Translation_Controller' ) ? WP_Translation_Controller::get_instance()->get_locale() : '';
+
+		self::load_textdomain(); // registers our languages/ folder, also in a request where init() did not run
+		unload_textdomain( 'cx-sidrena', true );
+
+		// The file WordPress itself would pick for $locale (language packs and Loco first, then our languages/), as in
+		// _load_textdomain_just_in_time(), but for the shop's locale instead of this request's.
+		$path   = $wp_textdomain_registry instanceof WP_Textdomain_Registry ? $wp_textdomain_registry->get( 'cx-sidrena', $locale ) : false;
+		$loaded = $path && load_textdomain( 'cx-sidrena', $path . 'cx-sidrena-' . $locale . '.mo', $locale );
+		if ( ! $loaded ) {
+			// Nothing for $locale: the source texts. Without this, the first text would load the request's language.
+			$l10n['cx-sidrena'] = new NOOP_Translations();
+		}
+
+		return $before;
+	}
+
+	/**
+	 * After the build: our text domain loads again on its next use, in the request's language, and the translation
+	 * controller is back on the locale it had (so the admin's other texts are in his language again).
+	 *
+	 * @param string $before What load_textdomain_in() returned.
+	 */
+	private static function release_textdomain( $before ) {
+		unload_textdomain( 'cx-sidrena', true );
+		if ( '' !== $before && class_exists( 'WP_Translation_Controller' ) ) {
+			WP_Translation_Controller::get_instance()->set_locale( $before );
 		}
 	}
 

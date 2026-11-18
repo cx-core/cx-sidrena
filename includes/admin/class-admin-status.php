@@ -47,6 +47,12 @@ class CX_Sidrena_Admin_Status {
 	const DEADLINE_HOUR = 8;
 
 	/**
+	 * A queued first build overdue by more than this means WP-cron does not run (CX-SID-68): a server cron every 15
+	 * minutes, as Settings recommends, plus a margin.
+	 */
+	const FIRST_BUILD_LATE = 20 * MINUTE_IN_SECONDS;
+
+	/**
 	 * Singleton.
 	 *
 	 * @var self|null
@@ -108,9 +114,11 @@ class CX_Sidrena_Admin_Status {
 			if ( ! is_wp_error( $result ) ) {
 				CX_Sidrena_Export::instance()->archive_public_xml();
 			}
-			$flag = is_wp_error( $result ) ? '0' : '1';
-			if ( is_wp_error( $result ) && 'sidrena_b2b_only' === $result->get_error_code() ) {
-				$flag = 'b2b'; // not a failure: a B2B shop publishes no price list (CX-SID-28)
+			// b2b: not a failure, a B2B shop publishes no price list (CX-SID-28); busy: another build was running and
+			// this one comes after it (CX-SID-119).
+			$flag = CX_Sidrena_Export::result_flag( $result );
+			if ( in_array( $flag, array( '0', 'fail' ), true ) ) {
+				CX_Sidrena_Export::instance()->retry_soon();
 			}
 			wp_safe_redirect( self::url( array( 'cx_updated' => $flag ) ) );
 			exit;
@@ -480,8 +488,40 @@ class CX_Sidrena_Admin_Status {
 		if ( $now < $due || $feed >= $run->getTimestamp() ) {
 			return null;
 		}
+		// The first price list is on its way (CX-SID-68, Argus S1): before 68 the activation published at once, so a shop
+		// with a bazna and no price list did not exist; now the first bazna queues the first build in 60 s, and saying
+		// the scheduled tasks did not run would be untrue.
+		if ( $this->first_build_time( $now->getTimestamp() ) > 0 ) {
+			return null;
+		}
 
 		return __( 'Scheduled tasks did not run.', 'cx-sidrena' );
+	}
+
+	/**
+	 * When the first price list will be built, while a shop that has never published waits for it: now if the build
+	 * runs, else when it is queued (now, if it is already due). 0 when the shop has published, a build failed (its
+	 * retries are the red's case, as before), nothing is queued, or the queued one is overdue by more than
+	 * FIRST_BUILD_LATE (WP-cron does not run: the red is true).
+	 *
+	 * @param int|null $now Unix time (tests); null = the real time.
+	 * @return int Unix time, or 0.
+	 */
+	public function first_build_time( $now = null ) {
+		$now    = null === $now ? time() : (int) $now;
+		$export = CX_Sidrena_Export::instance();
+		if ( $export->ever_published() || (int) get_option( CX_Sidrena_Export::RETRY_OPTION, 0 ) > 0 ) {
+			return 0;
+		}
+		if ( $export->rebuild_running() ) {
+			return $now;
+		}
+		$queued = (int) wp_next_scheduled( CX_Sidrena_Export::GENERATE_HOOK );
+		if ( $queued < 1 || $queued < $now - self::FIRST_BUILD_LATE ) {
+			return 0;
+		}
+
+		return max( $queued, $now );
 	}
 
 	/**

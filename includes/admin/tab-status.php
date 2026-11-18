@@ -40,8 +40,16 @@ $fmt_time  = function ( $ts ) {
 			<div class="notice notice-success is-dismissible"><p><?php echo esc_html__( 'The public price list has been generated.', 'cx-sidrena' ); ?></p></div>
 		<?php elseif ( 'b2b' === $_GET['cx_updated'] ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 			<div class="notice notice-info is-dismissible"><p><?php echo esc_html( CX_Sidrena_Export::b2b_message() ); ?></p></div>
+		<?php elseif ( 'nobazna' === $_GET['cx_updated'] ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
+			<?php // The first price list waits for the first bazna (CX-SID-68). Not a failure: nothing is retried. ?>
+			<div class="notice notice-error is-dismissible"><p><?php echo esc_html( CX_Sidrena_Export::no_bazna_message() ); ?></p></div>
+		<?php elseif ( 'busy' === $_GET['cx_updated'] ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
+			<?php // Another build was running; one more follows it (CX-SID-119). Not a failure. ?>
+			<div class="notice notice-info is-dismissible"><p><?php echo esc_html__( 'The price list is being generated right now. As soon as that is done, it will be generated once more.', 'cx-sidrena' ); ?></p></div>
+		<?php elseif ( '0' === $_GET['cx_updated'] ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
+			<div class="notice notice-error is-dismissible"><p><?php echo esc_html( __( 'The public price list could not be generated. Check uploads folder permissions.', 'cx-sidrena' ) . ' ' . CX_Sidrena_Admin::retry_text() ); ?></p></div>
 		<?php else : ?>
-			<div class="notice notice-error is-dismissible"><p><?php echo esc_html__( 'The public price list could not be generated. Check uploads folder permissions.', 'cx-sidrena' ); ?></p></div>
+			<div class="notice notice-error is-dismissible"><p><?php echo esc_html( __( 'The public price list was not generated.', 'cx-sidrena' ) . ' ' . CX_Sidrena_Admin::retry_text() ); ?></p></div>
 		<?php endif; ?>
 	<?php endif; ?>
 
@@ -75,8 +83,21 @@ $fmt_time  = function ( $ts ) {
 			</form>
 		</div>
 	<?php elseif ( $scan['with'] < 1 ) : ?>
-		<div class="cx-status__banner cx-status__banner--yellow" role="status">
-			<p class="cx-status__headline"><?php echo esc_html__( 'No product has a bazna cijena yet.', 'cx-sidrena' ); ?></p>
+		<?php
+		// No bazna: red (CX-SID-68). Never published: the first price list waits for the first bazna, while the
+		// obligation applies (Kai's sentence). Published: the price list goes on without one. One red block only: the
+		// red above is null without a bazna (red_reason()). A B2B shop publishes no price list: yellow, as before.
+		$b2b = CX_Sidrena_Settings::instance()->is_b2b_only();
+		if ( $b2b ) {
+			$no_bazna_head = __( 'No product has a bazna cijena yet.', 'cx-sidrena' );
+		} elseif ( $feed ) {
+			$no_bazna_head = __( 'No product has a bazna cijena. The price list is published without it.', 'cx-sidrena' );
+		} else {
+			$no_bazna_head = CX_Sidrena_Export::no_bazna_message();
+		}
+		?>
+		<div class="cx-status__banner cx-status__banner--<?php echo $b2b ? 'yellow' : 'red'; ?>" role="status">
+			<p class="cx-status__headline"><?php echo esc_html( $no_bazna_head ); ?></p>
 			<ol>
 				<?php $dates_state = class_exists( 'CX_Sidrena_Dates' ) ? CX_Sidrena_Dates::state() : array( 'state' => '' ); ?>
 				<?php if ( 'saved' === $dates_state['state'] ) : ?>
@@ -175,12 +196,20 @@ $fmt_time  = function ( $ts ) {
 			<span class="cx-status__desc"><?php echo esc_html__( 'On sale now, with the lowest price in 30 days', 'cx-sidrena' ); ?></span>
 		</div>
 		<div class="cx-status__tile">
-			<?php if ( $scan['with'] < 1 ) : ?>
+			<?php if ( $scan['with'] < 1 && ! $feed ) : ?>
+				<?php // Not published: it waits for the first bazna (CX-SID-68). Published without one: its time, below. ?>
 				<span class="cx-status__num">—</span>
-				<span class="cx-status__desc"><?php echo esc_html__( 'Price list', 'cx-sidrena' ); ?>: <?php echo esc_html__( 'Not created yet. No product has a bazna cijena.', 'cx-sidrena' ); ?></span>
+				<span class="cx-status__desc"><?php echo esc_html__( 'Price list', 'cx-sidrena' ); ?>: <?php echo esc_html__( 'not published. No product has a bazna cijena.', 'cx-sidrena' ); ?></span>
 			<?php elseif ( ! $feed ) : ?>
-				<?php // Products have a bazna (e.g. right after Fix all), the list is made on the next daily run (Norman, CX-SID-42). ?>
-				<?php $next = $export->get_next_daily_timestamp(); ?>
+				<?php
+				// Products have a bazna, no price list yet (Norman, CX-SID-42): the next daily run, or the first build when
+				// it comes sooner (the first bazna queues it in 60 s, CX-SID-68, Argus S1).
+				$next  = $export->get_next_daily_timestamp();
+				$first = $status->first_build_time();
+				if ( $first > 0 && ( ! $next || $first < $next ) ) {
+					$next = $first;
+				}
+				?>
 				<span class="cx-status__num">—</span>
 				<span class="cx-status__desc">
 					<?php echo esc_html__( 'Price list', 'cx-sidrena' ); ?>: <?php echo esc_html__( 'Not created yet.', 'cx-sidrena' ); ?>

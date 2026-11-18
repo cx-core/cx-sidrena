@@ -9,7 +9,15 @@ defined( 'ABSPATH' ) || exit;
 
 		$settings = CX_Sidrena_Settings::instance();
 		$export   = CX_Sidrena_Export::instance();
-		$rows     = CX_Sidrena_Poslovnice::instance()->all();
+		$archive  = CX_Sidrena_Archive::instance();
+		// The storage numbers shown are the real next ones (counter row, old value, archive), read past any database
+		// query cache: the counter only goes up, so the form must not show, and send back, an old one (CX-SID-119 dopuna).
+		CX_Sidrena_Archive::no_db_cache();
+		$rows = CX_Sidrena_Poslovnice::instance()->all();
+		foreach ( $rows as $i => $row ) {
+			$rows[ $i ]['pohrana'] = $archive->next_pohrana( $row['oznaka'], $row );
+		}
+		$web_next = $archive->next_pohrana( $settings->normalize_oznaka( (string) $settings->get( 'file_oznaka', '001' ) ) ?: '001' );
 		$json     = wp_json_encode( $rows );
 		if ( ! is_string( $json ) ) {
 			$json = '[]';
@@ -46,8 +54,8 @@ defined( 'ABSPATH' ) || exit;
 						</p>
 						<p class="sidrena-poslovnica__field">
 							<label for="sidrena_cijena_file_pohrana"><?php echo esc_html__( 'Next storage number', 'cx-sidrena' ); ?></label>
-							<input type="number" class="small-text" id="sidrena_cijena_file_pohrana" name="sidrena_cijena_file_pohrana" min="1" step="1" value="<?php echo esc_attr( (string) (int) $settings->get( 'file_pohrana', 1 ) ); ?>" />
-							<span class="description"><?php echo esc_html__( 'Increases once per day. Regenerating on the same day does not increase the number. The name uses what you enter, e.g. 104.', 'cx-sidrena' ); ?></span>
+							<input type="number" class="small-text" id="sidrena_cijena_file_pohrana" name="sidrena_cijena_file_pohrana" min="<?php echo esc_attr( (string) (int) $web_next ); ?>" step="1" value="<?php echo esc_attr( (string) (int) $web_next ); ?>" />
+							<span class="description"><?php echo esc_html__( 'Goes up by one with each new price list file. You can raise it, but not lower it.', 'cx-sidrena' ); ?></span>
 						</p>
 					</div>
 					<p class="description">

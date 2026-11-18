@@ -15,7 +15,18 @@ class CX_Sidrena_Bulk_Import {
 	const BATCH_SIZE = 40;
 	const MAX_ROWS   = 25000;
 	const MAX_BYTES  = 20971520;
-	const TRANSIENT  = 'cx_sidrena_import_';
+	/**
+	 * The job of a bulk import lives in the database (CX-SID-124): rows of the options table, autoload no, written and read
+	 * with $wpdb straight, never through a transient, the object cache or the server's temporary folder. On live S10 a
+	 * transient lived one request only: W3 Total Cache's object-cache.php, with its object cache off, makes WordPress
+	 * believe it has a persistent cache, so set_transient() never reached the database ("Import expired" right after the
+	 * file was read). <JOB><token> is the job (when, who, the file's columns, how many rows and parts), <JOB><token>_<n> the
+	 * file's rows in parts, <JOB><token>_w the catalog as the import has made it so far and the hash of the one it started from.
+	 */
+	const JOB        = 'cx_sidrena_imp_';
+	const JOB_TTL    = HOUR_IN_SECONDS;
+	const PART_ROWS  = 500;
+	const PART_BYTES = 1048576;
 
 	/**
 	 * Singleton.
@@ -45,6 +56,7 @@ class CX_Sidrena_Bulk_Import {
 		if ( is_admin() ) {
 			add_action( 'admin_init', array( $this, 'purge_legacy_upload_imports' ) );
 			add_action( 'admin_init', array( $this, 'purge_old_jobs' ) );
+			add_action( 'admin_init', array( $this, 'purge_expired_jobs' ) );
 		}
 	}
 
@@ -110,39 +122,14 @@ class CX_Sidrena_Bulk_Import {
 			wp_send_json_error( array( 'message' => $parsed->get_error_message() ) );
 		}
 
-		$dir = $this->get_import_dir();
-		if ( '' === $dir || ! wp_mkdir_p( $dir ) ) {
-			wp_send_json_error( array( 'message' => __( 'The import folder could not be created.', 'cx-sidrena' ) ) );
-		}
-
-		$this->ensure_import_dir_protected( $dir );
+		$this->no_db_cache();
 		$this->purge_old_jobs();
+		$this->purge_expired_jobs();
 
-		$token = strtolower( wp_generate_password( 32, false, false ) );
-		$path  = $this->import_job_path( $token, false );
-		if ( '' === $path ) {
-			wp_send_json_error( array( 'message' => __( 'The temporary import file could not be saved.', 'cx-sidrena' ) ) );
+		$token = $this->store_job( $parsed['fields'], $parsed['rows'], $name, 'xml' === $ext ? 'xml' : 'csv' );
+		if ( '' === $token ) {
+			wp_send_json_error( array( 'message' => __( 'The file could not be kept for the import in the database. Nothing was imported.', 'cx-sidrena' ) ) );
 		}
-		$json  = wp_json_encode(
-			array(
-				'fields' => $parsed['fields'],
-				'rows'   => $parsed['rows'],
-			)
-		);
-
-		if ( false === file_put_contents( $path, $json ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-			wp_send_json_error( array( 'message' => __( 'The temporary import file could not be saved.', 'cx-sidrena' ) ) );
-		}
-
-		set_transient(
-			self::TRANSIENT . $token,
-			array(
-				'total'    => count( $parsed['rows'] ),
-				'filename' => $name,
-				'created'  => time(),
-			),
-			HOUR_IN_SECONDS
-		);
 
 		wp_send_json_success(
 			array(
@@ -191,10 +178,10 @@ class CX_Sidrena_Bulk_Import {
 		$offset = isset( $_POST['offset'] ) ? absint( wp_unslash( $_POST['offset'] ) ) : 0;
 		$map    = isset( $_POST['map'] ) && is_array( $_POST['map'] ) ? wp_unslash( $_POST['map'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
-		$job  = get_transient( self::TRANSIENT . $token );
-		$path = $this->import_job_path( $token, true );
-		if ( ! is_array( $job ) || '' === $path ) {
-			wp_send_json_error( array( 'message' => __( 'Import expired. Upload the file again.', 'cx-sidrena' ) ) );
+		$this->no_db_cache();
+		$job = $this->load_job( $token );
+		if ( null === $job ) {
+			wp_send_json_error( array( 'message' => __( 'This import was not found or has expired (an import is kept for an hour after the file is read). Nothing was imported. Upload the file again.', 'cx-sidrena' ) ) );
 		}
 
 		$sku_field = isset( $map['sku'] ) ? sanitize_text_field( $map['sku'] ) : '';
@@ -213,12 +200,7 @@ class CX_Sidrena_Bulk_Import {
 			wp_send_json_error( array( 'message' => __( 'The selected outlet does not exist.', 'cx-sidrena' ) ) );
 		}
 
-		$payload = json_decode( (string) file_get_contents( $path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-		if ( ! is_array( $payload ) || empty( $payload['rows'] ) || ! is_array( $payload['rows'] ) ) {
-			wp_send_json_error( array( 'message' => __( 'The temporary import file cannot be read.', 'cx-sidrena' ) ) );
-		}
-
-		$fields = isset( $payload['fields'] ) && is_array( $payload['fields'] ) ? $payload['fields'] : array();
+		$fields = $job['fields'];
 		if ( '' !== $sku_field && ! in_array( $sku_field, $fields, true ) ) {
 			wp_send_json_error( array( 'message' => __( 'The selected SKU column does not exist in the file.', 'cx-sidrena' ) ) );
 		}
@@ -245,14 +227,21 @@ class CX_Sidrena_Bulk_Import {
 		$sidrena_is_display = $this->file_has_display_retail( $fields );
 		$flag_field         = $this->special_form_flag_field( $fields );
 
-		$rows      = $payload['rows'];
-		$total     = count( $rows );
-		$slice     = array_slice( $rows, $offset, self::BATCH_SIZE );
+		$total = (int) $job['total'];
+		$slice = $this->job_rows( $token, $job, $offset, self::BATCH_SIZE );
+		if ( null === $slice ) {
+			$this->delete_job( $token );
+			wp_send_json_error( array( 'message' => __( 'Part of this import is missing on the server. Nothing was imported. Upload the file again.', 'cx-sidrena' ) ) );
+		}
 		$updated   = isset( $_POST['updated'] ) ? absint( wp_unslash( $_POST['updated'] ) ) : 0;
 		$skipped   = isset( $_POST['skipped'] ) ? absint( wp_unslash( $_POST['skipped'] ) ) : 0;
 		$missing   = isset( $_POST['missing'] ) ? absint( wp_unslash( $_POST['missing'] ) ) : 0;
 		$created   = isset( $_POST['created'] ) ? absint( wp_unslash( $_POST['created'] ) ) : 0;
 		$special   = isset( $_POST['special'] ) ? absint( wp_unslash( $_POST['special'] ) ) : 0;
+		$unclear   = isset( $_POST['unclear'] ) ? absint( wp_unslash( $_POST['unclear'] ) ) : 0;
+		$examples  = array();
+		$amounts   = array_filter( array( $regular, $sale, $sidrena, $jedinica_cijena ) );
+		$from_xml  = isset( $job['kind'] ) && 'xml' === $job['kind'];
 		$processed = $offset;
 
 		if ( $woo ) {
@@ -437,13 +426,39 @@ class CX_Sidrena_Bulk_Import {
 				$catalog->commit_batch( $processed >= $total );
 			}
 		} else {
+			// Nothing is written until the import has ended (Kai, CX-SID-124 and 22's rule): the catalog as the import has
+			// made it so far is kept in the job, and written once, at the end, if no one changed the catalog meanwhile.
+			// The catalog it starts from is the one at its first step (not at reading the file: the owner may save the
+			// product table in between, and the working copy then starts from that).
 			$catalog = CX_Sidrena_Catalog::instance();
-			$catalog->begin_batch();
+			$working = 0 === $offset ? array( 'catalog' => $this->catalog_sha(), 'rows' => null ) : $this->job_get( $token . '_w' );
+			if ( ! is_array( $working ) || ! isset( $working['catalog'] ) || ( 0 !== $offset && ! is_array( $working['rows'] ) ) ) {
+				$this->delete_job( $token );
+				wp_send_json_error( array( 'message' => __( 'Part of this import is missing on the server. Nothing was imported. Upload the file again.', 'cx-sidrena' ) ) );
+			}
+			$catalog->begin_batch( $working['rows'] );
 
 			foreach ( $slice as $row ) {
 				++$processed;
 				if ( ! is_array( $row ) ) {
 					++$skipped;
+					continue;
+				}
+				// A price that cannot be read for sure leaves the whole row as it was (CX-SID-116, Kai): never a guess.
+				$unread = $this->unread_amounts( $row, $amounts );
+				if ( $unread ) {
+					++$unclear;
+					foreach ( $unread as $column => $value ) {
+						if ( count( $examples ) < 5 ) {
+							$examples[] = array(
+								'line'   => $from_xml ? $processed : $processed + 1,
+								'xml'    => $from_xml,
+								'naziv'  => ( $name && isset( $row[ $name ] ) ) ? sanitize_text_field( (string) $row[ $name ] ) : '',
+								'column' => sanitize_text_field( (string) $column ),
+								'value'  => sanitize_text_field( (string) $value ),
+							);
+						}
+					}
 					continue;
 				}
 				if ( $retail_is_display && $this->special_form_unnamed( $row, $flag_field, $oblik ) ) {
@@ -469,14 +484,25 @@ class CX_Sidrena_Bulk_Import {
 				}
 			}
 
-			$done_batch = $processed >= $total;
-			$catalog->commit_batch( $done_batch );
+			if ( $processed < $total ) {
+				$kept = $this->job_put( $token . '_w', array( 'catalog' => $working['catalog'], 'rows' => $catalog->batch_rows() ) );
+				$catalog->drop_batch();
+				if ( ! $kept ) {
+					$this->delete_job( $token );
+					wp_send_json_error( array( 'message' => __( 'The import could not keep its progress in the database. Nothing was imported. Upload the file again.', 'cx-sidrena' ) ) );
+				}
+			} elseif ( $this->catalog_sha() !== $working['catalog'] ) {
+				$catalog->drop_batch();
+				$this->delete_job( $token );
+				wp_send_json_error( array( 'message' => __( 'The price list was changed while the import was running (in another tab or by another user). Nothing was imported. Upload the file again.', 'cx-sidrena' ) ) );
+			} else {
+				$catalog->commit_batch( true );
+			}
 		}
 
 		$done = $processed >= $total;
 		if ( $done ) {
-			wp_delete_file( $path );
-			delete_transient( self::TRANSIENT . $token );
+			$this->delete_job( $token );
 			if ( $woo && class_exists( 'CX_Sidrena_Export' ) ) {
 				CX_Sidrena_Export::instance()->queue_public_xml();
 			}
@@ -491,6 +517,8 @@ class CX_Sidrena_Bulk_Import {
 				'missing'   => $missing,
 				'created'   => $created,
 				'special'   => $special,
+				'unclear'   => $unclear,
+				'unclear_examples' => $examples,
 				'done'      => $done,
 				'percent'   => $total ? (int) round( ( $processed / $total ) * 100 ) : 100,
 			)
@@ -740,8 +768,9 @@ class CX_Sidrena_Bulk_Import {
 	 * @return string
 	 */
 	private function import_price( $value ) {
-		$value = trim( (string) $value );
-		$value = preg_replace( '/[^\d,.\-]/u', '', $value );
+		// Read only where it cannot be misread (CX-SID-116); a cell that is not read is empty here, and ajax_run() never
+		// gets this far with such a row. 1.234,50 used to go through: it still does; 1,234.50 used to become empty.
+		$value = CX_Sidrena_Money::read_amount( $value )['value'];
 
 		if ( class_exists( 'CX_Sidrena_Product_Meta' ) ) {
 			return CX_Sidrena_Product_Meta::instance()->normalize_price( $value );
@@ -751,7 +780,257 @@ class CX_Sidrena_Bulk_Import {
 	}
 
 	/**
-	 * Import staging directory, outside the web root.
+	 * The mapped amount cells of a row that cannot be read for sure: 1.234 (a thousand, or one and a bit?), 1.234.567, a
+	 * date (CX_Sidrena_Money::read_amount()).
+	 *
+	 * @param array<string, string> $row     Parsed row.
+	 * @param array<int, string>    $columns Mapped amount columns.
+	 * @return array<string, string> Column => cell.
+	 */
+	private function unread_amounts( $row, $columns ) {
+		$out = array();
+		foreach ( $columns as $column ) {
+			$cell = isset( $row[ $column ] ) ? (string) $row[ $column ] : '';
+			if ( '' !== CX_Sidrena_Money::read_amount( $cell )['error'] ) {
+				$out[ $column ] = $cell;
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Our own queries in an import request are never served from a database query cache (W3 Total Cache's
+	 * dbcache.reject.constants, also other caches that honour it). The job is read straight from the table anyway.
+	 */
+	private function no_db_cache() {
+		if ( ! defined( 'DONOTCACHEDB' ) ) {
+			define( 'DONOTCACHEDB', true );
+		}
+	}
+
+	/**
+	 * Keep a read file as a new job. The job row first (not yet complete), then the parts, then the job complete: a
+	 * request that dies halfway leaves a job that is never run and goes with the hour.
+	 *
+	 * @param array<int, string>                $fields Columns.
+	 * @param array<int, array<string, string>> $rows   Rows.
+	 * @param string                            $name   File name.
+	 * @param string                            $kind   csv or xml (CX-SID-116: an example names a row or an XML item).
+	 * @return string Token, or '' when it could not be kept.
+	 */
+	public function store_job( $fields, $rows, $name, $kind = 'csv' ) {
+		$token = strtolower( wp_generate_password( 32, false, false ) );
+		$rows  = array_values( (array) $rows );
+		$job   = array(
+			'created'  => time(),
+			'user'     => get_current_user_id(),
+			'filename' => (string) $name,
+			'kind'     => 'xml' === $kind ? 'xml' : 'csv',
+			'fields'   => array_values( (array) $fields ),
+			'total'    => count( $rows ),
+			'parts'    => array(),
+			'complete' => false,
+		);
+		if ( ! $this->job_put( $token, $job ) ) {
+			return '';
+		}
+
+		$part  = array();
+		$bytes = 0;
+		$from  = 0;
+		foreach ( $rows as $i => $row ) {
+			$size = strlen( (string) wp_json_encode( $row ) );
+			if ( $part && ( count( $part ) >= self::PART_ROWS || $bytes + $size > self::PART_BYTES ) ) {
+				if ( ! $this->job_put( $token . '_' . count( $job['parts'] ), $part ) ) {
+					$this->delete_job( $token );
+					return '';
+				}
+				$job['parts'][] = $from;
+				$part           = array();
+				$bytes          = 0;
+				$from           = $i;
+			}
+			$part[] = $row;
+			$bytes += $size;
+		}
+		if ( $part ) {
+			if ( ! $this->job_put( $token . '_' . count( $job['parts'] ), $part ) ) {
+				$this->delete_job( $token );
+				return '';
+			}
+			$job['parts'][] = $from;
+		}
+
+		$job['complete'] = true;
+		if ( ! $this->job_put( $token, $job ) ) {
+			$this->delete_job( $token );
+			return '';
+		}
+
+		return $token;
+	}
+
+	/**
+	 * A complete job of this token that has not expired, or null.
+	 *
+	 * @param string $token Token.
+	 * @return array<string, mixed>|null
+	 */
+	private function load_job( $token ) {
+		if ( ! preg_match( '/^[a-z0-9]{32}$/', (string) $token ) ) {
+			return null;
+		}
+
+		$job = $this->job_get( $token );
+		if ( ! is_array( $job ) || empty( $job['complete'] ) || ! isset( $job['created'], $job['total'], $job['parts'], $job['fields'] ) ) {
+			return null;
+		}
+
+		if ( (int) $job['created'] < time() - self::JOB_TTL ) {
+			$this->delete_job( $token );
+			return null;
+		}
+
+		return $job;
+	}
+
+	/**
+	 * Rows [offset, offset + count) of a job, from its parts; null when a part is missing.
+	 *
+	 * @param string               $token  Token.
+	 * @param array<string, mixed> $job    Job.
+	 * @param int                  $offset First row.
+	 * @param int                  $count  How many.
+	 * @return array<int, mixed>|null
+	 */
+	private function job_rows( $token, $job, $offset, $count ) {
+		$out   = array();
+		$parts = array_map( 'intval', (array) $job['parts'] );
+		$end   = min( (int) $job['total'], $offset + $count );
+		foreach ( $parts as $n => $from ) {
+			$to = isset( $parts[ $n + 1 ] ) ? $parts[ $n + 1 ] : (int) $job['total'];
+			if ( $to <= $offset || $from >= $end ) {
+				continue;
+			}
+			$rows = $this->job_get( $token . '_' . $n );
+			if ( ! is_array( $rows ) || count( $rows ) !== $to - $from ) {
+				return null;
+			}
+			foreach ( $rows as $i => $row ) {
+				$at = $from + $i;
+				if ( $at >= $offset && $at < $end ) {
+					$out[] = $row;
+				}
+			}
+		}
+
+		return count( $out ) === max( 0, $end - $offset ) ? $out : null;
+	}
+
+	/**
+	 * One row of the job, straight from the table (never a cache).
+	 *
+	 * @param string $key Token, or token plus its suffix.
+	 * @return mixed Decoded JSON, or null.
+	 */
+	private function job_get( $key ) {
+		global $wpdb;
+		$raw = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::JOB . $key ) ); // phpcs:ignore WordPress.DB
+		if ( ! is_string( $raw ) ) {
+			return null;
+		}
+
+		return json_decode( $raw, true );
+	}
+
+	/**
+	 * Write one row of the job straight to the table, autoload no; true when it is there afterwards.
+	 *
+	 * @param string $key   Token, or token plus its suffix.
+	 * @param mixed  $value Value (as JSON).
+	 * @return bool
+	 */
+	private function job_put( $key, $value ) {
+		global $wpdb;
+		$json = wp_json_encode( $value );
+		if ( false === $json ) {
+			return false;
+		}
+
+		$name = self::JOB . $key;
+		$wpdb->delete( $wpdb->options, array( 'option_name' => $name ) ); // phpcs:ignore WordPress.DB
+		$ok = $wpdb->insert( // phpcs:ignore WordPress.DB
+			$wpdb->options,
+			array(
+				'option_name'  => $name,
+				'option_value' => $json,
+				'autoload'     => 'no',
+			)
+		);
+		if ( false === $ok ) {
+			error_log( 'CX Sidrena import: the job could not be written: ' . $wpdb->last_error ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Delete a job: its row, its parts and its working copy.
+	 *
+	 * @param string $token Token.
+	 */
+	private function delete_job( $token ) {
+		global $wpdb;
+		if ( ! preg_match( '/^[a-z0-9]{32}$/', (string) $token ) ) {
+			return;
+		}
+
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name = %s OR option_name LIKE %s", self::JOB . $token, $wpdb->esc_like( self::JOB . $token . '_' ) . '%' ) ); // phpcs:ignore WordPress.DB
+	}
+
+	/**
+	 * Delete the jobs older than an hour (a job that never ended, a tab left open), by the time in the job.
+	 */
+	public function purge_expired_jobs() {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( self::JOB ) . '%' ) ); // phpcs:ignore WordPress.DB
+		$jobs = array();
+		foreach ( (array) $rows as $row ) {
+			$token = substr( (string) $row->option_name, strlen( self::JOB ), 32 );
+			if ( ! preg_match( '/^[a-z0-9]{32}$/', $token ) ) {
+				continue;
+			}
+			if ( self::JOB . $token === $row->option_name ) {
+				$job            = json_decode( (string) $row->option_value, true );
+				$jobs[ $token ] = is_array( $job ) && isset( $job['created'] ) ? (int) $job['created'] : 0;
+			} elseif ( ! array_key_exists( $token, $jobs ) ) {
+				$jobs[ $token ] = null; // a part: its job row, when there is one, sets the time (above)
+			}
+		}
+		foreach ( $jobs as $token => $created ) {
+			// A part without its job row (the job row is written first, so only a cut delete leaves one) goes too.
+			if ( null === $created || $created < time() - self::JOB_TTL ) {
+				$this->delete_job( $token );
+			}
+		}
+	}
+
+	/**
+	 * sha256 of the catalog as stored, read straight from the table: the import writes only if it is still this one.
+	 *
+	 * @return string
+	 */
+	private function catalog_sha() {
+		global $wpdb;
+		$raw = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", CX_Sidrena_Catalog::OPTION_KEY ) ); // phpcs:ignore WordPress.DB
+
+		return hash( 'sha256', is_string( $raw ) ? $raw : '' );
+	}
+
+	/**
+	 * The folder in the server's temporary folder where 0.2.2 and earlier kept an import's job (only cleaned now).
 	 *
 	 * @return string
 	 */
@@ -762,73 +1041,6 @@ class CX_Sidrena_Bulk_Import {
 		}
 
 		return trailingslashit( $base ) . 'sidrena-cijena-imports';
-	}
-
-	/**
-	 * JSON path for a token. The path is derived here, never read from the transient.
-	 *
-	 * @param string $token      Job token.
-	 * @param bool   $must_exist False while the file is about to be created.
-	 * @return string
-	 */
-	private function import_job_path( $token, $must_exist ) {
-		$token = sanitize_key( (string) $token );
-		if ( strlen( $token ) < 12 ) {
-			return '';
-		}
-
-		$dir = $this->get_import_dir();
-		if ( '' === $dir || ! wp_mkdir_p( $dir ) ) {
-			return '';
-		}
-
-		$real_dir = realpath( $dir );
-		if ( false === $real_dir ) {
-			return '';
-		}
-
-		$real_dir = wp_normalize_path( $real_dir );
-		$path     = $real_dir . '/' . $token . '.json';
-
-		if ( ! $must_exist ) {
-			return $path;
-		}
-
-		$real = realpath( $path );
-		if ( false === $real ) {
-			return '';
-		}
-
-		$real = wp_normalize_path( $real );
-		if ( 0 !== strpos( $real, trailingslashit( $real_dir ) ) ) {
-			return '';
-		}
-
-		return $real;
-	}
-
-	/**
-	 * Hide the imports directory if the temp path is ever web-accessible.
-	 *
-	 * @param string $dir Directory.
-	 */
-	private function ensure_import_dir_protected( $dir ) {
-		$index = trailingslashit( $dir ) . 'index.php';
-		if ( ! file_exists( $index ) ) {
-			file_put_contents( $index, "<?php\ndefined( 'ABSPATH' ) || exit;\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-		}
-
-		$htaccess = trailingslashit( $dir ) . '.htaccess';
-		if ( ! file_exists( $htaccess ) ) {
-			$rules = "<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n";
-			file_put_contents( $htaccess, $rules ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-		}
-
-		$web_config = trailingslashit( $dir ) . 'web.config';
-		if ( ! file_exists( $web_config ) ) {
-			$config = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<configuration>\n  <system.webServer>\n    <authorization>\n      <deny users=\"*\" />\n    </authorization>\n  </system.webServer>\n</configuration>\n";
-			file_put_contents( $web_config, $config ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-		}
 	}
 
 	/**
@@ -858,9 +1070,9 @@ class CX_Sidrena_Bulk_Import {
 	}
 
 	/**
-	 * Remove staged import files older than an hour (the job's transient lasts an hour too, so such a file can no
-	 * longer run). Also on admin_init: with WooCommerce ajax_parse is refused (CX-SID-43), so the files a Settings page
-	 * opened before the update staged would otherwise stay, with the uploaded SKUs and prices.
+	 * Remove import files older than an hour from the server's temporary folder, where 0.2.2 and earlier kept the job
+	 * (CX-SID-124 keeps it in the database). Also on admin_init: with WooCommerce ajax_parse is refused (CX-SID-43), and
+	 * such files hold the uploaded SKUs and prices.
 	 */
 	public function purge_old_jobs() {
 		$dir = $this->get_import_dir();

@@ -131,7 +131,9 @@
 			field(i18n.outletCode, textInput("js-oznaka", row.oznaka || ""), i18n.outletCodeHelp).appendTo($grid);
 			field(
 				i18n.outletSeq,
-				textInput("js-pohrana", row.pohrana || 1, "number").attr({ min: 1, step: 1 }),
+				// min = the real next number: the counter only goes up (CX-SID-119), so the browser refuses a lower one.
+				// A new outlet has none yet: 1.
+				textInput("js-pohrana", row.pohrana || 1, "number").attr({ min: row.pohrana || 1, step: 1 }),
 				i18n.outletSeqHelp
 			).appendTo($grid);
 

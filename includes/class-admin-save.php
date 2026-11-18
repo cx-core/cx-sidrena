@@ -53,6 +53,14 @@ class CX_Sidrena_Admin_Save {
 
 		$json = isset( $_POST['sidrena_cijena_poslovnice_json'] ) ? wp_unslash( $_POST['sidrena_cijena_poslovnice_json'] ) : '[]';
 		$saved = CX_Sidrena_Poslovnice::instance()->save_from_json( is_string( $json ) ? $json : '[]' );
+		// Each outlet's typed storage number only raises its counter (CX-SID-119 dopuna, Kai 3): a form loaded before a
+		// build sends the number it showed then, which must not take the counter back. The list keeps the typed value as
+		// a lower bound, as before.
+		foreach ( $saved as $outlet ) {
+			if ( '' !== $outlet['id'] ) {
+				CX_Sidrena_Archive::instance()->raise_pohrana( $outlet['id'], $outlet['pohrana'] );
+			}
+		}
 
 		$kept = array();
 		foreach ( $saved as $outlet ) {
@@ -70,10 +78,14 @@ class CX_Sidrena_Admin_Save {
 		if ( isset( $_POST['sidrena_cijena_file_oblik'] ) ) {
 			// The shop address is on the main Settings form (spec §1.8): a field that is not posted keeps its value.
 			$file = array(
-				'file_oblik'   => wp_unslash( $_POST['sidrena_cijena_file_oblik'] ),
-				'file_oznaka'  => isset( $_POST['sidrena_cijena_file_oznaka'] ) ? wp_unslash( $_POST['sidrena_cijena_file_oznaka'] ) : '001',
-				'file_pohrana' => isset( $_POST['sidrena_cijena_file_pohrana'] ) ? wp_unslash( $_POST['sidrena_cijena_file_pohrana'] ) : 1,
+				'file_oblik'  => wp_unslash( $_POST['sidrena_cijena_file_oblik'] ),
+				'file_oznaka' => isset( $_POST['sidrena_cijena_file_oznaka'] ) ? wp_unslash( $_POST['sidrena_cijena_file_oznaka'] ) : '001',
 			);
+			// The webshop's storage number only raises its counter, never through the settings (CX-SID-119 dopuna,
+			// Kai 3): the settings' old value stays as it is, a lower bound.
+			if ( isset( $_POST['sidrena_cijena_file_pohrana'] ) ) {
+				CX_Sidrena_Archive::instance()->raise_pohrana( '', (int) wp_unslash( $_POST['sidrena_cijena_file_pohrana'] ) );
+			}
 			if ( isset( $_POST['sidrena_cijena_file_adresa'] ) ) {
 				$file['file_adresa'] = wp_unslash( $_POST['sidrena_cijena_file_adresa'] );
 			}
@@ -205,12 +217,10 @@ class CX_Sidrena_Admin_Save {
 			if ( ! is_wp_error( $result ) ) {
 				CX_Sidrena_Export::instance()->archive_public_xml();
 			}
-			$xml_flag = '1';
-			if ( is_wp_error( $result ) ) {
-				$xml_flag = 'sidrena_poslovnice_empty' === $result->get_error_code() ? '2' : '0';
-				if ( 'sidrena_b2b_only' === $result->get_error_code() ) {
-					$xml_flag = 'b2b'; // CX-SID-28: not a failure, a B2B shop publishes no price list
-				}
+			// Busy is not a failure: the build that was running is followed by one with what was just saved (CX-SID-119).
+			$xml_flag = CX_Sidrena_Export::result_flag( $result );
+			if ( in_array( $xml_flag, array( '0', 'fail' ), true ) ) {
+				CX_Sidrena_Export::instance()->retry_soon();
 			}
 		}
 		$xml_arg = '' !== $xml_flag ? array( 'sidrena_xml' => $xml_flag ) : array();

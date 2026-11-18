@@ -183,7 +183,13 @@ class CX_Sidrena_Feed_Routes {
 			return; // nothing is published (CX-SID-28)
 		}
 
-		if ( get_transient( CX_Sidrena_Export::REBUILD_COOLDOWN ) || get_transient( CX_Sidrena_Export::REBUILD_LOCK ) ) {
+		// The first price list waits for the first bazna (CX-SID-68): a visit would only queue a build that publishes
+		// nothing, every 15 minutes. The ways a bazna gets in queue the build themselves.
+		if ( CX_Sidrena_Export::instance()->awaiting_bazna() ) {
+			return;
+		}
+
+		if ( get_transient( CX_Sidrena_Export::REBUILD_COOLDOWN ) || CX_Sidrena_Export::instance()->rebuild_running() ) {
 			return;
 		}
 
@@ -448,11 +454,21 @@ class CX_Sidrena_Feed_Routes {
 	}
 
 	/**
-	 * 503 a missing live feed. Rebuild is queued, never run inside this request.
+	 * 503 a missing live feed. Rebuild is queued, never run inside this request. 404 while the first price list waits
+	 * for the first bazna.
 	 *
 	 * @param string $ext xml|csv.
 	 */
 	public function serve_missing_public_feed( $ext ) {
+		// Before the first bazna there is no price list, and none comes in two minutes: 404, not 503 (CX-SID-68).
+		if ( CX_Sidrena_Export::instance()->awaiting_bazna() ) {
+			status_header( 404 );
+			nocache_headers();
+			header( 'Content-Type: text/plain; charset=utf-8' );
+			echo esc_html( CX_Sidrena_Export::not_published_message() );
+			exit;
+		}
+
 		if ( $ext === CX_Sidrena_Feed_Files::instance()->export_format() ) {
 			$this->schedule_public_rebuild();
 		}
@@ -822,7 +838,11 @@ class CX_Sidrena_Feed_Routes {
 				: __( 'Price lists from the last 30 days. A new file is made at each price change and every morning.', 'cx-sidrena' )
 		) . '</p>';
 
-		if ( empty( $files ) ) {
+		if ( empty( $files ) && CX_Sidrena_Export::instance()->awaiting_bazna() ) {
+			// Before the first bazna neither the morning nor a price change makes a file (CX-SID-68; proposal 2837 quoted
+			// this text wrongly, fixed by Rook's (a)): no promise, the page's sentence instead.
+			echo '<p class="empty">' . esc_html( __( 'The archive is empty.', 'cx-sidrena' ) . ' ' . CX_Sidrena_Export::not_published_message() ) . '</p>';
+		} elseif ( empty( $files ) ) {
 			echo '<p class="empty">' . esc_html__( 'The archive is still empty. The first price list will appear here the next morning or at the first price change.', 'cx-sidrena' ) . '</p>';
 		} elseif ( CX_Sidrena_Settings::instance()->is_multi_poslovnica() || $this->has_services_files( $files ) ) {
 			// One shop with goods and services: their files under their own headings, as each outlet's (CX-SID-110).
@@ -1229,11 +1249,15 @@ class CX_Sidrena_Feed_Routes {
 	}
 
 	/**
-	 * Short page while the HTML snapshot is still being generated.
+	 * Short page while the HTML snapshot is still being generated, or while the first price list waits for the first
+	 * bazna (CX-SID-68: then it is not being prepared, it is not published yet).
 	 */
 	public function serve_cjenik_pending_page() {
 		$shop  = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
 		$title = __( 'Price list', 'cx-sidrena' );
+		$text  = CX_Sidrena_Export::instance()->awaiting_bazna()
+			? CX_Sidrena_Export::not_published_message()
+			: __( 'The price list is being prepared. Refresh the page in a few minutes.', 'cx-sidrena' );
 
 		header( 'Content-Type: text/html; charset=utf-8' );
 		header( 'Cache-Control: no-store' );
@@ -1243,7 +1267,7 @@ class CX_Sidrena_Feed_Routes {
 		echo '<title>' . esc_html( $shop . ' - ' . $title ) . '</title>';
 		echo '</head><body><main>';
 		echo '<h1>' . esc_html( $title ) . '</h1>';
-		echo '<p>' . esc_html__( 'The price list is being prepared. Refresh the page in a few minutes.', 'cx-sidrena' ) . '</p>';
+		echo '<p>' . esc_html( $text ) . '</p>';
 		echo '<p><a href="' . esc_url( home_url( '/' ) ) . '">' . esc_html(
 			sprintf(
 				/* translators: %s: site title */

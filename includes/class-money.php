@@ -46,6 +46,124 @@ class CX_Sidrena_Money {
 	}
 
 	/**
+	 * An amount from an imported file, read only where it cannot be misread (CX-SID-116, Kai: a format must never change
+	 * a real price). Spaces, NBSP, apostrophes, € and letters go first; a cell with no digit is empty.
+	 * Read: 1234; one separator with 1-2 digits after it (23,5 23.50); one separator that cannot be a thousands one (0,125
+	 * 1234,567 12,3456: a 0 before it, more than 3 digits before or after); both separators, the last one decimal, the
+	 * other between groups of 3 (1.234,50 1,234.50).
+	 * Not read, the row is left as it was: "unclear" for one separator with 1-3 digits before it (not starting with 0) and
+	 * exactly 3 after (1.234 1,234 12.500: a thousand, or one and a bit?); "unreadable" for any other shape of digits
+	 * (1.234.567, 1.234.5, a date, 1.5E+3).
+	 *
+	 * @param mixed $raw Cell.
+	 * @return array{value:string,error:string} value: dot decimal ('' when empty or not read); error: '', unclear, unreadable.
+	 */
+	public static function read_amount( $raw ) {
+		$raw = (string) $raw;
+		if ( preg_match( '/\d\s*[eE]\s*[+\-]?\s*\d/u', $raw ) ) {
+			return array( 'value' => '', 'error' => 'unreadable' );
+		}
+
+		$s = preg_replace( '/[^\d,.\-]/u', '', $raw );
+		$s = is_string( $s ) ? $s : '';
+		if ( ! preg_match( '/\d/', $s ) ) {
+			return array( 'value' => '', 'error' => '' );
+		}
+
+		$sign = '';
+		if ( '-' === substr( $s, 0, 1 ) ) {
+			$sign = '-';
+			$s    = substr( $s, 1 );
+		}
+
+		if ( preg_match( '/^\d+$/', $s ) ) {
+			return array( 'value' => $sign . self::int_part( $s ), 'error' => '' );
+		}
+
+		if ( preg_match( '/^(\d*)[.,](\d+)$/', $s, $m ) ) {
+			$thousands = 3 === strlen( $m[2] ) && '' !== $m[1] && strlen( $m[1] ) <= 3 && '0' !== $m[1][0];
+			if ( $thousands ) {
+				return array( 'value' => '', 'error' => 'unclear' );
+			}
+
+			return array( 'value' => $sign . self::int_part( $m[1] ) . '.' . $m[2], 'error' => '' );
+		}
+
+		if ( preg_match( '/^(\d{1,3}(?:\.\d{3})+),(\d+)$/', $s, $m ) || preg_match( '/^(\d{1,3}(?:,\d{3})+)\.(\d+)$/', $s, $m ) ) {
+			return array( 'value' => $sign . self::int_part( str_replace( array( '.', ',' ), '', $m[1] ) ) . '.' . $m[2], 'error' => '' );
+		}
+
+		return array( 'value' => '', 'error' => 'unreadable' );
+	}
+
+	/**
+	 * Whole part without leading zeros (007 → 7, '' → 0).
+	 *
+	 * @param string $digits Digits.
+	 * @return string
+	 */
+	private static function int_part( $digits ) {
+		$t = ltrim( (string) $digits, '0' );
+
+		return '' === $t ? '0' : $t;
+	}
+
+	/**
+	 * The same amount, whatever the trailing zeros (23.5 = 23.50 = 23.500, 19 = 19.00), compared as text: no float,
+	 * nothing rounded. Dot-decimal strings as the catalog stores them; anything else is never the same.
+	 *
+	 * @param string $a Amount.
+	 * @param string $b Amount.
+	 * @return bool
+	 */
+	public static function same_amount( $a, $b ) {
+		$ca = self::canonical( $a );
+
+		return '' !== $ca && self::canonical( $b ) === $ca;
+	}
+
+	/**
+	 * An amount with exactly two decimals, by adding zeros only (23.5 → 23.50, 19 → 19.00, 23.500 → 23.50). An amount
+	 * with more than two decimals that are not zeros (0.125) stays as it is: a price is never rounded (Kai, ZZP art. 7(7)).
+	 * Anything that is not a dot-decimal amount comes back unchanged.
+	 *
+	 * @param string $amount Stored amount.
+	 * @return string
+	 */
+	public static function two_decimals( $amount ) {
+		$c = self::canonical( $amount );
+		if ( '' === $c ) {
+			return (string) $amount;
+		}
+
+		$parts = explode( '.', $c );
+		$frac  = isset( $parts[1] ) ? $parts[1] : '';
+		if ( strlen( $frac ) > 2 ) {
+			return $c;
+		}
+
+		return $parts[0] . '.' . str_pad( $frac, 2, '0' );
+	}
+
+	/**
+	 * -?int[.frac] without leading zeros in int and trailing zeros in frac, '' for anything else.
+	 *
+	 * @param string $amount Amount.
+	 * @return string
+	 */
+	private static function canonical( $amount ) {
+		if ( ! preg_match( '/^(-?)(\d*)(?:\.(\d*))?$/', trim( (string) $amount ), $m ) || ( '' === $m[2] && ( ! isset( $m[3] ) || '' === $m[3] ) ) ) {
+			return '';
+		}
+
+		$frac = isset( $m[3] ) ? rtrim( $m[3], '0' ) : '';
+		$int  = self::int_part( $m[2] );
+		$sign = ( '0' === $int && '' === $frac ) ? '' : $m[1];
+
+		return $sign . $int . ( '' !== $frac ? '.' . $frac : '' );
+	}
+
+	/**
 	 * WooCommerce product-meta price: wc_clean, comma decimal, then wc_format_decimal.
 	 *
 	 * @param mixed $price Raw value.

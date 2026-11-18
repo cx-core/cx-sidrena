@@ -25,12 +25,23 @@ class CX_Sidrena_Export {
 	const ARCHIVE_MAX      = 30;
 	const REWRITE_OPTION   = 'cx_sidrena_rewrite_ver';
 	const REWRITE_VERSION  = '11';
-	const REBUILD_LOCK     = 'cx_sidrena_rebuild_lock';
+	const REBUILD_LOCK     = 'cx_sidrena_rebuild_lock'; // the lock of 0.2.2 and before (a transient); still respected
 	const REBUILD_COOLDOWN = 'cx_sidrena_rebuild_cooldown';
 	const CHANGE_DELAY     = 60;
+	// The rebuild lock (CX-SID-119): a row in the options table, "<time>:<token>". One request wins the insert; a lock
+	// older than REBUILD_STALE was left by a build that died, and exactly one request takes it over.
+	const REBUILD_LOCK_ROW = 'cx_sidrena_rebuild.lock';
+	const REBUILD_STALE    = 900; // 15 minutes, as the transient's expiry was
+	const BUSY_DELAY       = 60;  // a build that found another one running comes again after this many seconds
+	const RETRY_OPTION     = 'cx_sidrena_rebuild_fails'; // failed builds in a row; deleted by a build that succeeds
+	const RETRY_DELAYS     = array( 300, 900, 3600 );    // after the 1st, 2nd, and every later failure
+	// The first price list waits for the first bazna (CX-SID-68): set by a build that published nothing for that reason,
+	// deleted by a build that published. An options row, not a transient: it must outlive the request (a transient
+	// lives only in one request's memory on a shop with W3TC's object-cache.php and its cache off).
+	const AWAIT_BAZNA      = 'cx_sidrena_await_bazna';
 	// The columns of the public files (CX_Sidrena_Feed_Files::COLUMNS_*). Every build stores it in the public meta; a
 	// shop whose meta has another one (an update) gets one rebuild on the next visit, not at 00:05 (CX-SID-109).
-	const FEED_LAYOUT      = '110'; // 110: the file names of art. 6(3), goods and services in their own files
+	const FEED_LAYOUT      = '88'; // 88: poseban oblik as the page shows it (CX-SID-88) and the table in the shop's language (CX-SID-121), rebuilt right after the update to 0.2.3
 
 	/**
 	 * Singleton.
@@ -45,6 +56,13 @@ class CX_Sidrena_Export {
 	 * @var bool
 	 */
 	private $suppress_change_queue = false;
+
+	/**
+	 * The value of the rebuild lock row while this request holds it, else ''.
+	 *
+	 * @var string
+	 */
+	private $lock_value = '';
 
 	/**
 	 * @return self
@@ -364,9 +382,68 @@ class CX_Sidrena_Export {
 			return;
 		}
 
-		if ( ! wp_next_scheduled( self::GENERATE_HOOK ) ) {
-			wp_schedule_single_event( time() + 5, self::GENERATE_HOOK );
+		// A build already due within a minute is enough (a change's); a retry an hour away is not (CX-SID-119).
+		$this->queue_build( 5, self::CHANGE_DELAY );
+	}
+
+	/**
+	 * One queued build in $delay seconds, unless one is already due within $enough seconds. A later one (a retry of a
+	 * failed build) is replaced by this sooner one; if that fails too, it queues its own retry.
+	 *
+	 * @param int $delay  Seconds from now.
+	 * @param int $enough An existing build due within this many seconds is kept.
+	 */
+	private function queue_build( $delay, $enough ) {
+		$next = wp_next_scheduled( self::GENERATE_HOOK );
+		if ( $next && (int) $next <= time() + (int) $enough ) {
+			return;
 		}
+
+		wp_clear_scheduled_hook( self::GENERATE_HOOK );
+		wp_schedule_single_event( time() + (int) $delay, self::GENERATE_HOOK );
+	}
+
+	/**
+	 * A build failed when the owner asked for it (Settings, Status): the next attempt within 5 minutes, also when the
+	 * retries are already an hour apart, so the message "in a few minutes" is true (CX-SID-119).
+	 */
+	public function retry_soon() {
+		if ( CX_Sidrena_Settings::instance()->is_b2b_only() ) {
+			return;
+		}
+
+		$this->queue_build( self::RETRY_DELAYS[0], self::RETRY_DELAYS[0] );
+	}
+
+	/**
+	 * What the owner is told about a build's result (Settings ?sidrena_xml=, Status ?cx_updated=):
+	 * '1' built, 'b2b' nothing to publish, 'nobazna' the first price list waits for the first bazna (CX-SID-68), 'busy'
+	 * another build was running (this one comes after it), '2' no outlet has products, '0' a file or folder could not be
+	 * written (the uploads folder), 'fail' any other failure.
+	 *
+	 * @param array<string, mixed>|WP_Error $result The build's result.
+	 * @return string
+	 */
+	public static function result_flag( $result ) {
+		if ( ! is_wp_error( $result ) ) {
+			return '1';
+		}
+
+		$code  = $result->get_error_code();
+		$flags = array(
+			'sidrena_b2b_only'          => 'b2b',
+			'sidrena_no_bazna'          => 'nobazna',
+			'sidrena_xml_busy'          => 'busy',
+			'sidrena_poslovnice_empty'  => '2',
+			'sidrena_xml_uploads'       => '0',
+			'sidrena_xml_mkdir'         => '0',
+			'sidrena_xml_write'         => '0',
+			'sidrena_cjenik_write'      => '0',
+			'sidrena_xml_archive_mkdir' => '0',
+			'sidrena_xml_archive_copy'  => '0',
+		);
+
+		return isset( $flags[ $code ] ) ? $flags[ $code ] : 'fail';
 	}
 
 	/**
@@ -414,17 +491,129 @@ class CX_Sidrena_Export {
 	}
 
 	/**
-	 * One catalog rebuild at a time. The lock expires if the process dies.
+	 * One catalog rebuild at a time (CX-SID-119). The old lock was a transient, read and then written, so two requests
+	 * could both take it. Now a row in the options table: INSERT IGNORE lets one request win. A lock older than
+	 * REBUILD_STALE was left by a build that died; the UPDATE checks the old value, so only one request takes it over.
+	 * While a build of 0.2.2 may still run (the update's window), its transient counts as busy too.
 	 *
 	 * @return bool
 	 */
 	private function acquire_rebuild_lock() {
+		global $wpdb;
+
+		// A build: none of its own queries from a database query cache (the lock, the counter; CX-SID-119 dopuna).
+		CX_Sidrena_Archive::no_db_cache();
 		if ( get_transient( self::REBUILD_LOCK ) ) {
 			return false;
 		}
 
-		set_transient( self::REBUILD_LOCK, 1, 15 * MINUTE_IN_SECONDS );
-		return true;
+		$mine = time() . ':' . wp_generate_password( 20, false );
+		for ( $try = 0; $try < 2; $try++ ) {
+			$suppress = $wpdb->suppress_errors( true );
+			$ins      = $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} ( option_name, option_value, autoload ) VALUES ( %s, %s, 'no' )", self::REBUILD_LOCK_ROW, $mine ) ); // phpcs:ignore WordPress.DB
+			$wpdb->suppress_errors( $suppress );
+			if ( $ins ) {
+				$this->lock_value = $mine;
+				return true;
+			}
+
+			$held = $this->rebuild_lock_value();
+			if ( null === $held ) {
+				continue; // released in between: try again
+			}
+			if ( (int) $held > time() - self::REBUILD_STALE ) {
+				return false;
+			}
+
+			$took = $wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s", $mine, self::REBUILD_LOCK_ROW, $held ) ); // phpcs:ignore WordPress.DB
+			if ( 1 === (int) $took ) {
+				$this->lock_value = $mine;
+				return true;
+			}
+
+			return false; // another request took it over first
+		}
+
+		return false;
+	}
+
+	/**
+	 * Release the lock, only if it is still ours: a build that ran past REBUILD_STALE and was taken over must not
+	 * remove the lock of the build that took over.
+	 */
+	private function release_rebuild_lock() {
+		global $wpdb;
+
+		if ( '' === $this->lock_value ) {
+			return;
+		}
+
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s", self::REBUILD_LOCK_ROW, $this->lock_value ) ); // phpcs:ignore WordPress.DB
+		$this->lock_value = '';
+	}
+
+	/**
+	 * @return string|null The lock row's value, or null when nobody holds it.
+	 */
+	private function rebuild_lock_value() {
+		global $wpdb;
+
+		$held = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::REBUILD_LOCK_ROW ) ); // phpcs:ignore WordPress.DB
+
+		return null === $held ? null : (string) $held;
+	}
+
+	/**
+	 * Whether a rebuild is running now (a lock younger than REBUILD_STALE, or the transient of 0.2.2).
+	 *
+	 * @return bool
+	 */
+	public function rebuild_running() {
+		// Reached on a public visit only when a rebuild may be queued (a missing file, an older layout), never on an
+		// ordinary page view (CX_Sidrena_Feed_Routes::schedule_public_rebuild(); Rook, 2925).
+		CX_Sidrena_Archive::no_db_cache();
+		if ( get_transient( self::REBUILD_LOCK ) ) {
+			return true;
+		}
+
+		$held = $this->rebuild_lock_value();
+
+		return null !== $held && (int) $held > time() - self::REBUILD_STALE;
+	}
+
+	/**
+	 * Another build holds the lock: this one is not dropped but comes again after BUSY_DELAY (CX-SID-119). Read at
+	 * its start, so what was saved meanwhile (the OIB in the file name) is in it.
+	 *
+	 * @return WP_Error
+	 */
+	private function busy() {
+		$this->queue_build( self::BUSY_DELAY, self::BUSY_DELAY );
+
+		return new WP_Error( 'sidrena_xml_busy', __( 'The public price list is already being generated.', 'cx-sidrena' ) );
+	}
+
+	/**
+	 * After a build: a failure queues its retry in 5, then 15 minutes, then every hour until one succeeds; a success
+	 * clears the count (CX-SID-119). Not a failure: busy (it is queued), B2B (nothing to publish), no outlet products,
+	 * no bazna yet (CX-SID-68: the first bazna queues the build, as every product change does).
+	 *
+	 * @param array<string, mixed>|WP_Error $result The build's result.
+	 */
+	private function after_build( $result ) {
+		if ( ! is_wp_error( $result ) ) {
+			delete_option( self::RETRY_OPTION );
+			return;
+		}
+
+		if ( in_array( $result->get_error_code(), array( 'sidrena_b2b_only', 'sidrena_no_bazna', 'sidrena_poslovnice_empty', 'sidrena_xml_busy' ), true ) ) {
+			return;
+		}
+
+		$fails = (int) get_option( self::RETRY_OPTION, 0 ) + 1;
+		update_option( self::RETRY_OPTION, $fails, false );
+		$delay = self::RETRY_DELAYS[ min( $fails, count( self::RETRY_DELAYS ) ) - 1 ];
+		$this->queue_build( $delay, $delay );
 	}
 
 	/**
@@ -523,7 +712,7 @@ class CX_Sidrena_Export {
 		}
 
 		if ( ! $this->acquire_rebuild_lock() ) {
-			return new WP_Error( 'sidrena_xml_busy', __( 'The public price list is already being generated.', 'cx-sidrena' ) );
+			return $this->busy();
 		}
 
 		$this->suppress_change_queue = true;
@@ -539,12 +728,16 @@ class CX_Sidrena_Export {
 				// Only after a complete build in the current format: until then the old file is the only price list.
 				CX_Sidrena_Feed_Files::instance()->remove_other_format_live( $this->export_format() );
 			}
-
-			return $result;
+		} catch ( Throwable $e ) {
+			$result = $this->feed_failure( $e );
 		} finally {
 			$this->suppress_change_queue = false;
-			delete_transient( self::REBUILD_LOCK );
+			$this->release_rebuild_lock();
 		}
+
+		$this->after_build( $result );
+
+		return $result;
 	}
 
 	/**
@@ -562,13 +755,19 @@ class CX_Sidrena_Export {
 		}
 
 		try {
-			$rows   = $this->collect_rows( false, true, null, null );
+			$rows    = $this->collect_rows( false, true, null, null );
+			$waiting = $this->wait_for_first_bazna( array( $rows ) );
+			if ( null !== $waiting ) {
+				return $waiting;
+			}
+
 			$result = CX_Sidrena_Feed_Files::instance()->write_feed_file( $rows, '' );
 			if ( is_wp_error( $result ) ) {
 				return $result;
 			}
 
 			update_option( self::PUBLIC_OPTION, $result + array( 'layout' => self::FEED_LAYOUT ) );
+			delete_option( self::AWAIT_BAZNA );
 
 			return $result;
 		} catch ( Throwable $e ) {
@@ -594,14 +793,20 @@ class CX_Sidrena_Export {
 
 			$bundle   = CX_Sidrena_Feed_Rows::instance()->collect_public_by_scope();
 			$web_rows = isset( $bundle['webshop'] ) ? $bundle['webshop'] : array();
-			$web      = CX_Sidrena_Feed_Files::instance()->write_feed_file( $web_rows, '' );
+			$scoped   = isset( $bundle['outlets'] ) && is_array( $bundle['outlets'] ) ? $bundle['outlets'] : array();
+			// A bazna in any one outlet publishes them all (CX-SID-68): the webshop and every outlet are one price list.
+			$waiting = $this->wait_for_first_bazna( array_merge( array( $web_rows ), array_values( $scoped ) ) );
+			if ( null !== $waiting ) {
+				return $waiting;
+			}
+
+			$web = CX_Sidrena_Feed_Files::instance()->write_feed_file( $web_rows, '' );
 			if ( is_wp_error( $web ) ) {
 				return $web;
 			}
 			$total  += (int) $web['count'];
 			$latest  = max( $latest, (int) $web['generated'] );
 
-			$scoped = isset( $bundle['outlets'] ) && is_array( $bundle['outlets'] ) ? $bundle['outlets'] : array();
 			foreach ( CX_Sidrena_Poslovnice::instance()->with_products() as $outlet ) {
 				$rows   = isset( $scoped[ $outlet['oznaka'] ] ) ? $scoped[ $outlet['oznaka'] ] : null;
 				$result = $this->write_outlet_feed( $outlet, $stored, $rows );
@@ -625,6 +830,7 @@ class CX_Sidrena_Export {
 			);
 			$meta['webshop'] = $web;
 			update_option( self::PUBLIC_OPTION, $meta );
+			delete_option( self::AWAIT_BAZNA );
 
 			return $meta;
 		} catch ( Throwable $e ) {
@@ -649,6 +855,11 @@ class CX_Sidrena_Export {
 			return new WP_Error( 'sidrena_poslovnica_missing', __( 'The outlet has no published price list.', 'cx-sidrena' ) );
 		}
 
+		// Under the same lock as the whole build (CX-SID-119): both write the public meta and the storage numbers.
+		if ( ! $this->acquire_rebuild_lock() ) {
+			return $this->busy();
+		}
+
 		try {
 			$prev   = $this->get_public_meta();
 			$stored = ( isset( $prev['outlets'] ) && is_array( $prev['outlets'] ) ) ? $prev['outlets'] : array();
@@ -670,6 +881,8 @@ class CX_Sidrena_Export {
 			return $result;
 		} catch ( Throwable $e ) {
 			return $this->feed_failure( $e );
+		} finally {
+			$this->release_rebuild_lock();
 		}
 	}
 
@@ -693,6 +906,86 @@ class CX_Sidrena_Export {
 	 */
 	public static function b2b_message() {
 		return __( 'Your shop sells only to businesses (B2B), so no public price list is made. The archive stays as it is.', 'cx-sidrena' );
+	}
+
+	/**
+	 * The first price list waits for the first bazna (CX-SID-68, SPEC §2.8). A price list without a bazna is not
+	 * compliant (art. 3(2) of the Pravilnik o cjeniku) and, once published, must be kept and shown for 15 days, so a shop
+	 * that has never published publishes nothing until one row of its public price list has a bazna: no file, no HTML
+	 * table, no archive file. However it got there (the product, Import, Fix all, WP-CLI, MJDD's data): every way in is
+	 * the owner's. A shop that has published goes on as before, also without a bazna: its price list must exist and be
+	 * current (art. 3(1)); Status is red then. Nothing is filled in here and nothing is deleted.
+	 *
+	 * @param array<int, array<int, array<string, string>>> $row_sets The public rows, one set per scope.
+	 * @return WP_Error|null The refusal, or null to publish.
+	 */
+	private function wait_for_first_bazna( $row_sets ) {
+		foreach ( $row_sets as $rows ) {
+			foreach ( (array) $rows as $row ) {
+				if ( '' !== trim( isset( $row['sidrena_cijena'] ) ? (string) $row['sidrena_cijena'] : '' ) ) {
+					return null;
+				}
+			}
+		}
+
+		if ( $this->ever_published() ) {
+			return null;
+		}
+
+		// Public visits stop queueing builds (CX_Sidrena_Feed_Routes::schedule_public_rebuild()); the ways a bazna gets
+		// in queue one as before, and so does 00:05.
+		update_option( self::AWAIT_BAZNA, time(), false );
+
+		return new WP_Error( 'sidrena_no_bazna', self::no_bazna_message() );
+	}
+
+	/**
+	 * Whether this shop has ever published a price list: a build's meta, a live file, or a file in the archive (also
+	 * one taken over from MJDD).
+	 *
+	 * @return bool
+	 */
+	public function ever_published() {
+		$meta = $this->get_public_meta();
+		if ( ! empty( $meta['generated'] ) ) {
+			return true;
+		}
+
+		foreach ( array( 'xml', 'csv' ) as $ext ) {
+			if ( file_exists( $this->get_public_path( $ext ) ) ) {
+				return true;
+			}
+		}
+
+		return array() !== $this->get_archive_files();
+	}
+
+	/**
+	 * Whether the last build published nothing because no row had a bazna yet (CX-SID-68).
+	 *
+	 * @return bool
+	 */
+	public function awaiting_bazna() {
+		return false !== get_option( self::AWAIT_BAZNA, false );
+	}
+
+	/**
+	 * What the owner reads while the first price list waits for the first bazna (Kai's sentence, CX-SID-68): Status
+	 * and "Save and generate now".
+	 *
+	 * @return string
+	 */
+	public static function no_bazna_message() {
+		return __( 'The price list has not been published yet because no bazna cijena has been entered. The obligation to publish applies from 17.11.2026.', 'cx-sidrena' );
+	}
+
+	/**
+	 * What a visitor reads at the price list's addresses before the first price list (SPEC §2.8).
+	 *
+	 * @return string
+	 */
+	public static function not_published_message() {
+		return __( 'The price list has not been published yet.', 'cx-sidrena' );
 	}
 
 	/**

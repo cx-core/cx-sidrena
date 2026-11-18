@@ -216,6 +216,7 @@
 					missing: state.missing,
 					created: state.created,
 					special: state.special || 0,
+					unclear: state.unclear || 0,
 					import_poslovnica: outlet,
 					map: {
 						sku: sku,
@@ -249,6 +250,9 @@
 							i18n.importing + " " + data.offset + " / " + data.total
 						);
 
+						// CX-SID-116: a few rows whose price could not be read for sure, kept across the batches.
+						var examples = (state.examples || []).concat(data.unclear_examples || []).slice(0, 5);
+
 						if (!data.done) {
 							runBatch({
 								offset: data.offset,
@@ -257,6 +261,8 @@
 								missing: data.missing,
 								created: data.created,
 								special: data.special,
+								unclear: data.unclear,
+								examples: examples,
 							});
 							return;
 						}
@@ -292,6 +298,18 @@
 								$("<p>").text(data.special + " " + (i18n.special || ""))
 							);
 						}
+						// CX-SID-116: rows not imported because a price could not be read for sure (1.234, 1.234.567).
+						if (data.unclear) {
+							$result.append($("<p>").text(data.unclear + " " + (i18n.unclear || "")));
+							var $list = $("<ul>");
+							examples.forEach(function (e) {
+								var where = (e.xml ? i18n.unclearItem || "" : i18n.unclearRow || "").replace("%d", e.line);
+								$list.append(
+									$("<li>").text(where + (e.naziv ? " (" + e.naziv + ")" : "") + ", " + e.column + ": " + e.value)
+								);
+							});
+							$result.append($list);
+						}
 						job = null;
 					})
 					.fail(function (xhr) {
@@ -303,7 +321,7 @@
 					});
 			}
 
-			runBatch({ offset: 0, updated: 0, skipped: 0, missing: 0, created: 0, special: 0 });
+			runBatch({ offset: 0, updated: 0, skipped: 0, missing: 0, created: 0, special: 0, unclear: 0, examples: [] });
 		});
 	}
 

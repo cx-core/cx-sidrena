@@ -176,9 +176,7 @@ class CX_Sidrena_Admin {
 			'items'   => __( 'Additional items saved.', 'cx-sidrena' ),
 		);
 		$xml_ok    = isset( $_GET['sidrena_xml'] ) && '1' === $_GET['sidrena_xml']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$xml_fail  = isset( $_GET['sidrena_xml'] ) && '0' === $_GET['sidrena_xml']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$xml_empty = isset( $_GET['sidrena_xml'] ) && '2' === $_GET['sidrena_xml']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$xml_b2b   = isset( $_GET['sidrena_xml'] ) && 'b2b' === $_GET['sidrena_xml']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$xml_other = $xml_ok ? null : self::xml_notice(); // busy, failed, no outlet products, B2B: the same text as at the OIB
 		$multi     = $settings->is_multi_poslovnica();
 		$xml_url   = $export->get_public_url();
 		?>
@@ -238,16 +236,8 @@ class CX_Sidrena_Admin {
 				</p></div>
 			<?php endif; ?>
 
-			<?php if ( $xml_empty ) : ?>
-				<div class="notice notice-warning is-dismissible"><p><?php echo esc_html__( 'No outlet has products added. Add products on the Outlets tab.', 'cx-sidrena' ); ?></p></div>
-			<?php endif; ?>
-
-			<?php if ( $xml_b2b ) : ?>
-				<div class="notice notice-info is-dismissible"><p><?php echo esc_html( CX_Sidrena_Export::b2b_message() ); ?></p></div>
-			<?php endif; ?>
-
-			<?php if ( $xml_fail ) : ?>
-				<div class="notice notice-error is-dismissible"><p><?php echo esc_html__( 'The public price list could not be generated. Check uploads folder permissions.', 'cx-sidrena' ); ?></p></div>
+			<?php if ( null !== $xml_other ) : ?>
+				<div class="notice notice-<?php echo esc_attr( $xml_other[0] ); ?> is-dismissible"><p><?php echo esc_html( $xml_other[1] ); ?></p></div>
 			<?php endif; ?>
 
 			<?php do_action( 'sidrena_cijena_settings_notices', $tab ); ?>
@@ -508,6 +498,16 @@ class CX_Sidrena_Admin {
 	}
 
 	/**
+	 * After a failed build the owner asked for: the next attempt is queued within 5 minutes
+	 * (CX_Sidrena_Export::retry_soon(), CX-SID-119). Settings and Status.
+	 *
+	 * @return string
+	 */
+	public static function retry_text() {
+		return __( 'It will be tried again automatically in a few minutes.', 'cx-sidrena' );
+	}
+
+	/**
 	 * After "Save and generate now" (sidrena_xml): the notice's kind and its text, without the link; else null. Next to
 	 * the OIB field when the save landed there (Argus 110-C), the same words as at the top of the page.
 	 *
@@ -527,8 +527,18 @@ class CX_Sidrena_Admin {
 				return array( 'warning', __( 'No outlet has products added. Add products on the Outlets tab.', 'cx-sidrena' ) );
 			case 'b2b':
 				return array( 'info', CX_Sidrena_Export::b2b_message() );
+			case 'nobazna':
+				// The first price list waits for the first bazna (CX-SID-68). Not a failure: nothing is retried.
+				return array( 'error', CX_Sidrena_Export::no_bazna_message() );
+			case 'busy':
+				// Another build was running; the one with this save follows it (CX-SID-119). Not a failure.
+				return array( 'info', __( 'The price list is being generated right now. As soon as that is done, it will be generated once more, with what you just saved.', 'cx-sidrena' ) );
 			case '0':
-				return array( 'error', __( 'The public price list could not be generated. Check uploads folder permissions.', 'cx-sidrena' ) );
+				// A file or folder could not be written: the uploads folder is where to look.
+				return array( 'error', __( 'The public price list could not be generated. Check uploads folder permissions.', 'cx-sidrena' ) . ' ' . self::retry_text() );
+			case 'fail':
+				// Any other failure: no reason we do not know (CX-SID-119: busy and errors were all "check permissions").
+				return array( 'error', __( 'The public price list was not generated.', 'cx-sidrena' ) . ' ' . self::retry_text() );
 		}
 
 		return null;
@@ -894,6 +904,12 @@ class CX_Sidrena_Admin {
 						'missing'      => __( 'SKU not found', 'cx-sidrena' ),
 						'created'      => __( 'added', 'cx-sidrena' ),
 						'special'      => __( 'not imported: the retail price is a special form of sale, and the file has no name of that form (column naziv_posebnog_oblika), so it is not known which price it is. Import the price list downloaded from this page.', 'cx-sidrena' ),
+						// CX-SID-116: a price that cannot be read for sure is never imported as a guess (Kai).
+						'unclear'      => __( 'not imported: a price in the row cannot be read for sure (1.234 can be one thousand two hundred and thirty-four or one point two three four). Nothing in these rows was changed. Write the price with its decimals, e.g. 1234,00 or 1,23, and import the file again.', 'cx-sidrena' ),
+						/* translators: %d: row number in the file, as a spreadsheet shows it */
+						'unclearRow'   => __( 'Row %d', 'cx-sidrena' ),
+						/* translators: %d: number of the item in the XML file */
+						'unclearItem'  => __( 'Item %d', 'cx-sidrena' ),
 						'addProduct'    => __( 'Add product', 'cx-sidrena' ),
 						'duplicate'     => __( 'Duplicate', 'cx-sidrena' ),
 						'remove'        => __( 'Remove', 'cx-sidrena' ),
@@ -920,7 +936,7 @@ class CX_Sidrena_Admin {
 						'outletCode'     => __( 'Outlet label', 'cx-sidrena' ),
 						'outletCodeHelp' => __( 'Internal label, e.g. P-01 or 001. The hyphen is kept. Used in the price list URL: /sidrena-cijena-P-01.xml.', 'cx-sidrena' ),
 						'outletSeq'      => __( 'Next storage number', 'cx-sidrena' ),
-						'outletSeqHelp'  => __( 'Increases once per day. Regenerating on the same day does not increase the number. The name uses what you enter, e.g. 104.', 'cx-sidrena' ),
+						'outletSeqHelp'  => __( 'Goes up by one with each new price list file. You can raise it, but not lower it.', 'cx-sidrena' ),
 						'outletProducts' => __( 'Products', 'cx-sidrena' ),
 						'outletProductsHelp' => __( 'Only selected products are included in this outlet\'s price list.', 'cx-sidrena' ),
 						'searchProducts' => __( 'Search product…', 'cx-sidrena' ),

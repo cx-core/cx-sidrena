@@ -38,6 +38,15 @@ class CX_Sidrena_Archive {
 	const KEPT_LIST_MAX = 100;
 
 	/**
+	 * The storage counter of the webshop: a row of its own in the options table, the next storage number (CX-SID-119
+	 * dopuna). An outlet's is this name, a dot and the outlet's id. Only raise_pohrana() writes it, and only upwards.
+	 * Before, a build wrote the counter by saving the whole settings (or the whole outlet list) as it had read them when
+	 * it started, which undid what the owner saved meanwhile: the OIB of 17.11. The old value in the settings or on the
+	 * outlet stays a lower bound (0.2.2 and before, MJDD's take-over).
+	 */
+	const POHRANA_ROW = 'cx_sidrena_pohrana';
+
+	/**
 	 * Singleton.
 	 *
 	 * @var self|null
@@ -117,13 +126,14 @@ class CX_Sidrena_Archive {
 			$oblik  = $settings->sanitize_file_part( isset( $outlet['oblik'] ) ? $outlet['oblik'] : '', 'webshop' );
 			$adresa = $settings->sanitize_file_part( isset( $outlet['adresa'] ) ? $outlet['adresa'] : '', '' );
 			$oznaka = $settings->normalize_oznaka( isset( $outlet['oznaka'] ) ? $outlet['oznaka'] : '' );
-			$seq    = $pohrana > 0 ? (int) $pohrana : $settings->sanitize_pohrana( isset( $outlet['pohrana'] ) ? $outlet['pohrana'] : 1 );
 		} else {
 			$oblik  = $settings->sanitize_file_part( $settings->get( 'file_oblik', 'webshop' ), 'webshop' );
 			$adresa = $settings->sanitize_file_part( $settings->get( 'file_adresa', '' ), '' );
 			$oznaka = $settings->normalize_oznaka( $settings->get( 'file_oznaka', '001' ) );
-			$seq    = $pohrana > 0 ? (int) $pohrana : $settings->sanitize_pohrana( $settings->get( 'file_pohrana', 1 ) );
 		}
+		// No number given: the next one, as the build will take it (stored counter or archive + 1, next_pohrana()), so
+		// "Next official name" and the field next to it show the same number (proposal 2923 point 3; Norman, 119).
+		$seq = $pohrana > 0 ? (int) $pohrana : $this->next_pohrana( $this->scope_oznaka( $outlet ), $outlet );
 
 		if ( '' === $adresa ) {
 			$adresa = $settings->sanitize_file_part( $settings->default_file_address(), 'webshop' );
@@ -329,11 +339,9 @@ class CX_Sidrena_Archive {
 			return new WP_Error( 'sidrena_xml_write', __( 'The public price list could not be saved.', 'cx-sidrena' ) );
 		}
 
-		if ( is_array( $outlet ) && isset( $outlet['id'] ) ) {
-			CX_Sidrena_Poslovnice::instance()->set_pohrana( $outlet['id'], $pohrana + 1 );
-		} else {
-			CX_Sidrena_Settings::instance()->save( array( 'file_pohrana' => $pohrana + 1 ) );
-		}
+		// Only this scope's counter goes up. The build saves neither the settings nor the outlet list, so what the owner
+		// saved while it ran (an OIB, an address, an outlet's products) stays (CX-SID-119 dopuna).
+		$this->raise_pohrana( is_array( $outlet ) && isset( $outlet['id'] ) ? $outlet['id'] : '', $pohrana + 1 );
 
 		// The new file can push older ones out of the public 30 days.
 		$this->move_old();
@@ -492,11 +500,8 @@ class CX_Sidrena_Archive {
 	 * @return int
 	 */
 	public function next_pohrana( $oznaka, $outlet = null ) {
-		$settings = CX_Sidrena_Settings::instance();
-		$stored   = is_array( $outlet )
-			? $settings->sanitize_pohrana( isset( $outlet['pohrana'] ) ? $outlet['pohrana'] : 1 )
-			: $settings->sanitize_pohrana( $settings->get( 'file_pohrana', 1 ) );
-		$highest  = 0;
+		$stored  = $this->stored_pohrana( $outlet );
+		$highest = 0;
 		foreach ( $this->all_archive_names() as $name ) {
 			if ( $this->archive_oznaka_from_name( $name ) === $oznaka ) {
 				$highest = max( $highest, $this->archive_pohrana_from_name( $name ) );
@@ -504,6 +509,102 @@ class CX_Sidrena_Archive {
 		}
 
 		return max( $stored, $highest + 1 );
+	}
+
+	/**
+	 * The stored next storage number of a scope: its counter row or the old value in the settings (or on the outlet),
+	 * whichever is higher. Without the archive (next_pohrana() adds that). Read without DONOTCACHEDB of its own: the
+	 * build and the admin screens have it already, and a public download name may be a minute old.
+	 *
+	 * @param array<string, mixed>|null $outlet Outlet, or null for the webshop.
+	 * @return int
+	 */
+	public function stored_pohrana( $outlet = null ) {
+		$settings = CX_Sidrena_Settings::instance();
+		$old      = is_array( $outlet )
+			? $settings->sanitize_pohrana( isset( $outlet['pohrana'] ) ? $outlet['pohrana'] : 1 )
+			: $settings->sanitize_pohrana( $settings->get( 'file_pohrana', 1 ) );
+		$row      = $this->read_pohrana_row( $this->pohrana_row_name( is_array( $outlet ) && isset( $outlet['id'] ) ? $outlet['id'] : '' ) );
+
+		return max( $old, null === $row ? 0 : $row );
+	}
+
+	/**
+	 * Raise a scope's counter to $to, never lower it (CX-SID-119 dopuna; Kai: the number only grows, and the owner may
+	 * only raise it). Atomic as the rebuild lock: INSERT IGNORE when there is no row, else an UPDATE that only succeeds
+	 * when the row still holds what was read. A request that loses the race reads again; a higher value written
+	 * meanwhile is kept. Direct SQL, never update_option, and never through a database query cache (DONOTCACHEDB): a
+	 * stale read would make the UPDATE miss every time.
+	 *
+	 * @param string $outlet_id Outlet id, '' for the webshop.
+	 * @param int    $to        The next storage number wanted.
+	 * @return int The counter after: $to, or a higher value already there.
+	 */
+	public function raise_pohrana( $outlet_id, $to ) {
+		global $wpdb;
+
+		self::no_db_cache();
+		$name = $this->pohrana_row_name( $outlet_id );
+		$to   = CX_Sidrena_Settings::instance()->sanitize_pohrana( $to );
+		for ( $try = 0; $try < 5; $try++ ) {
+			$have = $this->read_pohrana_row( $name );
+			if ( null === $have ) {
+				$suppress = $wpdb->suppress_errors( true );
+				$ins      = $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} ( option_name, option_value, autoload ) VALUES ( %s, %s, 'no' )", $name, (string) $to ) ); // phpcs:ignore WordPress.DB
+				$wpdb->suppress_errors( $suppress );
+				if ( $ins ) {
+					return $to;
+				}
+				continue; // another request made the row in between: read it
+			}
+			if ( $have >= $to ) {
+				return $have;
+			}
+			$done = $wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s", (string) $to, $name, (string) $have ) ); // phpcs:ignore WordPress.DB
+			if ( 1 === (int) $done ) {
+				return $to;
+			}
+		}
+
+		$have = $this->read_pohrana_row( $name );
+
+		return null === $have ? 0 : $have;
+	}
+
+	/**
+	 * The counter row of a scope, or null when there is none.
+	 *
+	 * @param string $name Row name (pohrana_row_name()).
+	 * @return int|null
+	 */
+	private function read_pohrana_row( $name ) {
+		global $wpdb;
+
+		$value = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) ); // phpcs:ignore WordPress.DB
+
+		return null === $value ? null : (int) $value;
+	}
+
+	/**
+	 * @param string $outlet_id Outlet id, '' for the webshop.
+	 * @return string
+	 */
+	private function pohrana_row_name( $outlet_id ) {
+		$id = preg_replace( '/[^a-z0-9]/i', '', (string) $outlet_id );
+
+		return '' === $id ? self::POHRANA_ROW : self::POHRANA_ROW . '.' . strtolower( $id );
+	}
+
+	/**
+	 * Our queries in this request are not served from a database query cache (W3 Total Cache's dbcache honours
+	 * DONOTCACHEDB through dbcache.reject.constants; also others that do). Called by the build (the rebuild lock), by
+	 * the counter's writer and by the admin screens that show it; on a public visit only when it reaches the rebuild
+	 * check (CX_Sidrena_Export::rebuild_running()), never on an ordinary page view (Rook, 2925). As CX-SID-124's import.
+	 */
+	public static function no_db_cache() {
+		if ( ! defined( 'DONOTCACHEDB' ) ) {
+			define( 'DONOTCACHEDB', true );
+		}
 	}
 
 	/**
