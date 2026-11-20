@@ -44,15 +44,37 @@ class CX_Sidrena_Admin_Save {
 
 		check_admin_referer( 'sidrena_cijena_save_poslovnice', 'sidrena_cijena_poslovnice_nonce' );
 
-		$before = array();
-		foreach ( CX_Sidrena_Poslovnice::instance()->all() as $outlet ) {
-			if ( '' !== $outlet['id'] ) {
-				$before[ $outlet['id'] ] = $outlet['oznaka'];
-			}
-		}
+		$json    = isset( $_POST['sidrena_cijena_poslovnice_json'] ) ? wp_unslash( $_POST['sidrena_cijena_poslovnice_json'] ) : '[]'; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$posted  = json_decode( is_string( $json ) ? $json : '', true );
 
-		$json = isset( $_POST['sidrena_cijena_poslovnice_json'] ) ? wp_unslash( $_POST['sidrena_cijena_poslovnice_json'] ) : '[]';
-		$saved = CX_Sidrena_Poslovnice::instance()->save_from_json( is_string( $json ) ? $json : '[]' );
+		// CX-SID-142: one click never deletes the places the page did not show. The page's script sets _ok=1 only once it
+		// has read the list (the _loaded ids are written by the server, so a broken page sends them too), and _cleared=1
+		// when the owner deleted every place it showed. Without _ok, or with a list that would delete every stored place
+		// and no _cleared, nothing on the form is saved, the webshop's fields neither: the reason stands alone, and
+		// the form does not offer what was sent again (Norman C3 for the outlets, 131).
+		$ok      = isset( $_POST['sidrena_cijena_poslovnice_ok'] ) && '1' === $_POST['sidrena_cijena_poslovnice_ok']; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked above
+		$cleared = isset( $_POST['sidrena_cijena_poslovnice_cleared'] ) && '1' === $_POST['sidrena_cijena_poslovnice_cleared']; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked above
+		if ( ! $ok || ! is_array( $posted ) || ( ! $cleared && CX_Sidrena_Poslovnice::instance()->form_empties( $posted ) ) ) {
+			wp_safe_redirect( self::settings_url( 'cx-outlets', array( 'updated' => false, 'cx_outlet_error' => 'nepotvrdeno' ) ) );
+			exit;
+		}
+		$loaded  = null;
+		if ( isset( $_POST['sidrena_cijena_poslovnice_loaded'] ) ) {
+			$loaded = json_decode( (string) wp_unslash( $_POST['sidrena_cijena_poslovnice_loaded'] ), true ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$loaded = is_array( $loaded ) ? $loaded : array();
+		}
+		$webshop = isset( $_POST['sidrena_cijena_file_oznaka'] ) ? (string) wp_unslash( $_POST['sidrena_cijena_file_oznaka'] ) : (string) CX_Sidrena_Settings::instance()->get( 'file_oznaka', '001' ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+		// All or nothing (CX-SID-74): a place that breaks a rule saves nothing, also not the webshop's fields of the same
+		// form, and nothing is kept on the server (the form keeps what was typed; Rook with Linus).
+		$result = CX_Sidrena_Poslovnice::instance()->save_from_form( $posted, $loaded, $webshop );
+		if ( is_wp_error( $result ) ) {
+			// Encoded: wp_sanitize_redirect() drops "|" (it keeps only URL-safe characters), so adresa:0|vrsta:1 came out
+			// as adresa:0vrsta:1 (found by Playground pos). The page reads it decoded ($_GET, URLSearchParams).
+			wp_safe_redirect( self::settings_url( 'cx-outlets', array( 'updated' => false, 'cx_outlet_error' => rawurlencode( $result->get_error_message() ) ) ) );
+			exit;
+		}
+		$saved = $result['saved'];
 		// Each outlet's typed storage number only raises its counter (CX-SID-119 dopuna, Kai 3): a form loaded before a
 		// build sends the number it showed then, which must not take the counter back. The list keeps the typed value as
 		// a lower bound, as before.
@@ -62,17 +84,17 @@ class CX_Sidrena_Admin_Save {
 			}
 		}
 
-		$kept = array();
-		foreach ( $saved as $outlet ) {
-			if ( '' !== $outlet['id'] ) {
-				$kept[ $outlet['id'] ] = true;
-			}
-		}
-		foreach ( $before as $id => $oznaka ) {
-			if ( ! isset( $kept[ $id ] ) && '' !== $oznaka ) {
+		// A deleted place's own manual rows go with it; its archive stays (CX-SID-27). A place whose code changed keeps
+		// its rows under the new code.
+		foreach ( $result['deleted'] as $oznaka ) {
+			if ( '' !== $oznaka ) {
 				CX_Sidrena_Catalog::instance()->delete_for_poslovnica( $oznaka );
 				CX_Sidrena_Upit::instance()->delete_for_poslovnica( $oznaka );
 			}
+		}
+		foreach ( $result['renamed'] as $from => $to ) {
+			CX_Sidrena_Catalog::instance()->move_poslovnica( (string) $from, (string) $to );
+			CX_Sidrena_Upit::instance()->move_poslovnica( (string) $from, (string) $to );
 		}
 
 		if ( isset( $_POST['sidrena_cijena_file_oblik'] ) ) {
@@ -193,13 +215,24 @@ class CX_Sidrena_Admin_Save {
 			}
 		}
 
+		// The lowest price in 30 days (CX-SID-63): only when the form had the row (cx_n30_present), so a save of a form
+		// without it never turns the line off. A change rebuilds the price list (88: DA/NE follows the page).
+		$n30_changed = false;
+		if ( isset( $_POST['cx_n30_present'] ) && CX_Sidrena_Plugin::woocommerce_active() && function_exists( 'cx_sidrena_n30_display_enabled' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked above
+			$n30_want = isset( $_POST['cx_n30_display'] ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked above
+			if ( cx_sidrena_n30_display_enabled() !== $n30_want ) {
+				update_option( 'cx_sidrena_n30_display', $n30_want ? 'yes' : 'no', true );
+				$n30_changed = true;
+			}
+		}
+
 		$dates = $this->save_dates();
 
 		$name_before = CX_Sidrena_Archive::instance()->current_name_key();
 		CX_Sidrena_Settings::instance()->save( $payload );
 		CX_Sidrena_Export::instance()->sync_daily_schedule();
 		// A new address or format is in the next file's name within a minute, not from tomorrow's (CX-SID-27).
-		if ( CX_Sidrena_Archive::instance()->current_name_key() !== $name_before ) {
+		if ( CX_Sidrena_Archive::instance()->current_name_key() !== $name_before || $n30_changed ) {
 			CX_Sidrena_Export::instance()->queue_public_xml();
 		}
 
@@ -309,6 +342,29 @@ class CX_Sidrena_Admin_Save {
 	}
 
 	/**
+	 * Whether a list sent by the page has a row with something in it (CX-SID-142). A row with nothing typed is not one:
+	 * the table always shows one empty row, and a save drops it.
+	 *
+	 * @param array<int, mixed> $rows   Decoded list.
+	 * @param array<int,string> $fields Fields that make a row.
+	 * @return bool
+	 */
+	private static function has_rows( $rows, $fields ) {
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+			foreach ( $fields as $key ) {
+				if ( isset( $row[ $key ] ) && is_scalar( $row[ $key ] ) && '' !== trim( (string) $row[ $key ] ) ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Save standalone catalog repeater.
 	 */
 	public function handle_catalog_save() {
@@ -323,12 +379,42 @@ class CX_Sidrena_Admin_Save {
 		check_admin_referer( 'sidrena_cijena_save_catalog', 'sidrena_cijena_catalog_nonce' );
 
 		$json = isset( $_POST['sidrena_cijena_catalog_json'] ) ? wp_unslash( $_POST['sidrena_cijena_catalog_json'] ) : '[]'; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		CX_Sidrena_Catalog::instance()->save_from_json( is_string( $json ) ? $json : '[]' );
-
 		$upit = isset( $_POST['sidrena_cijena_upit_json'] ) ? wp_unslash( $_POST['sidrena_cijena_upit_json'] ) : '[]'; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		CX_Sidrena_Upit::instance()->save_from_json( is_string( $upit ) ? $upit : '[]' );
+		$json = is_string( $json ) ? $json : '';
+		$upit = is_string( $upit ) ? $upit : '';
 
-		wp_safe_redirect( self::settings_url( 'cx-items', array( 'updated' => 'items' ) ) );
+		// CX-SID-142: one click never wipes what the page did not show. The whole save is refused, neither list written,
+		// when the page did not confirm that its script read both lists (_loaded; a page from before the update has none),
+		// or when it sends an empty list while rows are stored and the owner did not delete them on the page (_cleared).
+		$flag = static function ( $key ) {
+			return isset( $_POST[ $key ] ) && '1' === $_POST[ $key ]; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked above
+		};
+		$sent_catalog = json_decode( $json, true );
+		$sent_upit    = json_decode( $upit, true );
+		$refused      = ! $flag( 'sidrena_cijena_catalog_loaded' ) || ! is_array( $sent_catalog ) || ! is_array( $sent_upit )
+			|| ( ! $flag( 'sidrena_cijena_catalog_cleared' ) && ! self::has_rows( $sent_catalog, array( 'naziv', 'sku', 'marka', 'url', 'cijena_redovna', 'cijena_akcijska', 'naziv_posebnog_oblika', 'jedinica_mjere', 'cijena_jedinice_mjere', 'sidrena_cijena', 'sidrena_datum', 'cjm_suffix' ) ) && array() !== CX_Sidrena_Catalog::instance()->all() )
+			|| ( ! $flag( 'sidrena_cijena_upit_cleared' ) && ! self::has_rows( $sent_upit, array( 'naziv', 'kriteriji' ) ) && array() !== CX_Sidrena_Upit::instance()->all() );
+		if ( $refused ) {
+			// Norman C3. What was sent is not shown again: it came from a page that did not load.
+			wp_safe_redirect( self::settings_url( 'cx-items', array( 'updated' => false, 'cx_items_error' => 'unloaded' ) ) );
+			exit;
+		}
+
+		CX_Sidrena_Catalog::instance()->save( $sent_catalog, true );
+		CX_Sidrena_Upit::instance()->save( $sent_upit, true );
+
+		$unpub   = count( CX_Sidrena_Catalog::instance()->unpublished_services() );
+		$nobazna = CX_Sidrena_Catalog::instance()->goods_without_bazna(); // CX-SID-133
+		wp_safe_redirect(
+			self::settings_url(
+				'cx-items',
+				array(
+					'updated'    => 'items',
+					'cx_unpub'   => $unpub > 0 ? $unpub : false,
+					'cx_nobazna' => $nobazna > 0 ? $nobazna : false,
+				)
+			)
+		);
 		exit;
 	}
 }

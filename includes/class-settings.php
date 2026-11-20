@@ -30,6 +30,12 @@ class CX_Sidrena_Settings {
 	const KEEP_DAYS_DEFAULT = 1461;
 
 	/**
+	 * The shortest period a kept file is kept, days (CX-SID-27). Its own number since CX-SID-158: the public days of a
+	 * replaced file went from 30 to 15, the shortest keeping did not.
+	 */
+	const KEEP_DAYS_MIN = 30;
+
+	/**
 	 * Singleton.
 	 *
 	 * @var self|null
@@ -218,7 +224,7 @@ class CX_Sidrena_Settings {
 			'export_format'  => $this->sanitize_format( isset( $settings['export_format'] ) ? $settings['export_format'] : 'xml' ),
 			'file_oblik'     => $this->sanitize_file_part( isset( $settings['file_oblik'] ) ? $settings['file_oblik'] : 'webshop', 'webshop' ),
 			'file_adresa'    => sanitize_text_field( isset( $settings['file_adresa'] ) ? $settings['file_adresa'] : '' ),
-			'file_oznaka'      => $this->normalize_oznaka( isset( $settings['file_oznaka'] ) ? $settings['file_oznaka'] : '001' ) ?: '001',
+			'file_oznaka'      => $this->webshop_code( isset( $settings['file_oznaka'] ) ? $settings['file_oznaka'] : '001' ),
 			'file_pohrana'     => $this->sanitize_pohrana( isset( $settings['file_pohrana'] ) ? $settings['file_pohrana'] : 1 ),
 			// A value that may not be stored (not only digits, an OIB whose check digit is wrong) keeps the stored one.
 			'file_oib'         => self::LEGAL_ID_REFUSED === $oib['status'] ? $prev_oib : $oib['value'],
@@ -534,7 +540,8 @@ class CX_Sidrena_Settings {
 
 	/**
 	 * The OIB or registration number for the price list file's name, or '' (none, or a stored value that may not be
-	 * used: written straight to the option, not through save()). A shop without it still publishes; Status says so.
+	 * used: written straight to the option, not through save()). A shop without it publishes no new price list
+	 * (CX-SID-159, CX_Sidrena_Export::waiting_for_legal_id()); Status and Settings say so.
 	 *
 	 * @return string
 	 */
@@ -542,6 +549,29 @@ class CX_Sidrena_Settings {
 		$check = self::check_legal_id( $this->get( 'file_oib', '' ) );
 
 		return self::LEGAL_ID_REFUSED === $check['status'] ? '' : $check['value'];
+	}
+
+	/**
+	 * The webshop's code as it may be stored: empty is 001, and a change to a code that a place of sale has (in any
+	 * letter case) keeps the stored one (CX-SID-74, Rook). The Outlets form refuses that change first, with its reason
+	 * (CX_Sidrena_Poslovnice::save_from_form(), oznaka:webshop); this is for any other caller.
+	 *
+	 * @param mixed $value Posted code.
+	 * @return string
+	 */
+	private function webshop_code( $value ) {
+		$code = $this->normalize_oznaka( $value ) ?: '001';
+		$old  = $this->normalize_oznaka( (string) $this->get( 'file_oznaka', '001' ) ) ?: '001';
+		if ( strtoupper( $code ) === strtoupper( $old ) || ! class_exists( 'CX_Sidrena_Poslovnice' ) ) {
+			return $code;
+		}
+		foreach ( CX_Sidrena_Poslovnice::instance()->all() as $row ) {
+			if ( strtoupper( (string) $row['oznaka'] ) === strtoupper( $code ) ) {
+				return $old;
+			}
+		}
+
+		return $code;
 	}
 
 	/**
@@ -663,14 +693,17 @@ class CX_Sidrena_Settings {
 	 * Brand written to the public feed for a WooCommerce product.
 	 *
 	 * Terms on the product win. A variation with no terms uses the parent.
-	 * The settings value is used when the taxonomy has no term.
 	 * An owner who chose neither a taxonomy nor a manual brand gets WooCommerce's own Brands (product_brand, WooCommerce
 	 * 9.6+), when the shop has them (CX-SID-28).
+	 * Without a term: the brand imported on the Import tab, the owner's or the supplier's (CX-SID-122), then the settings
+	 * value.
 	 *
-	 * @param WC_Product $product Product or variation.
+	 * @param WC_Product  $product Product or variation.
+	 * @param string|null $ours    The imported brand to read instead of the stored one ('' = none): what the price list
+	 *                             would show after an import (CX-SID-122).
 	 * @return string
 	 */
-	public function product_marka( $product ) {
+	public function product_marka( $product, $ours = null ) {
 		$manual = $this->manual_marka();
 		$tax    = (string) $this->get( 'brand_taxonomy', '' );
 
@@ -678,8 +711,11 @@ class CX_Sidrena_Settings {
 			$tax = 'product_brand';
 		}
 
-		if ( '' === $tax || ! taxonomy_exists( $tax ) || ! $product instanceof WC_Product ) {
+		if ( ! $product instanceof WC_Product ) {
 			return $manual;
+		}
+		if ( '' === $tax || ! taxonomy_exists( $tax ) ) {
+			return $this->imported_marka( $product, $manual, $ours );
 		}
 
 		$ids = array( (int) $product->get_id() );
@@ -710,7 +746,31 @@ class CX_Sidrena_Settings {
 			}
 		}
 
-		return $manual;
+		return $this->imported_marka( $product, $manual, $ours );
+	}
+
+	/**
+	 * The brand imported on the Import tab (CX-SID-122): the product's, a variation's own or else its parent's; else the
+	 * fallback.
+	 *
+	 * @param WC_Product  $product  Product or variation.
+	 * @param string      $fallback The settings value.
+	 * @param string|null $ours     The product's own imported brand to read instead of the stored one.
+	 * @return string
+	 */
+	private function imported_marka( $product, $fallback, $ours = null ) {
+		$ids = array( (int) $product->get_id() );
+		if ( $product->is_type( 'variation' ) ) {
+			$ids[] = (int) $product->get_parent_id();
+		}
+		foreach ( $ids as $n => $id ) {
+			$marka = 0 === $n && null !== $ours ? trim( (string) $ours ) : ( $id > 0 ? trim( (string) get_post_meta( $id, CX_Sidrena_Feed_Rows::META_MARKA, true ) ) : '' );
+			if ( '' !== $marka ) {
+				return $marka;
+			}
+		}
+
+		return $fallback;
 	}
 
 	/**
@@ -820,8 +880,8 @@ class CX_Sidrena_Settings {
 	}
 
 	/**
-	 * Days kept price list files are kept: 0 = for ever, otherwise at least the public 30 (nothing goes before it was
-	 * public its whole time). Not a number: the default.
+	 * Days kept price list files are kept: 0 = for ever, otherwise at least KEEP_DAYS_MIN (30). Counted from the file's
+	 * publication, so nothing goes before it was public its whole time. Not a number: the default.
 	 *
 	 * @param mixed $value Raw.
 	 * @return int
@@ -835,7 +895,7 @@ class CX_Sidrena_Settings {
 			return 0;
 		}
 
-		return min( max( $n, CX_Sidrena_Archive::PUBLIC_DAYS ), 36525 );
+		return min( max( $n, self::KEEP_DAYS_MIN ), 36525 );
 	}
 
 	/**

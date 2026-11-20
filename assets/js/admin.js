@@ -164,6 +164,22 @@
 			bindCjm
 		);
 
+		// Net quantity (CX-SID-38, Norman SPEC §2.3): the status line shows what was saved. Once the number or the unit
+		// changes, it says the new unit price shows after saving, so the old figure is not read as current. Nothing is
+		// worked out here. Delegated: a size's panel is loaded later.
+		$(document).on("input change", ".cx-neto__q, .cx-neto__u", function () {
+			var $box = $(this).closest(".cx-neto");
+			var text = $box.attr("data-stale");
+			if (!text) {
+				return;
+			}
+			var $status = $box.find(".cx-neto-status");
+			if (!$status.length) {
+				$status = $('<p class="description cx-neto-status"></p>').appendTo($box.find(".cx-neto__help"));
+			}
+			$status.text(text).addClass("cx-neto-status--stale");
+		});
+
 		$(document).on("click", ".sidrena-cijena-copy", function () {
 			var $btn = $(this);
 			var text = $btn.attr("data-copy") || $btn.data("copy") || "";

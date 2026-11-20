@@ -217,59 +217,101 @@ class CX_Sidrena_Import_Export {
 			}
 		}
 
-		// The same for WooCommerce's own "Meta: _sidrena_cijena" columns, which it has already put on the product.
+		// The same for WooCommerce's own "Meta: <key>" columns, which it has already put on the product: an empty one of any
+		// key of ours leaves what is stored (CX-SID-161). WooCommerce's export gives a column for every key any exported
+		// product has, so its file imported back would otherwise delete our fields, or add empty ones where there were none.
 		foreach ( isset( $data['meta_data'] ) ? (array) $data['meta_data'] : array() as $m ) {
-			if ( isset( $m['key'], $m['value'] ) && in_array( $m['key'], array( CX_SIDRENA_META_PRICE, CX_SIDRENA_META_DATE ), true ) && '' === trim( (string) $m['value'] ) ) {
+			if ( isset( $m['key'], $m['value'] ) && self::is_ours( (string) $m['key'] ) && '' === trim( (string) $m['value'] ) ) {
 				self::keep_stored( $product, $m['key'] );
 			}
 		}
 
-		if ( isset( $data['sidrena_cijena_cjm'] ) ) {
-			$cjm = 'yes' === strtolower( trim( (string) $data['sidrena_cijena_cjm'] ) ) ? 'yes' : '';
-			if ( '' === $cjm ) {
-				$product->delete_meta_data( CX_SIDRENA_META_CJM );
-			} else {
+		// Our other columns read as our own import does (CX-SID-161, KAKO-RADI 3.5): an empty cell changes nothing, '-'
+		// deletes the field. CJM: 'yes' turns it on, anything else ('no', '-') off.
+		$cjm = self::cell( $data, 'sidrena_cijena_cjm' );
+		if ( null !== $cjm ) {
+			if ( 'yes' === strtolower( $cjm ) ) {
 				$product->update_meta_data( CX_SIDRENA_META_CJM, 'yes' );
+			} else {
+				$product->delete_meta_data( CX_SIDRENA_META_CJM );
 			}
 		}
 
-		if ( isset( $data['sidrena_cijena_cjm_suffix'] ) ) {
-			$suffix = sanitize_text_field( (string) $data['sidrena_cijena_cjm_suffix'] );
-			if ( '' === $suffix ) {
-				$product->delete_meta_data( CX_SIDRENA_META_CJM_SUFFIX );
-			} else {
-				$product->update_meta_data( CX_SIDRENA_META_CJM_SUFFIX, $suffix );
-			}
+		$suffix = self::cell( $data, 'sidrena_cijena_cjm_suffix' );
+		if ( '' === $suffix ) {
+			$product->delete_meta_data( CX_SIDRENA_META_CJM_SUFFIX );
+		} elseif ( null !== $suffix ) {
+			$product->update_meta_data( CX_SIDRENA_META_CJM_SUFFIX, $suffix );
 		}
 
-		if ( isset( $data['sidrena_naziv_posebnog_oblika'] ) ) {
-			$name = sanitize_text_field( (string) $data['sidrena_naziv_posebnog_oblika'] );
-			if ( '' === $name ) {
-				$product->delete_meta_data( CX_SIDRENA_META_OBLIK );
-			} else {
-				$product->update_meta_data( CX_SIDRENA_META_OBLIK, $name );
-			}
+		// MJDD's name of the special form of sale, plain text (CX-SID-179: no forms of sale any more). As the unit below: an
+		// empty cell changes nothing (Rook 1822: a file from another tool often has the column with nothing in it), '-'
+		// deletes the name, any other text is the name.
+		$name = self::cell( $data, 'sidrena_naziv_posebnog_oblika' );
+		if ( '' === $name ) {
+			$product->delete_meta_data( CX_SIDRENA_META_OBLIK );
+		} elseif ( null !== $name ) {
+			$product->update_meta_data( CX_SIDRENA_META_OBLIK, $name );
 		}
 
-		if ( isset( $data['sidrena_jedinica_mjere'] ) ) {
-			$unit = sanitize_text_field( (string) $data['sidrena_jedinica_mjere'] );
-			if ( '' === $unit ) {
-				$product->delete_meta_data( CX_SIDRENA_META_JEDINICA );
-			} else {
-				$product->update_meta_data( CX_SIDRENA_META_JEDINICA, $unit );
-			}
+		$unit = self::cell( $data, 'sidrena_jedinica_mjere' );
+		if ( '' === $unit ) {
+			$product->delete_meta_data( CX_SIDRENA_META_JEDINICA );
+		} elseif ( null !== $unit ) {
+			$product->update_meta_data( CX_SIDRENA_META_JEDINICA, $unit );
 		}
 
-		if ( isset( $data['sidrena_cijena_jedinice_mjere'] ) ) {
-			$unit_price = $meta->normalize_price( $data['sidrena_cijena_jedinice_mjere'] );
-			if ( '' === $unit_price ) {
-				$product->delete_meta_data( CX_SIDRENA_META_JEDINICA_CIJENA );
-			} else {
-				$product->update_meta_data( CX_SIDRENA_META_JEDINICA_CIJENA, $unit_price );
+		// A unit price is written only when it reads for sure, as in our own import (CX-SID-116): 12,5 and 12.50 are
+		// stored as before (12.5, 12.50); a cell that is not an amount (abc, 1,2,3, 1.234) changes nothing.
+		$unit_price = self::cell( $data, 'sidrena_cijena_jedinice_mjere' );
+		if ( '' === $unit_price ) {
+			$product->delete_meta_data( CX_SIDRENA_META_JEDINICA_CIJENA );
+		} elseif ( null !== $unit_price ) {
+			$read = CX_Sidrena_Money::read_amount( $unit_price );
+			if ( '' === $read['error'] && '' !== $read['value'] ) {
+				$product->update_meta_data( CX_SIDRENA_META_JEDINICA_CIJENA, $read['value'] );
 			}
 		}
 
 		return $product;
+	}
+
+	/**
+	 * One of our named cells in WooCommerce's CSV import: null for an empty cell (leave the field), '' for '-' (delete
+	 * it), else the text as WooCommerce cleaned it.
+	 *
+	 * @param array<string, mixed> $data Row data.
+	 * @param string               $key  Column.
+	 * @return string|null
+	 */
+	private static function cell( $data, $key ) {
+		if ( ! isset( $data[ $key ] ) ) {
+			return null;
+		}
+
+		$value = sanitize_text_field( (string) $data[ $key ] );
+		if ( '' === $value ) {
+			return null;
+		}
+
+		return '-' === $value ? '' : $value;
+	}
+
+	/**
+	 * Whether a meta key is one of ours: the bazna and its date, our product fields (CJM, unit, form of sale, brand,
+	 * codes, a service's mark) and what the plugin keeps itself (lowest price, source, history).
+	 *
+	 * @param string $key Meta key.
+	 * @return bool
+	 */
+	private static function is_ours( $key ) {
+		foreach ( array( '_sidrena_', '_bazna_', '_cx_sidrena_' ) as $prefix ) {
+			if ( 0 === strpos( $key, $prefix ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

@@ -289,4 +289,71 @@ class CX_Sidrena_Money {
 
 		return self::normalize_dostupnost( $map[ $id ] );
 	}
+
+	/**
+	 * A text field of a manual row or a row by agreement, kept as the owner typed it (CX-SID-142). It cleans as
+	 * sanitize_text_field() does (invalid UTF-8, tags, line breaks, percent octets), but a lone '<' stays a '<':
+	 * sanitize_text_field() turns it and the rest up to the next '<' into entities ('a < b & "c"' became
+	 * 'a &lt; b &amp; &quot;c&quot;'), which broke the page's JSON, and the CSV wrote them as they were (Kai 3255). The
+	 * stored value is text, so every output escapes it (CX_Sidrena_Feed_Files::text_html(), xml_text()).
+	 *
+	 * @param mixed $value Raw value (already unslashed).
+	 * @return string
+	 */
+	public static function plain_text( $value ) {
+		if ( is_array( $value ) || is_object( $value ) ) {
+			return '';
+		}
+
+		$text = wp_check_invalid_utf8( (string) $value );
+		$mark = '';
+		if ( false !== strpos( $text, '<' ) ) {
+			// The same split as wp_pre_kses_less_than(): a '<' with no '>' before the next '<' or the end is not a tag.
+			// It waits behind a mark the text does not contain, so strip_tags() cannot take it for one.
+			$mark = "\u{E000}";
+			while ( false !== strpos( $text, $mark ) ) {
+				$mark .= "\u{E001}";
+			}
+			$text = (string) preg_replace_callback(
+				'%<[^>]*?((?=<)|>|$)%',
+				static function ( $m ) use ( $mark ) {
+					return false === strpos( $m[0], '>' ) ? $mark . substr( $m[0], 1 ) : $m[0];
+				},
+				$text
+			);
+			$text = wp_strip_all_tags( $text, false );
+		}
+
+		$text = (string) preg_replace( '/[\r\n\t ]+/', ' ', $text );
+		$text = trim( $text );
+
+		$found = false;
+		while ( preg_match( '/%[a-f0-9]{2}/i', $text, $match ) ) {
+			$text  = str_replace( $match[0], '', $text );
+			$found = true;
+		}
+		if ( $found ) {
+			$text = trim( (string) preg_replace( '/ +/', ' ', $text ) );
+		}
+
+		return '' !== $mark ? str_replace( $mark, '<', $text ) : $text;
+	}
+
+	/**
+	 * A text stored by sanitize_text_field() before 0.3.0, as the owner typed it (CX-SID-142). Its entities come only
+	 * from a lone '<': from each '&lt;' to the next one or the end. Text before the first '&lt;' was stored as typed,
+	 * so its entities are the owner's and stay.
+	 *
+	 * @param string $text Stored text.
+	 * @return string
+	 */
+	public static function legacy_text( $text ) {
+		$text = (string) $text;
+		$at   = strpos( $text, '&lt;' );
+		if ( false === $at ) {
+			return $text;
+		}
+
+		return substr( $text, 0, $at ) . wp_specialchars_decode( substr( $text, $at ), ENT_QUOTES );
+	}
 }

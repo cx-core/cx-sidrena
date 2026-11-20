@@ -13,6 +13,25 @@ defined( 'ABSPATH' ) || exit;
 class CX_Sidrena_Product_Fields {
 
 	/**
+	 * The owner's mark that a WooCommerce product is a service (CX-SID-138): 'yes' on the product, or no row. A variable
+	 * product carries it on the parent and its sizes read it there, so a size is never a service on its own. It decides
+	 * only which file of the price list a row goes into (NN 132/2026-1584 art. 3(3), 6(3)); a virtual product is not a
+	 * service by that alone (Bishop 3071, Rook 3075: the mark is the owner's).
+	 */
+	const META_SERVICE = '_cx_sidrena_usluga';
+
+	/**
+	 * Posted next to the box by the product form. A form without it (another screen, a plugin's own product form) leaves
+	 * the mark alone instead of reading the absent box as unchecked.
+	 */
+	const SERVICE_FORM = 'cx_sidrena_usluga_form';
+
+	/**
+	 * The product types a service can be (the box's show_if_ classes): a marked External or Grouped product is goods.
+	 */
+	const SERVICE_TYPES = array( 'simple', 'variable' );
+
+	/**
 	 * Singleton.
 	 *
 	 * @var self|null
@@ -68,31 +87,162 @@ class CX_Sidrena_Product_Fields {
 			)
 		);
 
-		woocommerce_wp_text_input(
-			array(
-				'id'          => 'sidrena_jedinica_mjere',
-				'name'        => 'sidrena_jedinica_mjere',
-				'label'       => __( 'Unit of measure', 'cx-sidrena' ),
-				'placeholder' => 'kg',
-				'desc_tip'    => true,
-				'description' => __( 'Unit in the public price list, e.g. kg, l, or pcs. Empty if the product has no unit price.', 'cx-sidrena' ),
-				'value'       => $meta->get_jedinica( $product_id ),
-			)
-		);
+		// Net quantity, the unit price worked out from it (CX-SID-38, Norman SPEC §2.1): before MJDD's hand-typed pair.
+		$this->render_neto( (int) $product_id, null );
 
-		woocommerce_wp_text_input(
-			array(
-				'id'            => 'sidrena_cijena_jedinice_mjere',
-				'name'          => 'sidrena_cijena_jedinice_mjere',
-				'label'         => __( 'Unit price', 'cx-sidrena' ) . ' (' . get_woocommerce_currency_symbol() . ')',
-				'desc_tip'      => true,
-				'description'   => __( 'Same format as the regular price. Published alongside the retail price. Empty if not applicable.', 'cx-sidrena' ),
-				'value'         => $meta->get_jedinica_cijena( $product_id ),
-				'data_type'     => 'price',
-			)
-		);
+		// MJDD's hand-typed unit of measure and unit price (SPEC §2.5): as before without a net quantity; with one they are
+		// not used, so they are hidden when empty and read-only when they hold a value. A disabled field posts nothing,
+		// and the save keeps what it does not get (CX_Sidrena_Fields::posted_value()).
+		$old = self::old_pair( (int) $product_id );
+		if ( 'hidden' !== $old ) {
+			$off = 'read-only' === $old ? array( 'disabled' => 'disabled' ) : array();
+			woocommerce_wp_text_input(
+				array(
+					'id'                => 'sidrena_jedinica_mjere',
+					'name'              => 'sidrena_jedinica_mjere',
+					'label'             => __( 'Unit of measure', 'cx-sidrena' ),
+					'placeholder'       => 'kg',
+					'desc_tip'          => true,
+					'description'       => __( 'Unit in the public price list, e.g. kg, l, or pcs. Empty if the product has no unit price.', 'cx-sidrena' ),
+					'value'             => $meta->get_jedinica( $product_id ),
+					'custom_attributes' => $off,
+				)
+			);
+
+			woocommerce_wp_text_input(
+				array(
+					'id'                => 'sidrena_cijena_jedinice_mjere',
+					'name'              => 'sidrena_cijena_jedinice_mjere',
+					'label'             => __( 'Unit price', 'cx-sidrena' ) . ' (' . get_woocommerce_currency_symbol() . ')',
+					'desc_tip'          => true,
+					'description'       => __( 'Same format as the regular price. Published alongside the retail price. Empty if not applicable.', 'cx-sidrena' ),
+					'value'             => $meta->get_jedinica_cijena( $product_id ),
+					'data_type'         => 'price',
+					'custom_attributes' => $off,
+				)
+			);
+
+			if ( 'read-only' === $old ) {
+				echo '<p class="form-field cx-neto-old"><span class="description">' . esc_html__( 'Not used while Net quantity is filled in. Kept, and used again if you clear Net quantity.', 'cx-sidrena' ) . '</span></p>';
+			}
+		}
 
 		echo '</div>';
+	}
+
+	/**
+	 * How MJDD's hand-typed unit of measure and unit price show (Norman SPEC §2.5), by what is stored: "editable" without
+	 * a net quantity the unit price can use (the price list then uses them); "hidden" with one and both empty;
+	 * "read-only" with one and a value in either.
+	 *
+	 * @param int $id Product or variation.
+	 * @return string editable|hidden|read-only
+	 */
+	private static function old_pair( $id ) {
+		$meta = CX_Sidrena_Product_Meta::instance();
+		if ( null === $meta->readable_neto( $id ) ) {
+			return 'editable';
+		}
+
+		return ( '' === trim( $meta->get_jedinica( $id ) ) && '' === trim( $meta->get_jedinica_cijena( $id ) ) ) ? 'hidden' : 'read-only';
+	}
+
+	/**
+	 * Net quantity of one product or size (CX-SID-38, Norman SPEC §2.2-2.3): a number and its unit; under them a line on
+	 * which goods need it, a disclosure with the goods and the exceptions of the law (NN 105/2026 art. 8), and the unit
+	 * price it gives, from the same unit_price() as the product page and the price list. Saved by
+	 * CX_Sidrena_Fields::save_neto().
+	 *
+	 * @param int      $id   Product or variation.
+	 * @param int|null $loop Variation loop index; null for a simple product.
+	 */
+	public function render_neto( $id, $loop ) {
+		$meta   = CX_Sidrena_Product_Meta::instance();
+		$stored = $meta->get_neto( $id );
+		$unit   = $meta->normalize_neto_unit( $stored['jm'] );
+		$value  = '' !== trim( $stored['neto'] ) ? wc_format_localized_decimal( trim( $stored['neto'] ) ) : '';
+		$name   = null === $loop ? 'cx_neto' : 'cx_neto_var[' . (int) $loop . ']';
+		$dom    = 'cx-neto-' . ( null === $loop ? 'p' : 'v' . (int) $loop );
+		$row    = null === $loop ? 'form-field' : 'form-row form-row-full';
+		$status = $this->neto_status( $id );
+		$units  = array(
+			''   => '—',
+			'g'  => 'g',
+			'kg' => 'kg',
+			'ml' => 'ml',
+			'l'  => 'l',
+		);
+		$goods  = array(
+			__( "A price per kg or l is required for food and animal feed, detergents, paints and varnishes (not artists' paints), oils and fluids for engines and motor vehicles, distilled water, and products for the care, washing and cleaning of face, body, hair, teeth and mouth.", 'cx-sidrena' ),
+			__( 'For food in a liquid, enter the drained weight. For glazed food, enter the weight without the glaze.', 'cx-sidrena' ),
+			__( 'Leave it empty for gift packs and sets, pet treats, cakes, alcoholic drinks up to 100 ml, frozen desserts up to 500 ml, and fruit and vegetables sold by the piece or by the bunch.', 'cx-sidrena' ),
+			__( 'Under 50 g or 50 ml, or when the price per kg or l equals the product\'s price, the product page does not show it. The price list still has it.', 'cx-sidrena' ),
+		);
+		?>
+		<div class="cx-neto" id="<?php echo esc_attr( $dom ); ?>" data-stale="<?php echo esc_attr__( 'The new unit price shows after you save.', 'cx-sidrena' ); ?>">
+			<p class="<?php echo esc_attr( $row ); ?> cx-neto__field">
+				<label for="<?php echo esc_attr( $dom . '-q' ); ?>"><?php echo esc_html__( 'Net quantity', 'cx-sidrena' ); ?></label>
+				<input type="text" inputmode="decimal" class="cx-neto__q" id="<?php echo esc_attr( $dom . '-q' ); ?>" name="<?php echo esc_attr( $name . '[q]' ); ?>" value="<?php echo esc_attr( $value ); ?>" placeholder="200" autocomplete="off" />
+				<select class="cx-neto__u" name="<?php echo esc_attr( $name . '[u]' ); ?>" aria-label="<?php echo esc_attr__( 'Unit of the net quantity', 'cx-sidrena' ); ?>">
+					<?php foreach ( $units as $key => $label ) : ?>
+						<option value="<?php echo esc_attr( $key ); ?>"<?php selected( $unit, $key ); ?>><?php echo esc_html( $label ); ?></option>
+					<?php endforeach; ?>
+				</select>
+			</p>
+			<div class="cx-neto__help">
+				<p class="description cx-neto__desc"><?php echo esc_html__( 'For goods that must show a price per kg or l. Leave it empty for anything else.', 'cx-sidrena' ); ?></p>
+				<details class="cx-neto__more">
+					<summary><?php echo esc_html__( 'Which goods, and when to leave it empty', 'cx-sidrena' ); ?></summary>
+					<?php foreach ( $goods as $text ) : ?>
+						<p><?php echo esc_html( $text ); ?></p>
+					<?php endforeach; ?>
+				</details>
+				<?php if ( '' !== $status ) : ?>
+					<p class="description cx-neto-status"><?php echo wp_kses_post( $status ); ?></p>
+				<?php endif; ?>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * What the owner gets from the saved net quantity (Norman SPEC §2.3), from the same unit_price() as the page and the
+	 * price list: shown, only in the list (under 50 g or 50 ml, or equal to the price), or not yet (no price). On a sale,
+	 * a sentence that it comes from the sale price (the price the list and the page use: is_on_sale() with a sale price).
+	 * Empty without a quantity the unit price can use.
+	 *
+	 * @param int $id Product or variation.
+	 * @return string HTML.
+	 */
+	private function neto_status( $id ) {
+		$meta    = CX_Sidrena_Product_Meta::instance();
+		$product = wc_get_product( $id );
+		if ( ! $product || null === $meta->readable_neto( $id ) ) {
+			return '';
+		}
+
+		$unit = $meta->unit_price( $product );
+		if ( null === $unit ) {
+			return esc_html__( 'The unit price is worked out once the product has a price.', 'cx-sidrena' );
+		}
+
+		$amount = $meta->unit_price_html( $unit );
+		if ( $unit['page'] ) {
+			/* translators: %s: the unit price as the page shows it, e.g. 19,95 €/l. */
+			$text = sprintf( esc_html__( 'Unit price: %s. Shown on the product page and in the price list.', 'cx-sidrena' ), $amount );
+		} elseif ( (float) $unit['neto'] < 0.05 ) {
+			/* translators: %s: the unit price as the page would show it, e.g. 49,75 €/l. */
+			$text = sprintf( esc_html__( 'Unit price: %s, in the price list only. The product page does not show it under 50 g or 50 ml.', 'cx-sidrena' ), $amount );
+		} else {
+			/* translators: %s: the unit price, e.g. 2,49 €/kg. */
+			$text = sprintf( esc_html__( "Unit price: %s, in the price list only. It equals the product's price, so the product page does not show it.", 'cx-sidrena' ), $amount );
+		}
+
+		if ( $product->is_on_sale() && '' !== (string) $product->get_sale_price() ) {
+			$text .= ' ' . esc_html__( 'During the sale it is worked out from the sale price.', 'cx-sidrena' );
+		}
+
+		return $text;
 	}
 
 	/**
@@ -247,15 +397,96 @@ class CX_Sidrena_Product_Fields {
 				<label><?php echo esc_html__( 'Name of special form of sale', 'cx-sidrena' ); ?></label>
 				<input type="text" class="short" name="sidrena_naziv_posebnog_oblika[<?php echo esc_attr( (string) $loop ); ?>]" value="<?php echo esc_attr( $meta->get_oblik( $id ) ); ?>" placeholder="akcija" />
 			</p>
-			<p class="form-row form-row-last">
-				<label><?php echo esc_html__( 'Unit of measure', 'cx-sidrena' ); ?></label>
-				<input type="text" class="short" name="sidrena_jedinica_mjere[<?php echo esc_attr( (string) $loop ); ?>]" value="<?php echo esc_attr( $meta->get_jedinica( $id ) ); ?>" placeholder="kg" />
-			</p>
+			<?php
+			// The size's net quantity (CX-SID-38, Norman SPEC §2.1), then MJDD's pair as on a simple product (§2.5).
+			$this->render_neto( (int) $id, (int) $loop );
+			$old = self::old_pair( (int) $id );
+			$off = 'read-only' === $old ? ' disabled' : '';
+			?>
+			<?php if ( 'hidden' !== $old ) : ?>
 			<p class="form-row form-row-first">
-				<label><?php echo esc_html__( 'Unit price', 'cx-sidrena' ) . ' (' . esc_html( get_woocommerce_currency_symbol() ) . ')'; ?></label>
-				<input type="text" class="short wc_input_price" name="sidrena_cijena_jedinice_mjere[<?php echo esc_attr( (string) $loop ); ?>]" value="<?php echo esc_attr( wc_format_localized_price( $meta->get_jedinica_cijena( $id ) ) ); ?>" />
+				<label><?php echo esc_html__( 'Unit of measure', 'cx-sidrena' ); ?></label>
+				<input type="text" class="short" name="sidrena_jedinica_mjere[<?php echo esc_attr( (string) $loop ); ?>]" value="<?php echo esc_attr( $meta->get_jedinica( $id ) ); ?>" placeholder="kg"<?php echo $off; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?> />
 			</p>
+			<p class="form-row form-row-last">
+				<label><?php echo esc_html__( 'Unit price', 'cx-sidrena' ) . ' (' . esc_html( get_woocommerce_currency_symbol() ) . ')'; ?></label>
+				<input type="text" class="short wc_input_price" name="sidrena_cijena_jedinice_mjere[<?php echo esc_attr( (string) $loop ); ?>]" value="<?php echo esc_attr( wc_format_localized_price( $meta->get_jedinica_cijena( $id ) ) ); ?>"<?php echo $off; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?> />
+			</p>
+				<?php if ( '' !== $off ) : ?>
+			<p class="form-row form-row-full description cx-neto-old"><?php echo esc_html__( 'Not used while Net quantity is filled in. Kept, and used again if you clear Net quantity.', 'cx-sidrena' ); ?></p>
+				<?php endif; ?>
+			<?php endif; ?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Whether a product or a size of one is a service (CX-SID-138): the mark of the product, of a size's parent, and only
+	 * on a simple or variable product, the types the box is shown for. A marked product changed to External or Grouped is
+	 * goods while it is that type; its mark stays stored, so changing it back makes it a service again (Argus, 57a54a9).
+	 *
+	 * @param WC_Product $product Product or variation.
+	 * @return bool
+	 */
+	public static function is_service( $product ) {
+		$size = $product->is_type( 'variation' );
+		$id   = $size ? (int) $product->get_parent_id() : (int) $product->get_id();
+		if ( $id <= 0 || 'yes' !== get_post_meta( $id, self::META_SERVICE, true ) ) {
+			return false;
+		}
+		$type = $size ? WC_Product_Factory::get_product_type( $id ) : $product->get_type();
+
+		return in_array( $type, self::SERVICE_TYPES, true );
+	}
+
+	/**
+	 * The box "Service" next to Virtual and Downloadable (product_type_options), for a simple and a variable product.
+	 * WooCommerce shows it checked when the product has the meta '_' . key = 'yes' and posts it as its id.
+	 *
+	 * @param array<string, array<string, string>> $options WooCommerce's product type options.
+	 * @return array<string, array<string, string>>
+	 */
+	public function service_type_option( $options ) {
+		$options = is_array( $options ) ? $options : array();
+
+		$options[ ltrim( self::META_SERVICE, '_' ) ] = array(
+			'id'            => self::META_SERVICE,
+			'wrapper_class' => 'show_if_simple show_if_variable',
+			'label'         => __( 'Service', 'cx-sidrena' ),
+			'description'   => __( 'Tick this if the product is a service (e.g. fitting, repair). It then goes into the services price list, not the goods price list.', 'cx-sidrena' ),
+			'default'       => 'no',
+		);
+
+		return $options;
+	}
+
+	/**
+	 * The product form's marker that the box was on it (SERVICE_FORM); in the General panel, which every type's form has.
+	 */
+	public function render_service_marker() {
+		echo '<input type="hidden" name="' . esc_attr( self::SERVICE_FORM ) . '" value="1" />';
+	}
+
+	/**
+	 * Store the box, only from the product form that showed it: WooCommerce calls this from its product save after its
+	 * nonce and edit_post checks, then saves the product (one build queued, as for any product save). Quick and bulk
+	 * edit, REST, imports and the sizes' own save never come here, so they keep the mark. Only 'yes' or no row.
+	 *
+	 * @param WC_Product $product Product being saved.
+	 */
+	public function save_service_mark( $product ) {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- WooCommerce checked the product nonce and edit_post.
+		// Only a simple or variable product has the box; another type's form still posts it hidden (WooCommerce's script
+		// unticks only Virtual and Downloadable), and an unticked box would not be posted: either way, leave the mark.
+		if ( empty( $_POST[ self::SERVICE_FORM ] ) || ! is_a( $product, 'WC_Product' ) || ! $product->is_type( self::SERVICE_TYPES ) ) {
+			return;
+		}
+
+		if ( isset( $_POST[ self::META_SERVICE ] ) ) {
+			$product->update_meta_data( self::META_SERVICE, 'yes' );
+		} else {
+			$product->delete_meta_data( self::META_SERVICE );
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
 	}
 }

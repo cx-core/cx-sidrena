@@ -7,7 +7,9 @@
  * Rules:
  * 1. Nothing changes before Confirm. Upload and preview only read.
  * 2. Only the bazna, its date and its source are written, and (optional column) the starting lowest price in 30 days
- *    of a product on sale now (K9). Never the regular or sale price, never stock (T8).
+ *    of a product on sale now (K9). Never the regular or sale price, never stock (T8). Optional columns Brand, EAN and
+ *    Barcode (CX-SID-122) write only our own fields (CX_Sidrena_Feed_Rows::META_*), never WooCommerce's, and only
+ *    where the price list then shows something else; a dash removes our value.
  * 3. The file written is the file previewed: Confirm sends its sha256 back, and a row whose product changed after the
  *    preview is skipped, not overwritten.
  * 4. Every confirmed import is a confirmation record (who, when, the text, the file's sha256), and every change it made
@@ -53,6 +55,21 @@ final class CX_Sidrena_Import {
 		'datum'                    => 'date',
 		'lowest price in 30 days'  => 'lowest',
 		'najniza cijena u 30 dana' => 'lowest',
+		// CX-SID-122: the owner's or the supplier's brand and codes; the price list's own names read back too.
+		'brand'                    => 'marka',
+		'marka'                    => 'marka',
+		'ean'                      => 'ean',
+		'ean barkod'               => 'ean',
+		'ean barcode'              => 'ean',
+		'barcode'                  => 'barkod',
+		'barkod'                   => 'barkod',
+	);
+
+	/** The optional columns of CX-SID-122: column => our product field. */
+	const CODE_FIELDS = array(
+		'marka'  => CX_Sidrena_Feed_Rows::META_MARKA,
+		'ean'    => CX_Sidrena_Feed_Rows::META_EAN,
+		'barkod' => CX_Sidrena_Feed_Rows::META_BARKOD,
 	);
 
 	/**
@@ -77,9 +94,21 @@ final class CX_Sidrena_Import {
 	 * The text the client confirms an import with (spec §1.5), kept with it as shown. [Kai] temporary text, at most 300
 	 * characters. The same string as the Import tab (CX-SID-42).
 	 *
+	 * A file with Brand, EAN or Barcode says where they come from (Kai 3337, Norman T5), one sentence for each kind of file.
+	 *
+	 * @param array<string,mixed>|null $p The preview (read()); null = a file with a bazna only.
 	 * @return string
 	 */
-	public static function consent_text() {
+	public static function consent_text( $p = null ) {
+		$codes = is_array( $p ) && ! empty( $p['has_codes'] );
+		$bazna = ! is_array( $p ) || ! isset( $p['has_bazna'] ) || ! empty( $p['has_bazna'] );
+		if ( $codes && ! $bazna ) {
+			return __( 'I confirm, on behalf of the shop owner, that the brand, EAN and barcode in this file are taken from the product, its packaging or the supplier, and that they may be imported.', 'cx-sidrena' );
+		}
+		if ( $codes ) {
+			return __( 'I confirm, on behalf of the shop owner, that the prices in this file were the products\' prices on the dates given (bazna cijena), that the brand, EAN and barcode are taken from the product, its packaging or the supplier, and that they may be imported.', 'cx-sidrena' );
+		}
+
 		return __( 'I confirm, on behalf of the shop owner, that the prices in this file were the products\' prices on the dates given (bazna cijena), and that they may be imported.', 'cx-sidrena' );
 	}
 
@@ -123,8 +152,9 @@ final class CX_Sidrena_Import {
 		if ( ! isset( $cols['sku'] ) && ! isset( $cols['id'] ) ) {
 			return new WP_Error( 'missing_column', __( 'Column missing: SKU.', 'cx-sidrena' ) );
 		}
-		if ( ! isset( $cols['bazna'] ) ) {
-			return new WP_Error( 'missing_column', __( 'Column missing: Bazna cijena.', 'cx-sidrena' ) );
+		$has_codes = (bool) array_intersect_key( $cols, self::CODE_FIELDS );
+		if ( ! isset( $cols['bazna'] ) && ! $has_codes ) {
+			return new WP_Error( 'missing_column', __( 'Column missing: Bazna cijena (or Brand, EAN or Barcode).', 'cx-sidrena' ) );
 		}
 		$data = array();
 		foreach ( array_slice( $records, 1, null, true ) as $n => $rec ) {
@@ -142,6 +172,9 @@ final class CX_Sidrena_Import {
 				'bazna'  => $cell( 'bazna' ),
 				'date'   => $cell( 'date' ),
 				'lowest' => $cell( 'lowest' ),
+				'marka'  => $cell( 'marka' ),
+				'ean'    => $cell( 'ean' ),
+				'barkod' => $cell( 'barkod' ),
 			);
 		}
 		if ( ! $data ) {
@@ -162,6 +195,8 @@ final class CX_Sidrena_Import {
 			'created'    => time(),
 			'user'       => get_current_user_id(),
 			'has_lowest' => isset( $cols['lowest'] ),
+			'has_bazna'  => isset( $cols['bazna'] ),
+			'has_codes'  => $has_codes,
 			'counts'     => self::counts( $lists ),
 			'lists'      => $lists,
 		);
@@ -326,6 +361,157 @@ final class CX_Sidrena_Import {
 	}
 
 	/**
+	 * The product whose šifra in the price list is this ID-<n> (CX-SID-122): the cell names product n only if n has no
+	 * SKU of its own, as the price list said (CX_Sidrena_Feed_Rows::sifra(), one rule for both). The caller has checked
+	 * that no SKU is this text.
+	 *
+	 * @param string $code Cell of the SKU column.
+	 * @return int Product, or 0.
+	 */
+	private static function id_code_product( $code ) {
+		if ( 1 !== preg_match( '/^ID-([1-9]\d{0,17})$/iD', (string) $code, $m ) || ! self::matchable( (int) $m[1] ) ) {
+			return 0;
+		}
+		$product = function_exists( 'wc_get_product' ) ? wc_get_product( (int) $m[1] ) : null;
+
+		return $product && 'ID-' . (int) $m[1] === CX_Sidrena_Feed_Rows::instance()->sifra( $product ) ? (int) $m[1] : 0;
+	}
+
+	/**
+	 * The Brand, EAN and Barcode cells of a row (CX-SID-122), as they would be stored: '' = remove ours (a dash), absent =
+	 * an empty cell, which changes nothing. An EAN without its spaces and dashes (packaging prints '3 850012 345678'),
+	 * of 8 or 13 digits and with a right check digit; a code that Excel turned into a number is said first (Norman T3c),
+	 * so the owner gets the real cause.
+	 *
+	 * @param array<string,mixed> $r Row of the file.
+	 * @return array<string,string>|WP_Error
+	 */
+	private static function code_cells( array $r ) {
+		$out = array();
+		foreach ( array_keys( self::CODE_FIELDS ) as $f ) {
+			$v = isset( $r[ $f ] ) ? trim( (string) $r[ $f ] ) : '';
+			if ( '' === $v ) {
+				continue;
+			}
+			if ( 1 === preg_match( '/^[\x{2D}\x{2013}\x{2014}]+$/uD', $v ) ) {
+				$out[ $f ] = ''; // '-', '–', '—': remove what was imported before
+				continue;
+			}
+			if ( 'marka' === $f ) {
+				$out[ $f ] = CX_Sidrena_Money::plain_text( $v );
+				continue;
+			}
+			if ( 1 === preg_match( '/^\d+(?:[.,]\d+)?E\+?\d+$/iD', $v ) ) {
+				return new WP_Error(
+					'excel_number',
+					sprintf(
+						/* translators: 1: EAN or barcode, 2: the cell as in the file */
+						__( 'The %1$s came as %2$s: Excel turned it into a number and cut it. In Excel set the column to Text, enter the codes again and save as "CSV UTF-8".', 'cx-sidrena' ),
+						'ean' === $f ? __( 'EAN', 'cx-sidrena' ) : __( 'barcode', 'cx-sidrena' ),
+						$v
+					)
+				);
+			}
+			if ( 'barkod' === $f ) {
+				$out[ $f ] = CX_Sidrena_Feed_Rows::instance()->clean_barcode( $v );
+				continue;
+			}
+			$ean = (string) preg_replace( '/[\s\x{2D}\x{2010}-\x{2015}]+/u', '', $v );
+			if ( ! CX_Sidrena_Feed_Rows::is_ean( $ean ) ) {
+				/* translators: %s: the cell as in the file */
+				return new WP_Error( 'bad_ean', sprintf( __( 'The EAN %s must have 8 or 13 digits. Put a code of another length in Barcode.', 'cx-sidrena' ), $v ) );
+			}
+			if ( ! self::ean_check_ok( $ean ) ) {
+				/* translators: %s: the cell as in the file */
+				return new WP_Error( 'bad_ean_check', sprintf( __( 'The EAN %s is not valid: its check digit does not match. Check it on the packaging or with the supplier.', 'cx-sidrena' ), $v ) );
+			}
+			$out[ $f ] = $ean;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * The check digit of an EAN-8 or EAN-13 (GS1): the other digits from the right, weighted 3, 1, 3, …
+	 *
+	 * @param string $ean 8 or 13 digits.
+	 * @return bool
+	 */
+	public static function ean_check_ok( $ean ) {
+		$ean = (string) $ean;
+		$sum = 0;
+		for ( $i = strlen( $ean ) - 2, $w = 3; $i >= 0; $i--, $w = 4 - $w ) {
+			$sum += (int) $ean[ $i ] * $w;
+		}
+
+		return (int) $ean[ strlen( $ean ) - 1 ] === ( 10 - $sum % 10 ) % 10;
+	}
+
+	/**
+	 * What a row's Brand, EAN and Barcode would change (CX-SID-122). A field is written only when the price list then
+	 * shows something else (WooCommerce's GTIN and brand terms come first: CX_Sidrena_Feed_Rows::product_codes() and
+	 * CX_Sidrena_Settings::product_marka(), one rule for both); one that would change nothing is left as it is.
+	 *
+	 * @param int                  $pid   Product.
+	 * @param array<string,string> $cells code_cells().
+	 * @return array{write:array<string,string>,was:array<string,string>,shown:array<int,array<int,string>>,kept:array<int,array<int,string>>}
+	 */
+	private static function code_changes( $pid, array $cells ) {
+		$out     = array( 'write' => array(), 'was' => array(), 'shown' => array(), 'kept' => array() );
+		$product = function_exists( 'wc_get_product' ) ? wc_get_product( $pid ) : null;
+		if ( ! $product ) {
+			return $out;
+		}
+		$ours = array();
+		foreach ( self::CODE_FIELDS as $f => $key ) {
+			$ours[ $f ] = (string) get_post_meta( $pid, $key, true );
+		}
+		$want = $ours;
+		foreach ( $cells as $f => $v ) {
+			$want[ $f ] = $v;
+		}
+		$rows = CX_Sidrena_Feed_Rows::instance();
+		$set  = CX_Sidrena_Settings::instance();
+		$show = static function ( array $o ) use ( $rows, $set, $product ) {
+			$c = $rows->product_codes( $product, $o );
+
+			return array(
+				'marka'  => $set->product_marka( $product, $o['marka'] ),
+				'ean'    => $c['ean_barkod'],
+				'barkod' => $c['barkod'],
+			);
+		};
+		$now = $show( $ours );
+		// A field is kept only if leaving it out would change what the price list shows (an EAN under WooCommerce's
+		// GTIN, a brand under the brand terms, a barcode that is the EAN's number).
+		foreach ( $cells as $f => $v ) {
+			if ( $want[ $f ] === $ours[ $f ] ) {
+				continue;
+			}
+			$without       = $want;
+			$without[ $f ] = $ours[ $f ];
+			if ( $show( $without ) === $show( $want ) ) {
+				$want[ $f ] = $ours[ $f ];
+				if ( '' !== $v && '' !== $now[ $f ] && $now[ $f ] !== $v ) {
+					$out['kept'][] = array( $f, $now[ $f ] ); // "EAN: … from WooCommerce stays"
+				}
+			}
+		}
+		$after = $show( $want );
+		foreach ( self::CODE_FIELDS as $f => $key ) {
+			if ( $want[ $f ] !== $ours[ $f ] ) {
+				$out['write'][ $f ] = $want[ $f ];
+				$out['was'][ $f ]   = $ours[ $f ];
+			}
+			if ( $after[ $f ] !== $now[ $f ] ) {
+				$out['shown'][] = array( $f, $now[ $f ], $after[ $f ] );
+			}
+		}
+
+		return $out;
+	}
+
+	/**
 	 * Match the rows to products and sort them into the four lists.
 	 *
 	 * @param array<int,array<string,mixed>> $data Rows.
@@ -355,6 +541,9 @@ final class CX_Sidrena_Import {
 			if ( '' !== $r['sku'] ) {
 				$l   = function_exists( 'mb_strtolower' ) ? mb_strtolower( $r['sku'] ) : strtolower( $r['sku'] );
 				$pid = isset( $exact[ $r['sku'] ] ) ? $exact[ $r['sku'] ] : ( ! empty( $lower[ $l ] ) ? $lower[ $l ] : 0 );
+				if ( ! $pid && ! isset( $lower[ $l ] ) ) {
+					$pid = self::id_code_product( $r['sku'] );
+				}
 			} elseif ( '' !== $r['id'] && ctype_digit( $r['id'] ) ) {
 				$pid = self::matchable( (int) $r['id'] ) ? (int) $r['id'] : 0;
 			} elseif ( '' === $r['id'] ) {
@@ -411,7 +600,12 @@ final class CX_Sidrena_Import {
 			if ( 'product' === $post->post_type ) {
 				$types = get_the_terms( $pid, 'product_type' ); // primed above
 				if ( is_array( $types ) && array_intersect( wp_list_pluck( $types, 'slug' ), array( 'variable', 'grouped', 'variable-subscription' ) ) ) {
-					$lists['invalid'][] = self::bad( $r, 'variable_parent', __( 'Set the bazna cijena per variation (use the variation SKUs).', 'cx-sidrena' ) );
+					$lists['invalid'][] = self::bad(
+						$r,
+						'variable_parent',
+						'' !== $r['bazna'] ? __( 'Set the bazna cijena per variation (use the variation SKUs).', 'cx-sidrena' )
+							: __( 'This is a variable product: import per variation (use the variation SKUs).', 'cx-sidrena' ) // Norman T3d
+					);
 					continue;
 				}
 			}
@@ -450,6 +644,14 @@ final class CX_Sidrena_Import {
 				}
 			}
 
+			// CX-SID-122: Brand, EAN, Barcode. A row with a code that is not one is invalid as a whole (Norman T3).
+			$cells = self::code_cells( $r );
+			if ( is_wp_error( $cells ) ) {
+				$lists['invalid'][] = self::bad( $r, $cells->get_error_code(), $cells->get_error_message() );
+				continue;
+			}
+			$codes = $cells ? self::code_changes( $pid, $cells ) : array( 'write' => array(), 'was' => array(), 'shown' => array(), 'kept' => array() );
+
 			$cur  = trim( $meta->get_price( $pid ) );
 			$own  = trim( (string) get_post_meta( $pid, CX_SIDRENA_META_DATE, true ) );
 			$d    = CX_Sidrena_Dates::date_for( $pid );
@@ -483,9 +685,30 @@ final class CX_Sidrena_Import {
 				'_own'       => $own,
 				'_low'       => (string) $low_on,
 			);
-			if ( ! $bazna_changes && ! $date_changes && ! $low_changes ) {
+			if ( $codes['shown'] ) {
+				$row['codes'] = $codes['shown']; // what the price list shows now and after, per field that changes
+			}
+			$price_changes = $bazna_changes || $date_changes || $low_changes;
+			if ( ! $price_changes && ! $codes['write'] ) {
 				$row['new'] = $now;
+				if ( $codes['kept'] ) {
+					$row['codes_kept'] = $codes['kept']; // Norman T4 SHOULD, Rook 3348 (1): why a code changes nothing
+				}
 				$lists['unchanged'][] = $row;
+				continue;
+			}
+			$row['_codes']     = $codes['write'];
+			$row['_codes_was'] = $codes['was'];
+			$row['_price']     = $price_changes;
+			if ( ! $price_changes ) {
+				// Only codes change: the bazna and its date stay ('no change' on the screen, Norman T4).
+				$row['new']        = $now;
+				$row['bazna_same'] = true;
+				$row['_date']      = null;
+				$row['_date_from'] = '';
+				$row['_bazna']     = '';
+				$row['_lowest']    = '';
+				$lists['update'][] = $row;
 				continue;
 			}
 
@@ -718,7 +941,7 @@ final class CX_Sidrena_Import {
 			array(
 				'confirmed_by' => isset( $c['confirmed_by'] ) ? $c['confirmed_by'] : '',
 				'confirmed_on' => isset( $c['confirmed_on'] ) ? $c['confirmed_on'] : '',
-				'consent'      => self::consent_text(), // the text the screen shows, never one sent by the browser
+				'consent'      => self::consent_text( $p ), // the text the screen shows, never one sent by the browser
 			)
 		);
 		if ( is_wp_error( $ok ) ) {
@@ -897,53 +1120,96 @@ final class CX_Sidrena_Import {
 		$cur   = trim( CX_Sidrena_Product_Meta::instance()->get_price( $pid ) );
 		$own   = trim( (string) get_post_meta( $pid, CX_SIDRENA_META_DATE, true ) );
 		$low   = (string) get_post_meta( $pid, '_bazna_najniza30', true );
+		// A row of a preview made before CX-SID-122 is a price row without codes.
+		$price = ! isset( $row['_price'] ) || ! empty( $row['_price'] );
+		$codes = isset( $row['_codes'] ) && is_array( $row['_codes'] ) ? $row['_codes'] : array();
+		$was   = isset( $row['_codes_was'] ) && is_array( $row['_codes_was'] ) ? $row['_codes_was'] : array();
+		$ours  = array();
+		foreach ( $codes as $f => $v ) {
+			$ours[ $f ] = isset( self::CODE_FIELDS[ $f ] ) ? (string) get_post_meta( $pid, self::CODE_FIELDS[ $f ], true ) : (string) $v;
+		}
+		$codes_done = true;
+		foreach ( $codes as $f => $v ) {
+			if ( $ours[ $f ] !== (string) $v ) {
+				$codes_done = false;
+				// Each code as the preview saw it, or as this import already wrote it (a request that dropped midway).
+				if ( ! isset( $was[ $f ] ) || $ours[ $f ] !== (string) $was[ $f ] ) {
+					return array( 'result' => 'skipped', 'label' => $label, 'message' => __( 'Changed since the preview.', 'cx-sidrena' ) );
+				}
+			}
+		}
 
 		// A row dated by the rule takes the rule as it is now: Dates may have been saved between the preview (when such
 		// rows wait) and the confirmation. The rule never reads the own date, so a row already written gets the same.
 		$date = $row['_date'];
 		$from = (string) $row['_date_from'];
-		if ( isset( $row['new']['date_from'] ) && in_array( $row['new']['date_from'], array( 'category', 'day_added' ), true ) ) {
+		if ( $price && isset( $row['new']['date_from'] ) && in_array( $row['new']['date_from'], array( 'category', 'day_added' ), true ) ) {
 			$d    = CX_Sidrena_Dates::date_for( $pid );
 			$date = $d['rule_date'];
 			$from = $d['rule_from'];
 		}
-		$want_bazna = '' !== $row['_bazna'] ? $row['_bazna'] : $row['_cur'];
-		$want_own   = null !== $date ? $date : $row['_own'];
-		$want_low   = '' !== $row['_lowest'] ? $row['_lowest'] : $row['_low'];
-		$done       = self::same_amount( $cur, $want_bazna ) && $own === $want_own && self::same_amount( $low, $want_low );
-		if ( $done ) {
-			$izvor = CX_Sidrena_History::izvor( $pid );
-			$mine  = (int) $izvor['ref'] === (int) $job['conf'] || ( '' === $row['_bazna'] && self::low_is_mine( $pid, $job ) );
-			return $mine ? array( 'result' => 'updated', 'label' => $label, 'message' => '', 'already' => true )
-				: array( 'result' => 'skipped', 'label' => $label, 'message' => __( 'Changed since the preview.', 'cx-sidrena' ) );
+		$price_done = true;
+		if ( $price ) {
+			$want_bazna = '' !== $row['_bazna'] ? $row['_bazna'] : $row['_cur'];
+			$want_own   = null !== $date ? $date : $row['_own'];
+			$want_low   = '' !== $row['_lowest'] ? $row['_lowest'] : $row['_low'];
+			$price_done = self::same_amount( $cur, $want_bazna ) && $own === $want_own && self::same_amount( $low, $want_low );
+			if ( $price_done ) {
+				$izvor = CX_Sidrena_History::izvor( $pid );
+				$mine  = (int) $izvor['ref'] === (int) $job['conf'] || ( '' === $row['_bazna'] && self::low_is_mine( $pid, $job ) );
+				if ( ! $mine ) {
+					return array( 'result' => 'skipped', 'label' => $label, 'message' => __( 'Changed since the preview.', 'cx-sidrena' ) );
+				}
+			}
+		}
+		if ( $price_done && $codes_done ) {
+			return array( 'result' => 'updated', 'label' => $label, 'message' => '', 'already' => true );
 		}
 		if ( ! self::matchable( $pid ) ) {
 			return array( 'result' => 'skipped', 'label' => $label, 'message' => __( 'The product was deleted or moved to the trash since the preview.', 'cx-sidrena' ) );
 		}
-		$as_seen = self::same_amount( $cur, $row['_cur'] ) && $own === $row['_own'] && self::same_amount( $low, $row['_low'] );
 		$product = function_exists( 'wc_get_product' ) ? wc_get_product( $pid ) : null;
-		if ( ! $as_seen || ! $product ) {
+		if ( ! $product ) {
 			return array( 'result' => 'skipped', 'label' => $label, 'message' => __( 'Changed since the preview.', 'cx-sidrena' ) );
 		}
-		if ( '' !== $row['_lowest'] && ! $product->is_on_sale( 'edit' ) ) {
-			return array( 'result' => 'skipped', 'label' => $label, 'message' => __( 'The sale ended since the preview.', 'cx-sidrena' ) );
-		}
 
-		$context = array(
-			'type'      => 'import',
-			'by'        => $job['by'],
-			'on'        => $job['on'],
-			'ref'       => (int) $job['conf'],
-			'date_from' => $from,
-		);
-		if ( '' !== $row['_bazna'] ) {
-			$res = CX_Sidrena_History::set_bazna( $pid, $row['_bazna'], $date, $context );
-			if ( is_wp_error( $res ) ) {
-				return array( 'result' => 'skipped', 'label' => $label, 'message' => $res->get_error_message() );
+		if ( ! $price_done ) {
+			$as_seen = self::same_amount( $cur, $row['_cur'] ) && $own === $row['_own'] && self::same_amount( $low, $row['_low'] );
+			if ( ! $as_seen ) {
+				return array( 'result' => 'skipped', 'label' => $label, 'message' => __( 'Changed since the preview.', 'cx-sidrena' ) );
+			}
+			if ( '' !== $row['_lowest'] && ! $product->is_on_sale( 'edit' ) ) {
+				return array( 'result' => 'skipped', 'label' => $label, 'message' => __( 'The sale ended since the preview.', 'cx-sidrena' ) );
+			}
+
+			$context = array(
+				'type'      => 'import',
+				'by'        => $job['by'],
+				'on'        => $job['on'],
+				'ref'       => (int) $job['conf'],
+				'date_from' => $from,
+			);
+			if ( '' !== $row['_bazna'] ) {
+				$res = CX_Sidrena_History::set_bazna( $pid, $row['_bazna'], $date, $context );
+				if ( is_wp_error( $res ) ) {
+					return array( 'result' => 'skipped', 'label' => $label, 'message' => $res->get_error_message() );
+				}
+			}
+			if ( '' !== $row['_lowest'] ) {
+				self::write_lowest( $product, $row['_lowest'], $context );
 			}
 		}
-		if ( '' !== $row['_lowest'] ) {
-			self::write_lowest( $product, $row['_lowest'], $context );
+
+		// CX-SID-122: our own fields only; '' removes ours (a dash in the file).
+		foreach ( $codes as $f => $v ) {
+			if ( ! isset( self::CODE_FIELDS[ $f ] ) || $ours[ $f ] === (string) $v ) {
+				continue;
+			}
+			if ( '' === (string) $v ) {
+				delete_post_meta( $pid, self::CODE_FIELDS[ $f ] );
+			} else {
+				update_post_meta( $pid, self::CODE_FIELDS[ $f ], (string) $v );
+			}
 		}
 
 		return array( 'result' => 'updated', 'label' => $label, 'message' => '' );
@@ -1113,6 +1379,9 @@ final class CX_Sidrena_Import {
 				),
 				'counts'      => $p['counts'],
 				'has_lowest'  => $p['has_lowest'],
+				'has_bazna'   => $p['has_bazna'],
+				'has_codes'   => $p['has_codes'],
+				'consent'     => self::consent_text( $p ),
 				'dates_saved' => CX_Sidrena_Dates::dates_saved(),
 			)
 		);
@@ -1221,9 +1490,10 @@ final class CX_Sidrena_Import {
 		$f = CX_Sidrena_Feed_Files::instance();
 
 		return "\xEF\xBB\xBF"
-			. $f->csv_line( array( 'SKU', 'Product name', 'Bazna cijena', 'Date', 'Lowest price in 30 days' ) )
-			. $f->csv_line( array( 'EXAMPLE-1', 'Example product', '19,90', '10.9.2026.', '' ) )
-			. $f->csv_line( array( 'EXAMPLE-2-M', 'Example product 2 – M', '24,00', '', '' ) );
+			. $f->csv_line( array( 'SKU', 'Product name', 'Bazna cijena', 'Date', 'Lowest price in 30 days', 'Brand', 'EAN', 'Barcode' ) )
+			// Brand, EAN and Barcode empty (Norman T1): an example EAN would be a made-up code (CX-SID-122).
+			. $f->csv_line( array( 'EXAMPLE-1', 'Example product', '19,90', '10.9.2026.', '', '', '', '' ) )
+			. $f->csv_line( array( 'EXAMPLE-2-M', 'Example product 2 – M', '24,00', '', '', '', '', '' ) );
 	}
 
 	/**

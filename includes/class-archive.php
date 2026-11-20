@@ -1,6 +1,6 @@
 <?php
 /**
- * Legal filenames and the 30-day public archive.
+ * Legal filenames and the public archive (current price lists, and replaced ones for 15 days).
  *
  * @package CX_Sidrena
  */
@@ -8,7 +8,7 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Legal filenames and the 30-day public archive.
+ * Legal filenames and the public archive (current price lists, and replaced ones for 15 days).
  */
 class CX_Sidrena_Archive {
 
@@ -18,9 +18,11 @@ class CX_Sidrena_Archive {
 	const LEGAL_TIMEZONE = 'Europe/Zagreb';
 
 	/**
-	 * Days before the newest file of a price list that its files stay public (nacrt 10332 čl. 3 st. 5).
+	 * Days a replaced file of a price list stays public after the day it was replaced, on the legal clock (NN 132/2026-1584
+	 * art. 3(6): "osigurava dostupnost arhivskog cjenika 15 dana od njegove zamjene važećim cjenikom"; CX-SID-158). The
+	 * current file is always public. Until 0.3.0 this was 30 days before the price list's newest file (the draft 10332).
 	 */
-	const PUBLIC_DAYS = 30;
+	const PUBLIC_DAYS = 15;
 
 	/**
 	 * Folder of the kept files: uploads/cx-sidrena/cuvano-<random>, out of public reach.
@@ -100,12 +102,32 @@ class CX_Sidrena_Archive {
 	}
 
 	/**
+	 * A price list time on the owner's screens (Status, Settings, wp cx-sidrena check): "today at 07:12" or
+	 * "on 14.11.2026. at 07:12", the day and the time on the legal clock, so the number is the one in the file name and
+	 * in "Updated" on the public page (CX-SID-59). No zone in the text (Hrvoje, 3473). The other WordPress times in
+	 * admin stay on the site's settings.
+	 *
+	 * @param int      $timestamp Unix time.
+	 * @param int|null $now       Unix time whose day is "today", null = now.
+	 * @return string
+	 */
+	public static function legal_when( $timestamp, $now = null ) {
+		if ( self::legal_date( 'Y-m-d', $timestamp ) === self::legal_date( 'Y-m-d', $now ) ) {
+			/* translators: %s: time, e.g. 07:12 */
+			return sprintf( __( 'today at %s', 'cx-sidrena' ), self::legal_date( 'H:i', $timestamp ) );
+		}
+		/* translators: 1: date, 2: time */
+		return sprintf( __( 'on %1$s at %2$s', 'cx-sidrena' ), self::legal_date( 'j.n.Y.', $timestamp ), self::legal_date( 'H:i', $timestamp ) );
+	}
+
+	/**
 	 * Name of a price list file by the Pravilnik o cjeniku (NN 132/2026-1584, art. 6(3)):
 	 * [OIB_]oblik_adresa_oznaka_ROBA|USLUGA_pohrana_GGGGMMDD_SSMM.xml, e.g.
 	 * 12345678903_prodavaonica_Ilica 150 Zagreb_P-01_ROBA_104_20261001_0745.xml
 	 *
-	 * The OIB (or registration number) first when the shop has one (Settings::legal_id()); without it the part is left
-	 * out and the price list still goes out (CX-SID-110). Spaces, hyphens and the typed case stay. Date and time on the
+	 * The OIB (or registration number) first (Settings::legal_id()). Without it nothing new is published (CX-SID-159,
+	 * CX_Sidrena_Export::waiting_for_legal_id()), so no file is made with the part left out; files named so before stay as
+	 * they are. Spaces, hyphens and the typed case stay. Date and time on the
 	 * legal clock (legal_timezone), with no separator, so no disk needs another name.
 	 *
 	 * @param string              $format    xml|csv.
@@ -123,7 +145,9 @@ class CX_Sidrena_Archive {
 		$dt->setTimezone( $tz );
 
 		if ( is_array( $outlet ) ) {
-			$oblik  = $settings->sanitize_file_part( isset( $outlet['oblik'] ) ? $outlet['oblik'] : '', 'webshop' );
+			// A place's own kind and address, never the webshop's (CX-SID-74, Kai D2 and N5; art. 6(3) of
+			// NN 132/2026-1584): a place saved before 0.3.0 without them has that part empty, and Status says so.
+			$oblik  = $settings->sanitize_file_part( isset( $outlet['oblik'] ) ? $outlet['oblik'] : '', '' );
 			$adresa = $settings->sanitize_file_part( isset( $outlet['adresa'] ) ? $outlet['adresa'] : '', '' );
 			$oznaka = $settings->normalize_oznaka( isset( $outlet['oznaka'] ) ? $outlet['oznaka'] : '' );
 		} else {
@@ -135,7 +159,7 @@ class CX_Sidrena_Archive {
 		// "Next official name" and the field next to it show the same number (proposal 2923 point 3; Norman, 119).
 		$seq = $pohrana > 0 ? (int) $pohrana : $this->next_pohrana( $this->scope_oznaka( $outlet ), $outlet );
 
-		if ( '' === $adresa ) {
+		if ( '' === $adresa && ! is_array( $outlet ) ) {
 			$adresa = $settings->sanitize_file_part( $settings->default_file_address(), 'webshop' );
 		}
 		if ( '' === $oznaka ) {
@@ -301,7 +325,7 @@ class CX_Sidrena_Archive {
 		if ( '' === $live ) {
 			$live = $ff->get_public_path( $format, is_array( $outlet ) && isset( $outlet['oznaka'] ) ? $outlet['oznaka'] : '', $vrsta );
 		}
-		$newest = $this->newest_file( $oznaka, $vrsta );
+		$newest = $this->newest_of_list( $outlet, $vrsta, $timestamp );
 
 		if ( null !== $newest && $this->is_current( $newest, $body, $format, $outlet, $timestamp, $vrsta ) ) {
 			if ( ! file_exists( $live ) || hash_file( 'sha256', $live ) !== hash_file( 'sha256', $newest['path'] ) ) {
@@ -343,7 +367,7 @@ class CX_Sidrena_Archive {
 		// saved while it ran (an OIB, an address, an outlet's products) stays (CX-SID-119 dopuna).
 		$this->raise_pohrana( is_array( $outlet ) && isset( $outlet['id'] ) ? $outlet['id'] : '', $pohrana + 1 );
 
-		// The new file can push older ones out of the public 30 days.
+		// The new file replaces the one before it: files replaced more than 15 days ago leave the public archive.
 		$this->move_old();
 
 		return array(
@@ -456,6 +480,52 @@ class CX_Sidrena_Archive {
 		foreach ( $this->get_archive_files() as $file ) {
 			$p = $this->parse_name( $file['name'] );
 			if ( null !== $p && $p['oznaka'] === $oznaka && $p['vrsta'] === $vrsta ) {
+				return $file;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Newest archive file of this price list, the one a build compares with: the newest of its code and kind, but in a
+	 * collision of codes (a place MJDD left with the webshop's code) not one with the kind and address the other list
+	 * writes (CX-SID-143). Without that, each build compared with the other list's file and left a new file of a price
+	 * list that had not changed. Without a collision, or when both write the same kind and address, as newest_file().
+	 *
+	 * @param array<string, mixed>|null $outlet    Outlet, or null for the webshop.
+	 * @param string                    $vrsta     proizvod|usluga.
+	 * @param int                       $timestamp Time of the build (for the names compared).
+	 * @return array<string, mixed>|null
+	 */
+	private function newest_of_list( $outlet, $vrsta, $timestamp ) {
+		$oznaka = $this->scope_oznaka( $outlet );
+		$other  = false;
+		if ( is_array( $outlet ) ) {
+			if ( $oznaka === $this->scope_oznaka( null ) ) {
+				$other = null; // the webshop's list
+			}
+		} else {
+			$place = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );
+			if ( is_array( $place ) ) {
+				$other = $place;
+			}
+		}
+		if ( false === $other ) {
+			return $this->newest_file( $oznaka, $vrsta );
+		}
+
+		$pair   = function ( $scope ) use ( $timestamp, $vrsta ) {
+			$p = $this->parse_name( $this->legal_filename( '', $timestamp, 1, $scope, $vrsta ) );
+			return null === $p ? '' : $p['oblik'] . "\0" . $p['adresa'];
+		};
+		$theirs = $pair( $other );
+		if ( $theirs === $pair( $outlet ) ) {
+			return $this->newest_file( $oznaka, $vrsta );
+		}
+		foreach ( $this->get_archive_files() as $file ) {
+			$p = $this->parse_name( $file['name'] );
+			if ( null !== $p && $p['oznaka'] === $oznaka && $p['vrsta'] === $vrsta && $p['oblik'] . "\0" . $p['adresa'] !== $theirs ) {
 				return $file;
 			}
 		}
@@ -665,40 +735,137 @@ class CX_Sidrena_Archive {
 			);
 		}
 
-		usort(
-			$files,
-			function ( $a, $b ) {
-				$cmp = $b['stamp'] <=> $a['stamp'];
-				if ( 0 !== $cmp ) {
-					return $cmp;
-				}
-				// Two files in the same minute: the higher storage number is the later one ("_10_" sorts before "_9_").
-				$cmp = $this->archive_pohrana_from_name( $b['name'] ) <=> $this->archive_pohrana_from_name( $a['name'] );
-				if ( 0 !== $cmp ) {
-					return $cmp;
-				}
-
-				return strcmp( $b['name'], $a['name'] );
-			}
-		);
+		usort( $files, array( $this, 'compare_newest_first' ) );
 
 		return $files;
 	}
 
 	/**
-	 * Archive bucket: object code from the legal filename, or legacy for older names.
+	 * Order of archive files, newest first: by time; two files in the same minute by storage number, the higher is the
+	 * later one ("_10_" sorts before "_9_"); then by name.
 	 *
-	 * @param string $name Basename.
-	 * @return string
+	 * @param array<string, mixed> $a File.
+	 * @param array<string, mixed> $b File.
+	 * @return int
 	 */
-	public function archive_group_key( $name ) {
-		$p = $this->parse_name( $name );
-		if ( null === $p || '' === $p['oznaka'] ) {
-			return 'legacy';
+	public function compare_newest_first( $a, $b ) {
+		$cmp = (int) $b['stamp'] <=> (int) $a['stamp'];
+		if ( 0 !== $cmp ) {
+			return $cmp;
+		}
+		$cmp = $this->archive_pohrana_from_name( $b['name'] ) <=> $this->archive_pohrana_from_name( $a['name'] );
+		if ( 0 !== $cmp ) {
+			return $cmp;
 		}
 
-		// Goods keep the group of the files from before the Pravilnik, so those leave the public 30 days as before.
-		return 'oznaka:' . $p['oznaka'] . ( 'usluga' === $p['vrsta'] ? ':usluge' : '' );
+		return strcmp( $b['name'], $a['name'] );
+	}
+
+	/**
+	 * Archive bucket of a file, the price list it is a file of (public_files()): its owner's (file_owner()), goods and
+	 * services apart, or legacy for names without a code. Goods keep the group of the files from before the Pravilnik.
+	 *
+	 * @param string     $name Basename.
+	 * @param array|null $ctx  owner_context(), null = now.
+	 * @return string webshop[:usluge] | place:<code>[:usluge] | oznaka:<code>[:usluge] | legacy
+	 */
+	public function archive_group_key( $name, $ctx = null ) {
+		return $this->owner_group_key( $this->file_owner( $name, $ctx ) );
+	}
+
+	/**
+	 * @param array{owner: string, code: string, vrsta: string} $o file_owner().
+	 * @return string
+	 */
+	private function owner_group_key( $o ) {
+		if ( 'legacy' === $o['owner'] ) {
+			return 'legacy';
+		}
+		$key = 'webshop' === $o['owner'] ? 'webshop' : ( 'place' === $o['owner'] ? 'place:' : 'oznaka:' ) . $o['code'];
+
+		return $key . ( 'usluga' === $o['vrsta'] ? ':usluge' : '' );
+	}
+
+	/**
+	 * Who can have written a file now, for file_owner() (CX-SID-143): the webshop's code, and for the webshop and each
+	 * place (by its code) the kind and address pairs its names can carry. That is the pair it writes now and the ones it
+	 * wrote before its kind or address was set: until 0.3.0 a missing kind was "webshop" and a missing address the
+	 * shop's (default_file_address()), for the webshop and the places alike. Pair = kind "\0" address, as in the name.
+	 * Built per call, as settings and places change; pass it to file_owner() for a whole list.
+	 *
+	 * @return array{web: string, web_pairs: array<string, bool>, places: array<string, array<string, bool>>}
+	 */
+	public function owner_context() {
+		$settings = CX_Sidrena_Settings::instance();
+		$default  = $settings->sanitize_file_part( $settings->default_file_address(), 'webshop' );
+		$pairs    = static function ( $oblik, $adresa ) use ( $default ) {
+			$out = array( $oblik . "\0" . $adresa => true );
+			foreach ( array( $oblik, 'webshop' ) as $o ) {
+				foreach ( array( $adresa, $default ) as $a ) {
+					if ( '' !== $o && '' !== $a ) {
+						$out[ $o . "\0" . $a ] = true;
+					}
+				}
+			}
+			return $out;
+		};
+
+		$places = array();
+		foreach ( CX_Sidrena_Poslovnice::instance()->all() as $row ) {
+			$places[ (string) $row['oznaka'] ] = $pairs(
+				$settings->sanitize_file_part( isset( $row['oblik'] ) ? $row['oblik'] : '', '' ),
+				$settings->sanitize_file_part( isset( $row['adresa'] ) ? $row['adresa'] : '', '' )
+			);
+		}
+		$adresa = $settings->sanitize_file_part( $settings->get( 'file_adresa', '' ), '' );
+
+		return array(
+			'web'       => $this->scope_oznaka( null ),
+			'web_pairs' => $pairs( $settings->sanitize_file_part( $settings->get( 'file_oblik', 'webshop' ), 'webshop' ), '' !== $adresa ? $adresa : $default ),
+			'places'    => $places,
+		);
+	}
+
+	/**
+	 * Whose an archive file is (CX-SID-143; art. 6(3) of NN 132/2026-1584: the kind and address in the name say whose
+	 * it is). The names never change (art. 3(6)): after the webshop takes another code, its old files keep the old one.
+	 * - A code no place has: the webshop's when it is the webshop's code, else only that code's (an old code, a
+	 *   deleted place: as before 0.3.1).
+	 * - A code a place has: the webshop's when only the webshop can have written its kind and address (an old code of
+	 *   the webshop's, or the webshop in a collision with a place MJDD left with its code); the place's otherwise (also
+	 *   under an earlier address of the place, which is not kept). A file both could have written (for example
+	 *   "webshop" and the shop's address, which a place without kind and address wrote until 0.3.0) is attributed to
+	 *   neither under the webshop's code or 001 (MJDD's code for a place without one): only that code's (Kai 143,
+	 *   decision e: a wrongly attributed price is worse than a neutral heading). Under another code of a place it stays
+	 *   the place's, as before.
+	 *
+	 * @param string     $name Basename.
+	 * @param array|null $ctx  owner_context(), null = now.
+	 * @return array{owner: string, code: string, vrsta: string} owner webshop|place|oznaka (only the code's)|legacy.
+	 */
+	public function file_owner( $name, $ctx = null ) {
+		$p    = $this->parse_name( $name );
+		$code = null === $p ? '' : CX_Sidrena_Settings::instance()->normalize_oznaka( (string) $p['oznaka'] );
+		if ( '' === $code ) {
+			return array( 'owner' => 'legacy', 'code' => '', 'vrsta' => 'proizvod' );
+		}
+		$ctx  = null === $ctx ? $this->owner_context() : $ctx;
+		$out  = array( 'owner' => 'oznaka', 'code' => $code, 'vrsta' => $p['vrsta'] );
+		if ( ! isset( $ctx['places'][ $code ] ) ) {
+			$out['owner'] = $code === $ctx['web'] ? 'webshop' : 'oznaka';
+			return $out;
+		}
+
+		$pair  = $p['oblik'] . "\0" . $p['adresa'];
+		$web   = isset( $ctx['web_pairs'][ $pair ] );
+		$place = isset( $ctx['places'][ $code ][ $pair ] );
+		if ( $web && $place ) {
+			$out['owner'] = $code === $ctx['web'] || '001' === $code ? 'oznaka' : 'place';
+		} else {
+			$out['owner'] = $web ? 'webshop' : 'place';
+		}
+
+		return $out;
 	}
 
 	/**
@@ -865,28 +1032,49 @@ class CX_Sidrena_Archive {
 	}
 
 	/**
-	 * Archive files the public sees: of each price list (object code), every file from the 30 days before its newest
-	 * one. The anchor is the last publication, not today, so nothing goes while a shop publishes nothing. Names from
-	 * before the legal names have no code: their anchor is the newest file of the shop. Newest first.
+	 * Archive files the public sees (CX-SID-158, art. 3(6) of NN 132/2026-1584): of each price list (its owner,
+	 * archive_group_key()) the current file, its newest, and every file replaced less than PUBLIC_DAYS days ago. A file is
+	 * replaced by the next file of its price list, and stays public to the end of the 15th day after the day of that:
+	 * whole calendar days on the legal clock, as the law counts (across the spring clock change an hour less than 15 x 24
+	 * hours). Nothing goes while a price list gets no new file: its current file is the price list. A file of only its code (143, decision e) is replaced by the next file of that code and kind, whoever
+	 * wrote it; a name from before the legal names (no code) by the next file of the shop. Newest first.
 	 *
 	 * @param array<int, array<string, mixed>>|null $files Archive files, null = all in the archive folder.
+	 * @param int|null                              $now   Unix time, null = now.
 	 * @return array<int, array<string, mixed>>
 	 */
-	public function public_files( $files = null ) {
-		$files  = null === $files ? $this->get_archive_files() : $files;
-		$newest = array();
-		$all    = 0;
-		foreach ( $files as $file ) {
-			$key            = $this->archive_group_key( $file['name'] );
-			$newest[ $key ] = max( isset( $newest[ $key ] ) ? $newest[ $key ] : 0, (int) $file['stamp'] );
-			$all            = max( $all, (int) $file['stamp'] );
+	public function public_files( $files = null, $now = null ) {
+		$files = null === $files ? $this->get_archive_files() : $files;
+		$now   = null === $now ? time() : (int) $now;
+		$ctx   = $this->owner_context();
+		$order = array_keys( $files );
+		usort(
+			$order,
+			function ( $a, $b ) use ( $files ) {
+				return $this->compare_newest_first( $files[ $a ], $files[ $b ] );
+			}
+		);
+
+		// Newest to oldest: per price list, the file seen just before is the next newer one, the one that replaced this one.
+		$next = array();
+		$keep = array();
+		foreach ( $order as $i ) {
+			$file    = $files[ $i ];
+			$o       = $this->file_owner( $file['name'], $ctx );
+			$key     = $this->owner_group_key( $o );
+			$by_code = 'legacy' === $key ? $key : $this->owner_group_key( array( 'owner' => 'oznaka' ) + $o );
+			$list    = 'legacy' === $key ? '*' : ( 'oznaka' === $o['owner'] ? $by_code : $key );
+			if ( ! isset( $next[ $list ] ) || $now < $this->public_until( $next[ $list ] ) ) {
+				$keep[ $i ] = true;
+			}
+			foreach ( array_unique( array( $key, $by_code, '*' ) ) as $k ) {
+				$next[ $k ] = (int) $file['stamp'];
+			}
 		}
 
 		$out = array();
-		foreach ( $files as $file ) {
-			$key    = $this->archive_group_key( $file['name'] );
-			$anchor = 'legacy' === $key ? $all : $newest[ $key ];
-			if ( (int) $file['stamp'] >= $this->window_start( $anchor ) ) {
+		foreach ( $files as $i => $file ) {
+			if ( isset( $keep[ $i ] ) ) {
 				$out[] = $file;
 			}
 		}
@@ -911,16 +1099,16 @@ class CX_Sidrena_Archive {
 	}
 
 	/**
-	 * Midnight (legal clock) of the first public day for a newest file at $anchor.
+	 * Until when a file replaced at $replaced is public: midnight (legal clock) after the 15th day after that day.
 	 *
-	 * @param int $anchor Unix time of the newest file.
+	 * @param int $replaced Unix time of the file that replaced it.
 	 * @return int
 	 */
-	private function window_start( $anchor ) {
-		$day = new DateTime( '@' . (int) $anchor );
+	private function public_until( $replaced ) {
+		$day = new DateTime( '@' . (int) $replaced );
 		$day->setTimezone( self::legal_timezone() );
 		$day->setTime( 0, 0, 0 );
-		$day->modify( '-' . self::PUBLIC_DAYS . ' days' );
+		$day->modify( '+' . ( self::PUBLIC_DAYS + 1 ) . ' days' );
 
 		return $day->getTimestamp();
 	}
@@ -1196,7 +1384,7 @@ class CX_Sidrena_Archive {
 	}
 
 	/**
-	 * The morning's upkeep: files out of the public 30 days are kept, kept files past their period go.
+	 * The morning's upkeep: files no longer public are kept, kept files past their period go.
 	 */
 	public function maintain() {
 		$this->move_old();
@@ -1240,8 +1428,10 @@ class CX_Sidrena_Archive {
 	/**
 	 * File list for the [sidrena-arhiva] shortcode. Name and date only.
 	 *
-	 * An oznaka keeps files for that object code. Names the parser does not
-	 * recognize stay in the unfiltered list only.
+	 * An oznaka keeps the files of whoever has that code (file_owner(), CX-SID-143): the webshop's code its files, also
+	 * those under an old code of its; a place's code the place's files. A code that the webshop and a place both have
+	 * keeps every file with it, as the code cannot say whose list is asked for; a code nobody has, its files. Names the
+	 * parser does not recognize stay in the unfiltered list only.
 	 *
 	 * @param string $oznaka Object code, empty for every file.
 	 * @return string
@@ -1250,10 +1440,16 @@ class CX_Sidrena_Archive {
 		$files  = $this->public_files();
 		$oznaka = CX_Sidrena_Settings::instance()->normalize_oznaka( $oznaka );
 		if ( '' !== $oznaka ) {
+			$ctx     = $this->owner_context();
+			$both    = $oznaka === $ctx['web'] && isset( $ctx['places'][ $oznaka ] );
+			$want    = $oznaka === $ctx['web'] ? 'webshop' : ( isset( $ctx['places'][ $oznaka ] ) ? 'place' : 'oznaka' );
 			$matched = array();
 			foreach ( $files as $file ) {
-				$name = isset( $file['name'] ) ? (string) $file['name'] : '';
-				if ( $this->archive_file_oznaka( $name ) === $oznaka ) {
+				$o = $this->file_owner( isset( $file['name'] ) ? (string) $file['name'] : '', $ctx );
+				if ( 'legacy' === $o['owner'] ) {
+					continue;
+				}
+				if ( $both ? $o['code'] === $oznaka : ( $o['owner'] === $want && ( 'webshop' === $want || $o['code'] === $oznaka ) ) ) {
 					$matched[] = $file;
 				}
 			}

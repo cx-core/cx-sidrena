@@ -28,7 +28,38 @@ span.price .sidrena-cijena,
 	margin-top: 0.35em;
 }
 
-/* Caption under the struck amount: tied to it (no more than 2 px between), a little smaller than the bazna line. */
+/* The unit price (CX-SID-38, Norman SPEC §3.3): between the sale's own text and the bazna line, and it looks exactly
+ * like the bazna line (size relative to the price, weight 400, never struck). Its colour and font: below, as both lines. */
+.cx-sidrena-jm,
+p.price .cx-sidrena-jm,
+.price .cx-sidrena-jm,
+span.price .cx-sidrena-jm {
+	display: block;
+	position: relative;
+	margin-top: 0.35em;
+	font-size: 0.8em !important;
+	font-weight: 400 !important;
+	line-height: 1.4;
+	text-decoration: none !important;
+}
+
+/* What a screen reader says before the amount ("Cijena za jedinicu mjere:"), hidden on screen. Our own class: a theme's
+ * screen-reader-text may be missing or styled otherwise. */
+.cx-sidrena-sr {
+	position: absolute !important;
+	width: 1px !important;
+	height: 1px !important;
+	padding: 0 !important;
+	margin: -1px !important;
+	overflow: hidden !important;
+	clip: rect(0, 0, 0, 0) !important;
+	clip-path: inset(50%) !important;
+	white-space: nowrap !important;
+	border: 0 !important;
+}
+
+/* The lowest price in 30 days under the price (CX-SID-179): tied to it (no more than 2 px between), a little smaller
+   than the bazna line. */
 .bazna-najniza30 {
 	display: block;
 	margin-top: 2px;
@@ -75,7 +106,14 @@ span.price .lowest_price {
 .sidrena-cijena .amount,
 .sidrena-cijena bdi,
 p.price .sidrena-cijena .woocommerce-Price-amount.amount,
-.elementor-widget-woocommerce-product-price .sidrena-cijena .woocommerce-Price-amount {
+.elementor-widget-woocommerce-product-price .sidrena-cijena .woocommerce-Price-amount,
+.cx-sidrena-jm .woocommerce-Price-amount,
+.cx-sidrena-jm .amount,
+.bazna-najniza30 .woocommerce-Price-amount,
+.bazna-najniza30 .amount,
+.bazna-najniza30 bdi,
+.cx-sidrena-jm bdi,
+p.price .cx-sidrena-jm .woocommerce-Price-amount.amount {
 	font-size: inherit !important;
 	font-weight: inherit !important;
 	color: inherit !important;
@@ -85,7 +123,9 @@ p.price .sidrena-cijena .woocommerce-Price-amount.amount,
 /* The currency symbol in a line sits on the line, at the line's size (CX-SID-101): a theme may shrink and raise the
  * symbol of its prices (one: ".product-summary .woocommerce-Price-currencySymbol {font-size: .75em; vertical-align: top}"),
  * and that rule reached the symbol in our line. :not(#cx-sidrena-none) counts as an id: see the colour rules below. */
-.sidrena-cijena:not(#cx-sidrena-none) .woocommerce-Price-currencySymbol {
+.sidrena-cijena:not(#cx-sidrena-none) .woocommerce-Price-currencySymbol,
+.bazna-najniza30:not(#cx-sidrena-none) .woocommerce-Price-currencySymbol,
+.cx-sidrena-jm:not(#cx-sidrena-none) .woocommerce-Price-currencySymbol {
 	font-size: inherit !important;
 	vertical-align: baseline !important;
 }
@@ -103,19 +143,23 @@ p.price .sidrena-cijena .woocommerce-Price-amount.amount,
  * one (a theme's price rules reach our spans: one gives "span.price span" its own font with !important).
  */
 .sidrena-cijena:not(#cx-sidrena-none),
-.bazna-najniza30:not(#cx-sidrena-none) {
+.bazna-najniza30:not(#cx-sidrena-none),
+.cx-sidrena-jm:not(#cx-sidrena-none) {
 	color: rgba(0, 0, 0, 0.6) !important;
 	color: var(--cx-sidrena-own, var(--cx-sidrena-text-75, rgba(0, 0, 0, 0.6))) !important;
 	font-family: var(--cx-sidrena-font) !important;
 }
 
 .sidrena-cijena.cx-sidrena-solid:not(#cx-sidrena-none),
-.bazna-najniza30.cx-sidrena-solid:not(#cx-sidrena-none) {
+.bazna-najniza30.cx-sidrena-solid:not(#cx-sidrena-none),
+.cx-sidrena-jm.cx-sidrena-solid:not(#cx-sidrena-none) {
 	color: var(--cx-sidrena-own, var(--cx-sidrena-text, rgba(0, 0, 0, 0.6))) !important;
 }
 
 .sidrena-cijena:not(#cx-sidrena-none) .sidrena-cijena__text,
-.sidrena-cijena:not(#cx-sidrena-none) .sidrena-cijena__text * {
+.sidrena-cijena:not(#cx-sidrena-none) .sidrena-cijena__text *,
+.bazna-najniza30:not(#cx-sidrena-none) *,
+.cx-sidrena-jm:not(#cx-sidrena-none) * {
 	color: inherit !important;
 	font-family: inherit !important;
 }

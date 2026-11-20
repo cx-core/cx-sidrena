@@ -41,7 +41,7 @@ class CX_Sidrena_Export {
 	const AWAIT_BAZNA      = 'cx_sidrena_await_bazna';
 	// The columns of the public files (CX_Sidrena_Feed_Files::COLUMNS_*). Every build stores it in the public meta; a
 	// shop whose meta has another one (an update) gets one rebuild on the next visit, not at 00:05 (CX-SID-109).
-	const FEED_LAYOUT      = '88'; // 88: poseban oblik as the page shows it (CX-SID-88) and the table in the shop's language (CX-SID-121), rebuilt right after the update to 0.2.3
+	const FEED_LAYOUT      = '030'; // 030: the 0.3.0 rules (every sale DA 179, places 74, services 75/130/138, brand and EAN 122, tax 160, unit price 38), rebuilt right after the update to 0.3.0; before: 88 (0.2.3)
 
 	/**
 	 * Singleton.
@@ -369,7 +369,8 @@ class CX_Sidrena_Export {
 
 	public function run_daily_regenerate() {
 		$this->regenerate_public_xml();
-		// Also when the build failed: files past the public 30 days are kept, kept files past their period go.
+		// Also when the build failed: files no longer public (replaced more than 15 days ago) are kept, kept files past
+		// their period go.
 		CX_Sidrena_Archive::instance()->maintain();
 	}
 
@@ -417,9 +418,10 @@ class CX_Sidrena_Export {
 
 	/**
 	 * What the owner is told about a build's result (Settings ?sidrena_xml=, Status ?cx_updated=):
-	 * '1' built, 'b2b' nothing to publish, 'nobazna' the first price list waits for the first bazna (CX-SID-68), 'busy'
-	 * another build was running (this one comes after it), '2' no outlet has products, '0' a file or folder could not be
-	 * written (the uploads folder), 'fail' any other failure.
+	 * '1' built, 'b2b' nothing to publish, 'nobazna' the first price list waits for the first bazna (CX-SID-68), 'nooib'
+	 * no OIB or MBO, so nothing is published (CX-SID-159), 'busy' another build was running (this one comes after it),
+	 * '2' no outlet has products, '0' a file or folder could not be written (the uploads folder), 'fail' any other
+	 * failure.
 	 *
 	 * @param array<string, mixed>|WP_Error $result The build's result.
 	 * @return string
@@ -433,6 +435,7 @@ class CX_Sidrena_Export {
 		$flags = array(
 			'sidrena_b2b_only'          => 'b2b',
 			'sidrena_no_bazna'          => 'nobazna',
+			'sidrena_no_legal_id'       => 'nooib',
 			'sidrena_xml_busy'          => 'busy',
 			'sidrena_poslovnice_empty'  => '2',
 			'sidrena_xml_uploads'       => '0',
@@ -596,7 +599,8 @@ class CX_Sidrena_Export {
 	/**
 	 * After a build: a failure queues its retry in 5, then 15 minutes, then every hour until one succeeds; a success
 	 * clears the count (CX-SID-119). Not a failure: busy (it is queued), B2B (nothing to publish), no outlet products,
-	 * no bazna yet (CX-SID-68: the first bazna queues the build, as every product change does).
+	 * no bazna yet (CX-SID-68: the first bazna queues the build, as every product change does), no OIB or MBO
+	 * (CX-SID-159: saving it in Settings queues the build; a retry would only be refused again, for ever).
 	 *
 	 * @param array<string, mixed>|WP_Error $result The build's result.
 	 */
@@ -606,7 +610,7 @@ class CX_Sidrena_Export {
 			return;
 		}
 
-		if ( in_array( $result->get_error_code(), array( 'sidrena_b2b_only', 'sidrena_no_bazna', 'sidrena_poslovnice_empty', 'sidrena_xml_busy' ), true ) ) {
+		if ( in_array( $result->get_error_code(), array( 'sidrena_b2b_only', 'sidrena_no_bazna', 'sidrena_no_legal_id', 'sidrena_poslovnice_empty', 'sidrena_xml_busy' ), true ) ) {
 			return;
 		}
 
@@ -640,6 +644,10 @@ class CX_Sidrena_Export {
 
 			if ( file_exists( $this->get_public_path( $this->export_format(), $oznaka ) ) ) {
 				return true;
+			}
+
+			if ( CX_Sidrena_Feed_Routes::instance()->outlet_has_nothing( $oznaka ) ) {
+				return true; // nothing to publish: the address answers 404 with the reason (CX-SID-74, N4)
 			}
 
 			return $this->regenerate_one_outlet( $oznaka );
@@ -711,6 +719,13 @@ class CX_Sidrena_Export {
 			return $this->b2b_no_price_list();
 		}
 
+		// No OIB or MBO: nothing is built and nothing is written (CX-SID-159, waiting_for_legal_id()).
+		if ( $this->waiting_for_legal_id() ) {
+			$result = $this->no_legal_id();
+			$this->after_build( $result );
+			return $result;
+		}
+
 		if ( ! $this->acquire_rebuild_lock() ) {
 			return $this->busy();
 		}
@@ -765,6 +780,7 @@ class CX_Sidrena_Export {
 			if ( is_wp_error( $result ) ) {
 				return $result;
 			}
+			CX_Sidrena_Feed_Files::instance()->remove_other_places_live( array() ); // the last place was deleted (CX-SID-74, N6)
 
 			update_option( self::PUBLIC_OPTION, $result + array( 'layout' => self::FEED_LAYOUT ) );
 			delete_option( self::AWAIT_BAZNA );
@@ -807,16 +823,34 @@ class CX_Sidrena_Export {
 			$total  += (int) $web['count'];
 			$latest  = max( $latest, (int) $web['generated'] );
 
+			$built = array();
 			foreach ( CX_Sidrena_Poslovnice::instance()->with_products() as $outlet ) {
 				$rows   = isset( $scoped[ $outlet['oznaka'] ] ) ? $scoped[ $outlet['oznaka'] ] : null;
 				$result = $this->write_outlet_feed( $outlet, $stored, $rows );
 				if ( is_wp_error( $result ) ) {
 					return $result;
 				}
-				$stored[ $outlet['oznaka'] ] = $result;
-				$total                      += (int) $result['count'];
-				$latest                      = max( $latest, (int) $result['generated'] );
+				$built[ $outlet['oznaka'] ] = $result;
+				$total                     += (int) $result['count'];
+				$latest                     = max( $latest, (int) $result['generated'] );
 			}
+			// A place with only rows by agreement (CX-SID-76) has its page and no file, not even an empty one, and no entry
+			// (CX-SID-145, Kai 3338): only its HTML is written, and its live XML/CSV from when it had products go (its
+			// archive stays, art. 3(6)).
+			$pages = array();
+			foreach ( CX_Sidrena_Poslovnice::instance()->with_pages() as $outlet ) {
+				if ( isset( $built[ $outlet['oznaka'] ] ) ) {
+					continue;
+				}
+				$html = CX_Sidrena_Feed_Files::instance()->write_cjenik_html( array(), $outlet['oznaka'] );
+				if ( is_wp_error( $html ) ) {
+					return $html;
+				}
+				$pages[] = $outlet['oznaka'];
+			}
+			// A place that is gone, renamed or has nothing to publish has no live files and no entry (CX-SID-74, N6).
+			$stored = $built;
+			CX_Sidrena_Feed_Files::instance()->remove_other_places_live( array_keys( $built ), $pages );
 
 			$meta = array(
 				'generated' => $latest > 0 ? $latest : time(),
@@ -848,6 +882,10 @@ class CX_Sidrena_Export {
 	private function regenerate_one_outlet( $oznaka ) {
 		if ( CX_Sidrena_Settings::instance()->is_b2b_only() ) {
 			return $this->b2b_no_price_list();
+		}
+
+		if ( $this->waiting_for_legal_id() ) {
+			return $this->no_legal_id(); // CX-SID-159, as regenerate_public_xml()
 		}
 
 		$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );
@@ -970,6 +1008,45 @@ class CX_Sidrena_Export {
 	}
 
 	/**
+	 * Whether nothing is published because the shop has no OIB or MBO (CX-SID-159). The Pravilnik puts it in every file's
+	 * name, NN 132/2026-1584 art. 6(3): »Naziv datoteke iz stavka 1. ovoga članka uključuje osobni identifikacijski broj
+	 * kada je riječ o trgovcu – pravnoj osobi, odnosno matični broj kada je riječ o trgovcu – fizičkoj osobi, […]«.
+	 * Without it no file is made (we do not invent a stand-in), for the webshop or a place: no XML or CSV, no archive
+	 * file, no HTML table. What was published stays as it is (Rook, 3587): the live file, the HTML table, the archive and
+	 * the permanent address; nothing is removed, also not after a format switch or a new place (those remove only after a
+	 * build). legal_id() is '' for an empty field and for a value written past save() that may not be stored; a number
+	 * saved with a warning (MIBPG, an MBO with a wrong check digit, another length) is used, as before (CX-SID-110).
+	 * Saving the number in Settings changes the name, so a build is queued within a minute (CX_Sidrena_Admin_Save).
+	 * A B2B shop publishes nothing anyway and is not waiting.
+	 *
+	 * @return bool
+	 */
+	public function waiting_for_legal_id() {
+		$settings = CX_Sidrena_Settings::instance();
+
+		return ! $settings->is_b2b_only() && '' === $settings->legal_id();
+	}
+
+	/**
+	 * A build refused for the missing OIB or MBO (CX-SID-159): nothing is cleared, nothing is queued.
+	 *
+	 * @return WP_Error
+	 */
+	private function no_legal_id() {
+		return new WP_Error( 'sidrena_no_legal_id', self::no_legal_id_message() );
+	}
+
+	/**
+	 * What the owner reads after "Update now" or "Save and generate now" without an OIB or MBO (CX-SID-159), and the
+	 * build's error (WP-CLI).
+	 *
+	 * @return string
+	 */
+	public static function no_legal_id_message() {
+		return __( 'The price list was not generated because the OIB, MBO or MIBPG is missing.', 'cx-sidrena' );
+	}
+
+	/**
 	 * What the owner reads while the first price list waits for the first bazna (Kai's sentence, CX-SID-68): Status
 	 * and "Save and generate now".
 	 *
@@ -1050,7 +1127,9 @@ class CX_Sidrena_Export {
 	 */
 	private function write_outlet_feed( $outlet, $stored, $rows = null ) {
 		if ( null === $rows ) {
-			$rows = $this->collect_rows( false, true, isset( $outlet['products'] ) ? $outlet['products'] : array(), $outlet['oznaka'] );
+			// null: all of the webshop's products (dodjela "svi", CX-SID-74).
+			$ids  = 'svi' === CX_Sidrena_Poslovnice::instance()->dodjela( $outlet ) ? null : ( isset( $outlet['products'] ) ? $outlet['products'] : array() );
+			$rows = $this->collect_rows( false, true, $ids, $outlet['oznaka'] );
 		}
 		return CX_Sidrena_Feed_Files::instance()->write_feed_file( $rows, $outlet['oznaka'], $outlet );
 	}

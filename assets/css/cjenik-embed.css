@@ -106,7 +106,12 @@
 	font-variant-numeric: tabular-nums;
 }
 
-.sidrena-cjenik .cjenik-upit-title {
+.sidrena-cjenik .cjenik-upit-note {
+	margin: 0 0 12px;
+}
+
+.sidrena-cjenik .cjenik-upit-title,
+.sidrena-cjenik .cjenik-usluge-title {
 	margin: 28px 0 12px;
 	font-family: system-ui, sans-serif;
 	font-size: 1.35rem;

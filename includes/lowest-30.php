@@ -10,9 +10,9 @@
  * - every change of the price a customer actually pays is recorded per product/variation (timestamp, price);
  * - when a sale starts, the lowest price applied in the 30 days before that moment is computed once and frozen
  *   (a deeper cut during the same sale keeps it: the prior price is the one before the first reduction);
- * - the struck price shown is that lowest price (normally equal to the regular price, so nothing changes visually),
- *   with the caption "Najniža cijena u 30 dana prije sniženja" under it. If it is not higher than the sale price, there
- *   is no reduction to announce: no strike, no caption, no "Akcija" badge (CX_Sidrena_Frontend, CX-SID-25).
+ * - it is shown under the price, WooCommerce's struck regular price and the sale price, as the line "Najniža cijena u
+ *   30 dana prije sniženja: X" (CX_Sidrena_Frontend, CX-SID-179). Every sale is shown as a sale; whether its price is
+ *   below that lowest price is the owner's responsibility (Status reminds).
  * - no history (a sale that was already running when this was installed): the regular price is used.
  * Price changes written straight into the database (ERP sync bypassing WooCommerce) are not seen.
  */
@@ -160,7 +160,7 @@ function cx_sidrena_n30_display_enabled() {
 	return 'no' !== get_option( 'cx_sidrena_n30_display', 'yes' );
 }
 
-// The price display (struck lowest price, the caption, "not a sale") is drawn with the bazna line in one block:
+// The price display (the line with the lowest price in 30 days) is drawn with the bazna line in one block:
 // CX_Sidrena_Frontend::price_block() (CX-SID-25). This file keeps the history and the lowest price.
 
 /**
@@ -208,7 +208,7 @@ add_action(
 );
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
-	// wp cx-sidrena n30 on|off|status  →  show or hide the line until the settings screen has a switch.
+	// wp cx-sidrena n30 on|off|status  →  show or hide the line (also Settings > advanced, CX-SID-63).
 	WP_CLI::add_command(
 		'cx-sidrena n30',
 		function ( $args ) {

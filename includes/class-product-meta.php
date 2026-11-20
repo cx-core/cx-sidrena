@@ -13,6 +13,16 @@ defined( 'ABSPATH' ) || exit;
 class CX_Sidrena_Product_Meta {
 
 	/**
+	 * Net quantity of the goods and its unit (CX-SID-38), per simple product and per size: the unit price comes from it
+	 * (unit_price()). A variable product has none of its own; a size without one has no unit price.
+	 */
+	const META_NETO    = '_cx_sidrena_neto';
+	const META_NETO_JM = '_cx_sidrena_neto_jm';
+
+	/** Units a net quantity may be given in; g and ml count as thousandths of kg and l. */
+	const NETO_UNITS = array( 'g', 'kg', 'ml', 'l' );
+
+	/**
 	 * Singleton.
 	 *
 	 * @var self|null
@@ -124,6 +134,9 @@ class CX_Sidrena_Product_Meta {
 			register_post_meta( $type, CX_SIDRENA_META_OBLIK, $args );
 			register_post_meta( $type, CX_SIDRENA_META_JEDINICA, $args );
 			register_post_meta( $type, CX_SIDRENA_META_JEDINICA_CIJENA, $args );
+			// Every write (REST, WooCommerce's meta columns, any update_post_meta) keeps a valid value or ''.
+			register_post_meta( $type, self::META_NETO, $args + array( 'sanitize_callback' => array( $this, 'normalize_neto' ) ) );
+			register_post_meta( $type, self::META_NETO_JM, $args + array( 'sanitize_callback' => array( $this, 'normalize_neto_unit' ) ) );
 		}
 	}
 
@@ -171,16 +184,24 @@ class CX_Sidrena_Product_Meta {
 	}
 
 	/**
-	 * Stored sidrena amount adjusted to the shop tax display setting.
+	 * A stored amount (sidrena, the retail price, the unit price) as the consumer pays it: always with tax.
 	 *
-	 * Sidrena is stored in the same tax basis as `_regular_price`. Regular
-	 * price HTML goes through `wc_get_price_to_display()`; this must too,
-	 * otherwise shops that enter prices without tax and display them with
-	 * tax show sidrena as the raw net amount.
+	 * ZZP art. 4 (NN 59/2026): the retail price and the unit price are final prices "including taxes", and the bazna is
+	 * the retail price that applied on a day (CX-SID-160). So the bazna on the page and every amount of the price list
+	 * include tax, whatever the shop shows next to them.
+	 * - not taxable (taxes off, or the product's tax status is not "taxable"), or prices entered with tax: as stored;
+	 * - prices entered without tax: plus the tax of the shop's own address (its base rates for the product's tax class),
+	 *   rounded as WooCommerce rounds a price with tax (wc_get_price_including_tax()).
+	 * Not wc_get_price_including_tax() itself: it takes the customer's location, and the price list is built in cron,
+	 * where there is none. With tax by the shipping or billing address and no default customer location WooCommerce
+	 * then finds no rate and returns the amount without tax. The shop's address is also what the price list is for
+	 * (one list, the Croatian rate), for a customer abroad or exempt from VAT too.
+	 *
+	 * This is the only place where the plugin adds tax to an amount (CX-SID-38, CX-SID-156 call it).
 	 *
 	 * @param WC_Product $product   Product or variation (tax class / status).
 	 * @param string     $raw_price Optional raw amount. Defaults to stored meta.
-	 * @return float|null Display amount, or null when there is no price.
+	 * @return float|null Amount with tax, or null when there is no price.
 	 */
 	public function get_price_to_display( $product, $raw_price = null ) {
 		if ( ! $product instanceof WC_Product ) {
@@ -199,37 +220,31 @@ class CX_Sidrena_Product_Meta {
 			}
 		}
 
-		if ( function_exists( 'wc_get_price_to_display' ) ) {
-			$amount = (float) wc_get_price_to_display(
-				$product,
-				array(
-					'price' => (float) $raw,
-				)
-			);
-		} else {
-			$amount = (float) $raw;
+		$amount = (float) $raw;
+		if ( $this->adds_base_tax( $product ) ) {
+			$taxes  = WC_Tax::calc_tax( $amount, WC_Tax::get_base_tax_rates( $product->get_tax_class() ), false );
+			$tax    = 'yes' === get_option( 'woocommerce_tax_round_at_subtotal' ) ? array_sum( $taxes ) : array_sum( array_map( 'wc_round_tax_total', $taxes ) );
+			$amount = $this->round_price( $amount + (float) $tax );
 		}
 
 		/**
-		 * Display amount for a stored sidrena price (after WooCommerce tax display).
+		 * The amount with tax for a stored sidrena price (also the retail and unit price of the price list).
 		 *
-		 * Sidrena is stored in the same tax basis as `_regular_price`. Shops that
-		 * show MPC with a custom VAT calculation (not WooCommerce Tax) can adjust
-		 * the amount here so it matches the regular price on the storefront.
+		 * Shops that compute VAT their own way (not WooCommerce Tax) can adjust the amount here. Since CX-SID-160 it
+		 * already includes WooCommerce's tax by the shop's address: do not add it again.
 		 *
-		 * @param float      $amount  Amount after wc_get_price_to_display().
+		 * @param float      $amount  Amount with tax.
 		 * @param WC_Product $product Product or variation.
-		 * @param string     $raw     Stored sidrena amount (same basis as _regular_price).
+		 * @param string     $raw     Stored amount (same basis as _regular_price).
 		 */
 		return (float) apply_filters( 'sidrena_cijena_price_to_display', $amount, $product, $raw );
 	}
 
 	/**
-	 * Turn a shop-display amount back into the stored `_regular_price` basis.
+	 * Turn an amount of the price list (with tax) back into the stored `_regular_price` basis.
 	 *
-	 * When the display amount already matches the current stored price, that
-	 * stored value is returned unchanged so reimporting the same public file
-	 * does not drift on tax rounding.
+	 * The inverse of get_price_to_display(). When the amount already matches the current stored price, that stored
+	 * value is returned unchanged so reimporting the same public file does not drift on tax rounding.
 	 *
 	 * @param WC_Product $product        Product or variation.
 	 * @param string     $display_price  Amount as shown on the price list.
@@ -254,26 +269,12 @@ class CX_Sidrena_Product_Meta {
 			}
 		}
 
-		if ( ! $this->tax_changes_display( $product ) ) {
+		if ( ! $this->adds_base_tax( $product ) ) {
 			return $display;
 		}
 
-		$show_incl  = 'incl' === get_option( 'woocommerce_tax_display_shop' );
-		$store_incl = function_exists( 'wc_prices_include_tax' ) && wc_prices_include_tax();
-		if ( $show_incl === $store_incl || ! class_exists( 'WC_Tax' ) ) {
-			return $display;
-		}
-
-		$rates  = WC_Tax::get_rates( $product->get_tax_class() );
 		$amount = (float) $display;
-		if ( $show_incl && ! $store_incl ) {
-			$taxes  = WC_Tax::calc_tax( $amount, $rates, true );
-			$stored = $amount - (float) array_sum( $taxes );
-		} else {
-			$taxes  = WC_Tax::calc_tax( $amount, $rates, false );
-			$stored = $amount + (float) array_sum( $taxes );
-		}
-
+		$stored = $amount - (float) array_sum( WC_Tax::calc_tax( $amount, WC_Tax::get_base_tax_rates( $product->get_tax_class() ), true ) );
 		if ( $stored < 0 ) {
 			$stored = 0;
 		}
@@ -425,18 +426,14 @@ class CX_Sidrena_Product_Meta {
 	}
 
 	/**
-	 * Name written to the public feed while the charged price is the sale price.
-	 *
-	 * Only where the customer's page shows a reduction (CX-SID-88, Kai): a sale price that is not lower than the lowest
-	 * price in the 30 days before the sale is shown on the page as a plain price, so the price list does not call it a
-	 * special form of sale either (ZZP art. 19(1); poseban_oblik NE, CX_Sidrena_Feed_Rows::finish_public_rows()). The
-	 * page's own rule decides, CX_Sidrena_Frontend::sale_state(), called, never changed here. Where we do not draw the
-	 * page's price (our lowest-price line turned off, another lowest-price plugin: sale_state() is null) the page shows
-	 * WooCommerce's sale, and so does the price list. The retail price is untouched: it is the price the customer pays.
-	 * A per-product name stays stored; it comes back when the sale becomes a real reduction.
+	 * Name written to the public feed while the charged price is the sale price: MJDD's own name of the item, or "akcija".
+	 * Every item on sale is a special form of sale in the price list (poseban_oblik DA, CX_Sidrena_Feed_Rows), as the
+	 * customer's page shows every sale as a sale (CX-SID-179, Hrvoje 20.11.2026: the struck price is the owner's, and so
+	 * is whether the sale is below the lowest price in 30 days). The retail price is untouched: it is the price the
+	 * customer pays.
 	 *
 	 * @param WC_Product $product Product or variation.
-	 * @return string akcija, a per-product override, or empty.
+	 * @return string akcija, a per-product name, or empty.
 	 */
 	public function public_oblik_name( $product ) {
 		if ( ! $product instanceof WC_Product || ! $product->is_on_sale() ) {
@@ -447,47 +444,8 @@ class CX_Sidrena_Product_Meta {
 			return '';
 		}
 
-		if ( class_exists( 'CX_Sidrena_Frontend' ) ) {
-			$front = CX_Sidrena_Frontend::instance();
-			$state = $front->sale_state( $product );
-			if ( null !== $state && 'not_lower' === $state['kind'] ) {
-				return '';
-			}
-
-			// A size the page shows no price of its own for (every size costs the same) shows its product's block when
-			// chosen: a plain price there is a plain price for this size too (Kai: the list as the page for that size).
-			if ( null !== $state && $product->is_type( 'variation' ) && ! $this->size_price_shown( $product ) ) {
-				$parent = wc_get_product( $product->get_parent_id() );
-				$whole  = $parent ? $front->sale_state( $parent ) : null;
-				if ( null !== $whole && 'not_lower' === $whole['kind'] ) {
-					return '';
-				}
-			}
-		}
-
 		$override = trim( $this->get_oblik( $product->get_id() ) );
 		return '' !== $override ? $override : 'akcija';
-	}
-
-	/**
-	 * Whether a size, when chosen on its product's page, shows a price of its own: WooCommerce's own rule
-	 * (WC_Product_Variable::get_available_variation(), filter woocommerce_show_variation_price), so the price list
-	 * reads the same page the customer sees. Without one the product's price block stays.
-	 *
-	 * @param WC_Product $variation Variation.
-	 * @return bool
-	 */
-	private function size_price_shown( $variation ) {
-		$parent = wc_get_product( $variation->get_parent_id() );
-		if ( ! $parent instanceof WC_Product_Variable ) {
-			return true;
-		}
-
-		$shown = '' === (string) $variation->get_price()
-			|| $parent->get_variation_sale_price( 'min' ) !== $parent->get_variation_sale_price( 'max' )
-			|| $parent->get_variation_regular_price( 'min' ) !== $parent->get_variation_regular_price( 'max' );
-
-		return (bool) apply_filters( 'woocommerce_show_variation_price', $shown, $parent, $variation );
 	}
 
 	/**
@@ -544,6 +502,187 @@ class CX_Sidrena_Product_Meta {
 		}
 
 		update_post_meta( $product_id, CX_SIDRENA_META_JEDINICA_CIJENA, $price );
+	}
+
+	/**
+	 * Net quantity as stored (CX-SID-38): the number in the unit it was given in, and that unit; '' when none.
+	 *
+	 * @param int $product_id Product or variation ID.
+	 * @return array{neto:string, jm:string}
+	 */
+	public function get_neto( $product_id ) {
+		$neto = get_post_meta( $product_id, self::META_NETO, true );
+		$jm   = get_post_meta( $product_id, self::META_NETO_JM, true );
+
+		return array(
+			'neto' => is_string( $neto ) ? $neto : '',
+			'jm'   => is_string( $jm ) ? $jm : '',
+		);
+	}
+
+	/**
+	 * Save the net quantity. An empty quantity clears it (both keys), and the unit of measure and unit price typed by
+	 * hand count again. A quantity this cannot read, or one the price list cannot write (the list gives kg and l with at
+	 * most 4 decimals: at most one decimal of a gram or a millilitre), is refused and nothing changes.
+	 *
+	 * @param int    $product_id Product or variation ID.
+	 * @param string $quantity   Number, decimal comma or point.
+	 * @param string $unit       g, kg, ml or l.
+	 * @return bool Whether it was saved or cleared.
+	 */
+	public function set_neto( $product_id, $quantity, $unit ) {
+		$raw = is_scalar( $quantity ) ? trim( str_replace( "\xc2\xa0", ' ', (string) $quantity ) ) : '';
+		if ( '' === $raw ) {
+			delete_post_meta( $product_id, self::META_NETO );
+			delete_post_meta( $product_id, self::META_NETO_JM );
+			return true;
+		}
+
+		$neto = $this->normalize_neto( $raw );
+		$jm   = $this->normalize_neto_unit( $unit );
+		if ( '' === $neto || '' === $jm || null === self::tenth_grams( $neto, $jm ) ) {
+			return false;
+		}
+
+		update_post_meta( $product_id, self::META_NETO, $neto );
+		update_post_meta( $product_id, self::META_NETO_JM, $jm );
+		return true;
+	}
+
+	/**
+	 * A net quantity in its canonical form: digits, a point before at most 4 decimals, no leading or trailing zeros
+	 * ('0,250' → '0.25'). '' for anything else: empty, zero, negative, exponent, text, more than 9 digits before the point.
+	 * Also the sanitize callback of the meta key, so every way of writing it keeps this form or ''.
+	 *
+	 * @param mixed $quantity Raw value.
+	 * @return string
+	 */
+	public function normalize_neto( $quantity ) {
+		$raw = is_scalar( $quantity ) ? trim( (string) $quantity ) : '';
+		if ( ! preg_match( '/^(\d{1,9})(?:[.,](\d{1,4}))?$/', $raw, $m ) ) {
+			return '';
+		}
+
+		$whole    = ltrim( $m[1], '0' );
+		$fraction = isset( $m[2] ) ? rtrim( $m[2], '0' ) : '';
+		if ( '' === $whole && '' === $fraction ) {
+			return '';
+		}
+
+		return ( '' === $whole ? '0' : $whole ) . ( '' === $fraction ? '' : '.' . $fraction );
+	}
+
+	/**
+	 * The unit of a net quantity: g, kg, ml or l (any letter case, spaces around), '' for anything else.
+	 *
+	 * @param mixed $unit Raw value.
+	 * @return string
+	 */
+	public function normalize_neto_unit( $unit ) {
+		$unit = is_scalar( $unit ) ? strtolower( trim( (string) $unit ) ) : '';
+		return in_array( $unit, self::NETO_UNITS, true ) ? $unit : '';
+	}
+
+	/**
+	 * The stored net quantity when the unit price can use it (CX-SID-38): canonical number and unit, or null when there
+	 * is none, or one the price list could not write (stored past the setter, e.g. by REST: 12.55 g). Without one the
+	 * price list uses the old hand-typed unit and unit price, so the product screen shows them as before.
+	 *
+	 * @param int $product_id Product or variation ID.
+	 * @return array{neto:string, jm:string}|null
+	 */
+	public function readable_neto( $product_id ) {
+		$stored = $this->get_neto( $product_id );
+		$neto   = $this->normalize_neto( $stored['neto'] );
+		$jm     = $this->normalize_neto_unit( $stored['jm'] );
+		if ( '' === $neto || '' === $jm || null === self::tenth_grams( $neto, $jm ) ) {
+			return null;
+		}
+
+		return array(
+			'neto' => $neto,
+			'jm'   => $jm,
+		);
+	}
+
+	/**
+	 * A canonical quantity in ten-thousandths of a kilogram or a litre (tenths of a gram or millilitre), or null when the
+	 * price list could not write it (Rook 19.11.: at most 4 decimals of a kg or l): more than one decimal of a g or ml.
+	 *
+	 * @param string $neto Canonical quantity (normalize_neto()).
+	 * @param string $jm   g, kg, ml or l.
+	 * @return int|null
+	 */
+	private static function tenth_grams( $neto, $jm ) {
+		$parts    = explode( '.', $neto );
+		$whole    = (int) $parts[0];
+		$fraction = isset( $parts[1] ) ? $parts[1] : '';
+		if ( 'g' === $jm || 'ml' === $jm ) {
+			$units = strlen( $fraction ) <= 1 ? $whole * 10 + (int) str_pad( $fraction, 1, '0' ) : null;
+		} else {
+			$units = $whole * 10000 + (int) str_pad( $fraction, 4, '0' );
+		}
+
+		return ( null !== $units && $units > 0 ) ? $units : null;
+	}
+
+	/**
+	 * The unit price of a product or size with a net quantity (CX-SID-38): what one kilogram or one litre costs at the
+	 * price the customer pays now, with tax as the shop shows it (ZZP art. 4 item 3). The ONE place it is worked out:
+	 * the product page and the price list both call this, so they cannot differ.
+	 *
+	 * The price is the price list's own (CX_Sidrena_Feed_Rows::active_raw_price(): the sale price during a sale) through
+	 * get_price_to_display(), the one place tax is applied, at the decimals the shop shows; the unit price is that
+	 * shown price divided by the quantity, half up at the same decimals, in whole numbers (so 0,21 € for 0,4 kg is 0,53).
+	 *
+	 * `page` is whether the product page shows it: not for goods under 50 g or 50 ml (Pravilnik NN 105/2026 art. 8(2),
+	 * first indent) and not when it equals the retail price (ZZP art. 7(3)). The price list carries it either way.
+	 *
+	 * @param WC_Product $product Product or variation.
+	 * @return array{neto:string, jm:string, amount:float, page:bool}|null Null without a (readable) quantity or a price.
+	 */
+	public function unit_price( $product ) {
+		if ( ! $product instanceof WC_Product || $product->is_type( array( 'variable', 'variable-subscription', 'grouped' ) ) ) {
+			return null;
+		}
+
+		$stored = $this->readable_neto( $product->get_id() );
+		if ( null === $stored ) {
+			return null;
+		}
+		$jm    = $stored['jm'];
+		$units = self::tenth_grams( $stored['neto'], $jm );
+
+		$paid = $this->get_price_to_display( $product, CX_Sidrena_Feed_Rows::instance()->active_raw_price( $product ) );
+		if ( null === $paid || $paid < 0 ) {
+			return null;
+		}
+
+		$decimals = function_exists( 'wc_get_price_decimals' ) ? max( 0, (int) wc_get_price_decimals() ) : 2;
+		$shown    = (int) str_replace( '.', '', number_format( $paid, $decimals, '.', '' ) ); // in the shop's smallest unit
+		if ( $shown > 1000000000000 ) {
+			return null; // beyond any price; keeps the sum below in integers
+		}
+		$amount = intdiv( 2 * $shown * 10000 + $units, 2 * $units ); // shown / (units / 10000), half up
+
+		return array(
+			'neto'   => rtrim( rtrim( intdiv( $units, 10000 ) . '.' . str_pad( (string) ( $units % 10000 ), 4, '0', STR_PAD_LEFT ), '0' ), '.' ),
+			'jm'     => ( 'g' === $jm || 'kg' === $jm ) ? 'kg' : 'l',
+			'amount' => (float) ( $amount / ( 10 ** $decimals ) ),
+			'page'   => $units >= 500 && $amount !== $shown,
+		);
+	}
+
+	/**
+	 * A unit price as the customer reads it (Norman SPEC §3.3): the amount as wc_price() prints it (the shop's currency,
+	 * decimals and symbol position), then "/kg" or "/l" with no space before the slash: "19,95 €/l". The product page
+	 * and the product screen both show it this way.
+	 *
+	 * @param array{amount:float, jm:string} $unit unit_price().
+	 * @return string HTML.
+	 */
+	public function unit_price_html( $unit ) {
+		return wc_price( $unit['amount'] ) . '/' . esc_html( $unit['jm'] );
 	}
 
 	/**
@@ -746,17 +885,33 @@ class CX_Sidrena_Product_Meta {
 	}
 
 	/**
-	 * Whether shop tax display can change a stored amount.
+	 * Whether a stored amount of this product is without tax, so the amount with tax adds the shop's own tax: taxes on,
+	 * the product taxable, prices entered without tax.
 	 *
 	 * @param WC_Product $product Product or variation.
 	 * @return bool
 	 */
-	private function tax_changes_display( $product ) {
-		if ( ! function_exists( 'wc_tax_enabled' ) || ! wc_tax_enabled() ) {
+	private function adds_base_tax( $product ) {
+		if ( ! class_exists( 'WC_Tax' ) || ! function_exists( 'wc_prices_include_tax' ) || ! function_exists( 'wc_round_tax_total' ) ) {
 			return false;
 		}
 
-		return $product->is_taxable();
+		return $product->is_taxable() && ! wc_prices_include_tax();
+	}
+
+	/**
+	 * An amount with tax at the shop's price decimals, as WooCommerce rounds one (wc_get_price_including_tax()).
+	 *
+	 * @param float $amount Amount.
+	 * @return float
+	 */
+	private function round_price( $amount ) {
+		$decimals = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
+		if ( class_exists( '\Automattic\WooCommerce\Utilities\NumberUtil' ) ) {
+			return (float) \Automattic\WooCommerce\Utilities\NumberUtil::round( $amount, $decimals );
+		}
+
+		return round( $amount, $decimals );
 	}
 
 	/**

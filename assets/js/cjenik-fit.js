@@ -1,5 +1,5 @@
 /**
- * CX Sidrena price list (CX-SID-104): from 721 px, each table of the price list (the priced one and "Price on request")
+ * CX Sidrena price list (CX-SID-104): from 721 px, each table of the price list (the priced ones and the one "by agreement")
  * is shown as a table where it fits in its frame, and as cards where it does not, at any width. On the public price
  * list page and with [sidrena-cjenik].
  *

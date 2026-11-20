@@ -85,7 +85,8 @@
 	// full colour pulled toward black or white just enough (spec §2.1, §2.3). The owner's own colour is used as chosen.
 	function ensureContrast(root) {
 		var nodes = (root || document).querySelectorAll(
-			".sidrena-cijena:not(.cx-sidrena-checked), .bazna-najniza30:not(.cx-sidrena-checked)"
+			".sidrena-cijena:not(.cx-sidrena-checked), .bazna-najniza30:not(.cx-sidrena-checked), " +
+				".cx-sidrena-jm:not(.cx-sidrena-checked)"
 		);
 		if (!nodes.length) {
 			return;
@@ -428,7 +429,7 @@
 	//   is: tieCaptions clears a caption's margin before it looks whether the caption is shown.
 	// Both only set a class or a style on our lines and add no node, and the observer looks at added nodes only, so it
 	// never wakes itself.
-	var LINE = ".sidrena-cijena:not(.cx-sidrena-checked), .bazna-najniza30:not(.cx-sidrena-checked)";
+	var LINE = ".sidrena-cijena:not(.cx-sidrena-checked), .bazna-najniza30:not(.cx-sidrena-checked), .cx-sidrena-jm:not(.cx-sidrena-checked)";
 	var CAPTION = ".bazna-najniza30";
 
 	function watchAddedLines() {
@@ -549,6 +550,69 @@
 		ensureContrast(scope($form).get(0));
 	}
 
+	// The chosen size's lowest price in 30 days (CX-SID-179). With a price box of its own the size's block already has its
+	// line (price_html). Without one (every size costs the same) the parent's line says the lowest of its sizes, or their
+	// range: the chosen size's own amount takes its place (same element, only its content), and the parent's comes back
+	// on reset, as the bazna line does in place.
+	function restoreN30($form) {
+		scope($form).find(".bazna-najniza30--swapped").each(function () {
+			this.innerHTML = $(this).data("cxSidrenaN30");
+			$(this).removeClass("bazna-najniza30--swapped");
+		});
+	}
+
+	function applyVariationN30($form, variation) {
+		restoreN30($form);
+		var $variationPrice = $form.find(".woocommerce-variation-price");
+		if (!variation || !variation.cx_n30_html || $variationPrice.find(".price").length) {
+			return;
+		}
+		var $line = $(variation.cx_n30_html).filter(".bazna-najniza30").first();
+		var $parentLine = scope($form).find(".bazna-najniza30--variable").filter(function () {
+			return !$(this).closest(CARDS + ", .woocommerce-variation-price").length;
+		}).first();
+		if (!$line.length || !$parentLine.length || $parentLine.get(0).innerHTML === $line.get(0).innerHTML) {
+			return;
+		}
+		$parentLine.data("cxSidrenaN30", $parentLine.get(0).innerHTML).addClass("bazna-najniza30--swapped");
+		$parentLine.get(0).innerHTML = $line.get(0).innerHTML;
+	}
+
+	// The chosen size's unit price (CX-SID-38, Norman SPEC §3.2). With a price box of its own the server already put it
+	// there (price_html). Without one (every size costs the same) it goes into the parent's block, after the lowest price
+	// line, before the bazna line: same price, another quantity, so never the parent's or another size's line.
+	function restoreUnit($form) {
+		scope($form).find(".cx-sidrena-jm--chosen").remove();
+	}
+
+	function applyVariationUnit($form, variation) {
+		restoreUnit($form);
+		var $variationPrice = $form.find(".woocommerce-variation-price");
+		if (!variation || !variation.cx_jm_html || $variationPrice.find(".price").length) {
+			return;
+		}
+		var $line = $(variation.cx_jm_html).filter(".cx-sidrena-jm").first();
+		var $price = parentPrice($form);
+		if (!$line.length || !$price.length) {
+			return;
+		}
+		$line.addClass("cx-sidrena-jm--chosen");
+		var $bazna = $price.find(".sidrena-cijena").first();
+		// A theme's own price wrapper has our lines after it, each on a row of its own (CX-SID-93): the same here.
+		var $after = $price.nextAll(".sidrena-cijena").first();
+		var $last = $price.nextAll(".bazna-najniza30").filter(":visible").last();
+		if ($bazna.length) {
+			$bazna.before($line);
+		} else if ($after.length) {
+			$after.before($line.addClass("cx-sidrena-own-row"));
+		} else if ($last.length) {
+			$last.after($line.addClass("cx-sidrena-own-row"));
+		} else {
+			$price.append($line);
+		}
+		ensureContrast(scope($form).get(0));
+	}
+
 	function applyVariationSidrena($form, variation) {
 		var $variationPrice = $form.find(".woocommerce-variation-price");
 		if (!variation) {
@@ -558,11 +622,15 @@
 		if (variation.sidrena_cijena_inplace) {
 			$variationPrice.find(".sidrena-cijena").remove();
 			applyInPlace($form, variation);
+			applyVariationN30($form, variation);
+			applyVariationUnit($form, variation);
 			tieCaptions(scope($form).get(0));
 			return;
 		}
 		restoreInPlace($form);
 		if (!$variationPrice.length) {
+			applyVariationN30($form, variation);
+			applyVariationUnit($form, variation);
 			return;
 		}
 
@@ -595,6 +663,8 @@
 		if ($variationPrice.find(".bazna-najniza30").length) {
 			scope($form).find(".bazna-najniza30--variable").hide();
 		}
+		applyVariationN30($form, variation);
+		applyVariationUnit($form, variation);
 
 		ensureContrast($variationPrice.get(0));
 		tieCaptions(scope($form).get(0));
@@ -687,6 +757,8 @@
 				window.clearTimeout(pending);
 				pending = null;
 				restoreInPlace($form);
+				restoreUnit($form);
+				restoreN30($form);
 				scope($form).find(PARENT_LINES).show();
 				tieCaptions(scope($form).get(0));
 				$form.find(".woocommerce-variation-price .sidrena-cijena").remove();

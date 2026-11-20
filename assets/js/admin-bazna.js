@@ -358,6 +358,16 @@
 			var suffix = v.date_from === 'category' ? ' ' + T.fromCategory : (v.date_from === 'day_added' ? ' ' + T.dayAdded : '');
 			return fmtPrice(v.bazna) + ' · ' + fmtDate(v.date) + suffix;
 		};
+		// CX-SID-122, Norman T4: one line per brand, EAN or barcode the price list then shows differently.
+		var codeLines = function (list, fmt) {
+			return el('td', { class: 'cx-import__codes' }, (list || []).map(function (c) {
+				var label = (T.codeLabels || {})[c[0]] || c[0];
+				var text = fmt === 'kept'
+					? sprintf(T.codeKept, label, c[1])
+					: sprintf(T.codeChange, label, c[1] === '' ? T.none : c[1], c[2] === '' ? T.none : c[2]);
+				return el('div', { text: text });
+			}));
+		};
 		// The file's lowest price in 30 days (K9): now → new; a row without it in the file shows nothing.
 		var lowestCell = function (l) {
 			if (!l) {
@@ -409,9 +419,10 @@
 				showError(step('confirm'), res.data.message || T.error);
 				return;
 			}
+			// A file without a Bazna cijena column (only codes): Now and New are not shown (Norman T4).
 			var cols = {
-				update: [T.product, T.now, T.new].concat(S.hasLowest ? [T.lowest] : []),
-				unchanged: [T.product, T.bazna],
+				update: [T.product].concat(S.hasBazna ? [T.now, T.new] : [], S.hasLowest ? [T.lowest] : [], S.hasCodes ? [T.codesHead] : []),
+				unchanged: [T.product, T.bazna].concat(S.hasCodes ? [T.codesHead] : []),
 				not_found: [T.line, T.sku, T.nameInFile],
 				invalid: [T.line, T.sku, T.reason]
 			}[list];
@@ -431,16 +442,27 @@
 					]);
 				};
 				if (list === 'update') {
-					var newCell = el('td', {}, [dateCell(r.new)]);
+					// A row that changes only codes: its bazna stays ("no change").
+					var newCell = el('td', {}, [r.bazna_same ? T.noChange : dateCell(r.new)]);
 					if (waits(r)) {
 						newCell.appendChild(el('span', { class: 'cx-import__waits', text: ' ' + T.waits }));
 					}
-					cells = [product(), el('td', { text: dateCell(r.now) }), newCell];
+					cells = [product()];
+					if (S.hasBazna) {
+						cells.push(el('td', { text: dateCell(r.now) }), newCell);
+					}
 					if (S.hasLowest) {
 						cells.push(el('td', { class: 'cx-import__lowest', text: lowestCell(r.lowest) }));
 					}
+					if (S.hasCodes) {
+						cells.push(codeLines(r.codes, 'change'));
+					}
 				} else if (list === 'unchanged') {
 					cells = [product(), el('td', { text: dateCell(r.now) })];
+					if (S.hasCodes) {
+						// Rook 3348 (1): a code that loses to WooCommerce's says so.
+						cells.push(codeLines(r.codes_kept, 'kept'));
+					}
 				} else if (list === 'not_found') {
 					cells = [el('td', { text: String(r.line) }), el('td', { text: r.sku }), el('td', { text: r.name || '' })];
 				} else {
@@ -701,7 +723,19 @@
 			}
 			var d = res.data;
 			clearPreview();
-			S = { job: d.job, file: d.file, counts: d.counts, datesSaved: d.dates_saved !== false, hasLowest: !!d.has_lowest };
+			S = {
+				job: d.job,
+				file: d.file,
+				counts: d.counts,
+				datesSaved: d.dates_saved !== false,
+				hasLowest: !!d.has_lowest,
+				hasBazna: d.has_bazna !== false,
+				hasCodes: !!d.has_codes
+			};
+			// The sentence that is confirmed is the one for this file (Kai 3337, Norman T5); the server keeps the same.
+			if (d.consent) {
+				$('#cx-import-consent-text').textContent = d.consent;
+			}
 			$('.cx-import__file', root).textContent = d.file.name + ' · ' + d.file.short;
 			$$('.cx-import__count', root).forEach(function (b) {
 				$('.cx-status__num', b).textContent = String(d.counts[b.dataset.list] || 0);

@@ -216,7 +216,9 @@
 					missing: state.missing,
 					created: state.created,
 					special: state.special || 0,
+					unpub: state.unpub || 0,
 					unclear: state.unclear || 0,
+					other: state.other || 0,
 					import_poslovnica: outlet,
 					map: {
 						sku: sku,
@@ -261,7 +263,9 @@
 								missing: data.missing,
 								created: data.created,
 								special: data.special,
+								unpub: data.unpub,
 								unclear: data.unclear,
+								other: data.other,
 								examples: examples,
 							});
 							return;
@@ -298,6 +302,14 @@
 								$("<p>").text(data.special + " " + (i18n.special || ""))
 							);
 						}
+						// CX-SID-130: services imported without their date or bazna wait in the table (Kai U1).
+						if (data.unpub) {
+							$result.append($("<p>").text((i18n.importUnpub || "%d").replace("%d", data.unpub)));
+						}
+						// CX-SID-164: rows of another price list (another place or the webshop) left as they were.
+						if (data.other) {
+							$result.append($("<p>").text(data.other + " " + (i18n.other || "")));
+						}
 						// CX-SID-116: rows not imported because a price could not be read for sure (1.234, 1.234.567).
 						if (data.unclear) {
 							$result.append($("<p>").text(data.unclear + " " + (i18n.unclear || "")));
@@ -321,7 +333,7 @@
 					});
 			}
 
-			runBatch({ offset: 0, updated: 0, skipped: 0, missing: 0, created: 0, special: 0, unclear: 0, examples: [] });
+			runBatch({ offset: 0, updated: 0, skipped: 0, missing: 0, created: 0, special: 0, unpub: 0, unclear: 0, other: 0, examples: [] });
 		});
 	}
 

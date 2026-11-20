@@ -13,11 +13,29 @@ defined( 'ABSPATH' ) || exit;
 class CX_Sidrena_Feed_Rows {
 
 	/**
+	 * A product's own brand, EAN and barcode, written only by the Import tab (CX-SID-122): the owner's or the supplier's
+	 * data, read after WooCommerce's own fields (product_codes(), CX_Sidrena_Settings::product_marka()).
+	 */
+	const META_MARKA  = '_cx_sidrena_marka';
+	const META_EAN    = '_cx_sidrena_ean';
+	const META_BARKOD = '_cx_sidrena_barkod';
+
+	/** Other plugins' code fields, read after WooCommerce's GTIN (the list from before CX-SID-122). */
+	const OTHER_CODE_KEYS = array( '_global_unique_id', '_gtin', '_ean', '_upc', '_isbn', '_barcode', 'barcode', '_alg_ean', '_wpm_gtin_code', 'hwp_product_gtin' );
+
+	/**
 	 * Singleton.
 	 *
 	 * @var self|null
 	 */
 	private static $instance = null;
+
+	/**
+	 * SKUs of the form ID-<n>, lower case (id_codes_taken()); null until read. Read again for each collect_rows().
+	 *
+	 * @var array<string,bool>|null
+	 */
+	private $id_codes_taken = null;
 
 	/**
 	 * @return self
@@ -40,7 +58,8 @@ class CX_Sidrena_Feed_Rows {
 	 * @return array<int, array<string, string>>
 	 */
 	public function collect_rows( $missing_only = false, $public = false, $only_ids = null, $catalog_scope = null ) {
-		$collect = function () use ( $missing_only, $public, $only_ids, $catalog_scope ) {
+		$this->id_codes_taken = null; // a SKU may have changed since the last build in this request
+		$collect              = function () use ( $missing_only, $public, $only_ids, $catalog_scope ) {
 			return CX_Sidrena_I18n::instance()->run_in_default_language(
 				function () use ( $missing_only, $public, $only_ids, $catalog_scope ) {
 					return $this->collect_rows_now( $missing_only, $public, $only_ids, $catalog_scope );
@@ -123,8 +142,16 @@ class CX_Sidrena_Feed_Rows {
 		if ( ! CX_Sidrena_Plugin::woocommerce_active() ) {
 			$assigned = array();
 			if ( is_string( $catalog_scope ) && '' !== $catalog_scope ) {
-				$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $catalog_scope );
+				$places   = CX_Sidrena_Poslovnice::instance();
+				$outlet   = $places->get_by_oznaka( $catalog_scope );
 				$assigned = ( is_array( $outlet ) && isset( $outlet['products'] ) ) ? $outlet['products'] : array();
+				if ( is_array( $outlet ) && 'svi' === $places->dodjela( $outlet ) ) {
+					// Every row of the webshop's price list, and the place's own (CX-SID-74).
+					$assigned = array();
+					foreach ( CX_Sidrena_Catalog::instance()->to_export_rows_for( false, false, '', array_keys( $places->assigned_ids_lookup() ) ) as $row ) {
+						$assigned[] = (string) $row['id'];
+					}
+				}
 			} elseif ( is_string( $catalog_scope ) && '' === $catalog_scope ) {
 				$assigned = array_keys( CX_Sidrena_Poslovnice::instance()->assigned_ids_lookup() );
 			}
@@ -141,7 +168,11 @@ class CX_Sidrena_Feed_Rows {
 			return $rows;
 		}
 
+		// The full list: the webshop's, or that of a place with all of the webshop's products (CX-SID-74), with its availability.
 		$rows = $this->collect_woo_rows( $missing_only, $public );
+		if ( is_string( $catalog_scope ) && '' !== $catalog_scope ) {
+			$rows = $this->apply_outlet_dostupnost( $rows, $catalog_scope );
+		}
 		$this->append_extra_catalog_rows( $rows, $missing_only, $public, $catalog_scope, null );
 
 		return $rows;
@@ -243,20 +274,22 @@ class CX_Sidrena_Feed_Rows {
 	 * @param array<int, array<string, string>> $rows         Collector.
 	 * @param bool                              $missing_only Filter empty sidrena.
 	 * @param bool                              $public       Include public catalog fields.
+	 * @param string|null                       $catalog_scope Place code, '' for the webshop, null for every manual row.
+	 * @param mixed                             $assigned_ids Unused since CX-SID-74 (kept for callers).
 	 */
-	public function append_extra_catalog_rows( &$rows, $missing_only, $public, $catalog_scope = null, $assigned_ids = null ) {
+	public function append_extra_catalog_rows( &$rows, $missing_only, $public, $catalog_scope = null, $assigned_ids = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
 		if ( ! CX_Sidrena_Plugin::woocommerce_active() ) {
 			return;
 		}
 
+		// With WooCommerce the ids picked on a place are WooCommerce ids, and a manual row has ids of its own: it belongs
+		// to a place only by its own poslovnica. Matching it by the picked ids took the webshop's row whose id happened to
+		// be a picked product's onto that place, and off the webshop (CX-SID-74, N2).
 		$catalog = CX_Sidrena_Catalog::instance();
 		if ( null === $catalog_scope ) {
 			$extra = $catalog->to_export_rows( $missing_only, $public );
-		} elseif ( '' === $catalog_scope ) {
-			$extra = $catalog->to_export_rows_for( $missing_only, $public, '', array_keys( CX_Sidrena_Poslovnice::instance()->assigned_ids_lookup() ) );
 		} else {
-			$ids   = is_array( $assigned_ids ) ? $assigned_ids : array();
-			$extra = $catalog->to_export_rows_for( $missing_only, $public, $catalog_scope, $ids );
+			$extra = $catalog->to_export_rows_for( $missing_only, $public, $catalog_scope, array() );
 		}
 
 		foreach ( $extra as $row ) {
@@ -393,22 +426,33 @@ class CX_Sidrena_Feed_Rows {
 
 		$row = array(
 			'naziv'           => $this->feed_naziv( $product ),
-			'sku'             => (string) $product->get_sku(),
+			'sku'             => $this->sifra( $product ),
 			'cijena_redovna'  => (string) $product->get_regular_price(),
 			'cijena_akcijska' => (string) $product->get_sale_price(),
 			'sidrena_cijena'  => $sidrena,
-			'vrsta'           => 'proizvod',
+			'vrsta'           => CX_Sidrena_Product_Fields::is_service( $product ) ? 'usluga' : 'proizvod', // CX-SID-138
 			'sidrena_datum'   => $meta->get_display_date( $product->get_id() ),
 		);
 
 		if ( $public ) {
 			$row['id']                     = (string) $product->get_id();
 			$row['url']                    = (string) get_permalink( $product->get_id() );
-			$row['barkod']                 = $this->product_barcode( $product );
+			$codes                         = $this->product_codes( $product );
+			$row['barkod']                 = $codes['barkod'];
+			$row['ean_barkod']             = $codes['ean_barkod'];
 			$row['marka']                  = CX_Sidrena_Settings::instance()->product_marka( $product );
 			$row['dostupnost']             = $this->product_dostupnost( $product );
-			$row['jedinica_mjere']         = $meta->get_jedinica( $product->get_id() );
-			$row['cijena_jedinice_mjere']  = $this->format_feed_amount( $meta->get_price_to_display( $product, $meta->get_jedinica_cijena( $product->get_id() ) ) );
+			// CX-SID-38: with a net quantity, the unit price the product page uses (one helper), also where the page does
+			// not show it; without one, the unit of measure and unit price typed by hand, as before (no neto_kolicina key).
+			$unit = $meta->unit_price( $product );
+			if ( null !== $unit ) {
+				$row['neto_kolicina']         = $unit['neto'];
+				$row['jedinica_mjere']        = $unit['jm'];
+				$row['cijena_jedinice_mjere'] = $this->format_feed_amount( $unit['amount'] );
+			} else {
+				$row['jedinica_mjere']        = $meta->get_jedinica( $product->get_id() );
+				$row['cijena_jedinice_mjere'] = $this->format_feed_amount( $meta->get_price_to_display( $product, $meta->get_jedinica_cijena( $product->get_id() ) ) );
+			}
 			$row['maloprodajna_cijena']    = $this->format_feed_amount( $meta->get_price_to_display( $product, $this->active_raw_price( $product ) ) );
 			$row['naziv_posebnog_oblika']  = $meta->public_oblik_name( $product );
 			$row['sidrena_cijena']         = $this->format_feed_amount( $meta->get_price_to_display( $product, $sidrena ) );
@@ -452,35 +496,154 @@ class CX_Sidrena_Feed_Rows {
 	}
 
 	/**
-	 * GTIN / UPC / EAN / ISBN from WooCommerce, then common barcode meta keys.
+	 * A product's šifra in the price list (CX-SID-122, Kai 2988): its SKU (a variation without one has its parent's,
+	 * WooCommerce's rule), else ID-<its id>, the shop's own number for it. When some product's SKU is that ID-<n>, in
+	 * any letters, the product has no šifra, as before: one text would name two products, in the file and on Import.
 	 *
 	 * @param WC_Product $product Product or variation.
 	 * @return string
 	 */
-	public function product_barcode( $product ) {
-		$barcode = '';
-
-		if ( method_exists( $product, 'get_global_unique_id' ) ) {
-			$barcode = $this->clean_barcode( $product->get_global_unique_id() );
+	public function sifra( $product ) {
+		$sku = (string) $product->get_sku();
+		if ( '' !== $sku ) {
+			return $sku;
 		}
 
-		if ( '' === $barcode ) {
-			$id = $product->get_id();
-			foreach ( array( '_global_unique_id', '_gtin', '_ean', '_upc', '_isbn', '_barcode', 'barcode', '_alg_ean', '_wpm_gtin_code', 'hwp_product_gtin' ) as $key ) {
-				$barcode = $this->clean_barcode( get_post_meta( $id, $key, true ) );
-				if ( '' !== $barcode ) {
+		$code  = 'ID-' . (int) $product->get_id();
+		$taken = $this->id_codes_taken();
+
+		return isset( $taken[ strtolower( $code ) ] ) ? '' : $code;
+	}
+
+	/**
+	 * SKUs of the form ID-<n>, lower case, of every product and variation Import can match (the same posts as
+	 * CX_Sidrena_Import::match()). One query per build.
+	 *
+	 * @return array<string,bool>
+	 */
+	private function id_codes_taken() {
+		if ( null !== $this->id_codes_taken ) {
+			return $this->id_codes_taken;
+		}
+
+		global $wpdb;
+		$skus = $wpdb->get_col( // phpcs:ignore WordPress.DB
+			"SELECT pm.meta_value FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			WHERE pm.meta_key = '_sku' AND LOWER( pm.meta_value ) LIKE 'id-%' AND p.post_type IN ('product','product_variation')
+			AND p.post_status NOT IN ('" . implode( "','", CX_Sidrena_Import::NOT_MATCHED ) . "')"
+		);
+		$this->id_codes_taken = array();
+		foreach ( (array) $skus as $sku ) {
+			if ( 1 === preg_match( '/^id-\d+$/iD', (string) $sku ) ) {
+				$this->id_codes_taken[ strtolower( (string) $sku ) ] = true;
+			}
+		}
+
+		return $this->id_codes_taken;
+	}
+
+	/**
+	 * A product's EAN and barcode, each in its own column (CX-SID-122, Kai 2988), from the owner's or the supplier's data
+	 * only, never guessed:
+	 * - EAN: WooCommerce's GTIN when it is one (8 or 13 digits), else the imported EAN, else another plugin's EAN;
+	 * - barcode: the imported barcode, else WooCommerce's GTIN or another plugin's code that is not an EAN (UPC-12,
+	 *   GTIN-14, ISBN with X);
+	 * - never one number in both columns (UPC-12 012345678905 is EAN-13 0012345678905).
+	 * A product with one code gets the column its shape says, as before (CX_Sidrena_Feed_Files::split_barcode()).
+	 *
+	 * @param WC_Product                $product Product or variation.
+	 * @param array<string,string>|null $ours    Our imported values to read instead of the stored ones ('ean',
+	 *                                           'barkod'; '' = none): what the price list would show after an import.
+	 * @return array{barkod:string,ean_barkod:string}
+	 */
+	public function product_codes( $product, $ours = null ) {
+		$id    = (int) $product->get_id();
+		$woo   = method_exists( $product, 'get_global_unique_id' ) ? $this->clean_barcode( $product->get_global_unique_id() ) : '';
+		$other = array();
+		foreach ( self::OTHER_CODE_KEYS as $key ) {
+			$code = $this->clean_barcode( get_post_meta( $id, $key, true ) );
+			if ( '' !== $code ) {
+				$other[] = $code;
+			}
+		}
+
+		$ean = '';
+		$mine = static function ( $field, $key ) use ( $ours, $id ) {
+			return is_array( $ours ) && array_key_exists( $field, $ours ) ? (string) $ours[ $field ] : get_post_meta( $id, $key, true );
+		};
+
+		foreach ( array_merge( array( $woo, $this->clean_barcode( $mine( 'ean', self::META_EAN ) ) ), $other ) as $code ) {
+			if ( self::is_ean( $code ) ) {
+				$ean = $code;
+				break;
+			}
+		}
+
+		$barkod = $this->clean_barcode( $mine( 'barkod', self::META_BARKOD ) );
+		if ( '' === $barkod ) {
+			foreach ( array_merge( array( $woo ), $other ) as $code ) {
+				if ( '' !== $code && ! self::is_ean( $code ) ) {
+					$barkod = $code;
 					break;
 				}
 			}
 		}
+		if ( self::same_number( $barkod, $ean ) ) {
+			$barkod = '';
+		}
 
 		/**
-		 * Barcode written to the public XML/CSV feed.
+		 * The EAN and the barcode written to the public price list (CX-SID-122; it replaces the single code of
+		 * sidrena_cijena_product_barcode).
 		 *
-		 * @param string     $barcode Detected GTIN/UPC/EAN/ISBN, or empty.
-		 * @param WC_Product $product Product or variation.
+		 * @param array{barkod:string,ean_barkod:string} $codes   Codes.
+		 * @param WC_Product                             $product Product or variation.
 		 */
-		return (string) apply_filters( 'sidrena_cijena_product_barcode', $barcode, $product );
+		$codes = apply_filters(
+			'sidrena_cijena_product_codes',
+			array(
+				'barkod'     => $barkod,
+				'ean_barkod' => $ean,
+			),
+			$product
+		);
+
+		return array(
+			'barkod'     => is_array( $codes ) && isset( $codes['barkod'] ) ? (string) $codes['barkod'] : $barkod,
+			'ean_barkod' => is_array( $codes ) && isset( $codes['ean_barkod'] ) ? (string) $codes['ean_barkod'] : $ean,
+		);
+	}
+
+	/**
+	 * An EAN by its shape: exactly 8 or 13 digits (EAN-8, EAN-13). The check digit is not checked here: a code a shop
+	 * already has is shown as it is (CX-SID-109).
+	 *
+	 * @param string $code Code.
+	 * @return bool
+	 */
+	public static function is_ean( $code ) {
+		return 1 === preg_match( '/^(?:\d{8}|\d{13})$/D', (string) $code );
+	}
+
+	/**
+	 * Whether two codes are one number: the digits without leading zeros (UPC-12, EAN-13 and GTIN-14 of one product
+	 * differ only in them), or the same text.
+	 *
+	 * @param string $a Code.
+	 * @param string $b Code.
+	 * @return bool
+	 */
+	public static function same_number( $a, $b ) {
+		$a = (string) $a;
+		$b = (string) $b;
+		if ( '' === $a || '' === $b ) {
+			return false;
+		}
+		if ( ctype_digit( $a ) && ctype_digit( $b ) ) {
+			return ltrim( $a, '0' ) === ltrim( $b, '0' );
+		}
+
+		return $a === $b;
 	}
 
 	/**
@@ -638,13 +801,15 @@ class CX_Sidrena_Feed_Rows {
 		$woo = $this->collect_woo_rows( false, true );
 
 		$web = $woo;
-		$this->append_extra_catalog_rows( $web, false, true, '', array_keys( CX_Sidrena_Poslovnice::instance()->assigned_ids_lookup() ) );
+		$this->append_extra_catalog_rows( $web, false, true, '' );
 
+		$places  = CX_Sidrena_Poslovnice::instance();
 		$outlets = array();
-		foreach ( CX_Sidrena_Poslovnice::instance()->with_products() as $outlet ) {
+		foreach ( $places->with_products() as $outlet ) {
 			$ids  = isset( $outlet['products'] ) ? $outlet['products'] : array();
-			$rows = $this->apply_outlet_dostupnost( $this->filter_woo_rows_for_assigned_ids( $woo, $ids ), $outlet['oznaka'] );
-			$this->append_extra_catalog_rows( $rows, false, true, $outlet['oznaka'], $ids );
+			$mine = 'svi' === $places->dodjela( $outlet ) ? $woo : $this->filter_woo_rows_for_assigned_ids( $woo, $ids );
+			$rows = $this->apply_outlet_dostupnost( $mine, $outlet['oznaka'] );
+			$this->append_extra_catalog_rows( $rows, false, true, $outlet['oznaka'] );
 			$outlets[ $outlet['oznaka'] ] = $rows;
 		}
 

@@ -21,14 +21,12 @@ $ready     = $status->fill_ready();
 $running   = $status->running_fill();
 $n_missing = count( $scan['missing'] );
 $me        = wp_get_current_user();
+// The lowest price in 30 days turned off for this shop, and no other plugin drawing it (CX-SID-63): customers on sale
+// see no lowest price, so the tile does not say they do, and a line says why.
+$n30_off   = CX_Sidrena_Plugin::woocommerce_active() && function_exists( 'cx_sidrena_n30_display_enabled' ) && ! cx_sidrena_n30_display_enabled()
+	&& ! ( class_exists( 'CX_Sidrena_Compat' ) && CX_Sidrena_Compat::lowest_price_plugin_active() );
 $fmt_time  = function ( $ts ) {
-	$day = wp_date( 'Y-m-d', $ts );
-	if ( wp_date( 'Y-m-d' ) === $day ) {
-		/* translators: %s: time, e.g. 07:12 */
-		return sprintf( __( 'today at %s', 'cx-sidrena' ), wp_date( 'H:i', $ts ) );
-	}
-	/* translators: 1: date, 2: time */
-	return sprintf( __( 'on %1$s at %2$s', 'cx-sidrena' ), wp_date( 'j.n.Y.', $ts ), wp_date( 'H:i', $ts ) );
+	return CX_Sidrena_Archive::legal_when( $ts ); // the legal clock, as the file name and the public page (CX-SID-59)
 };
 ?>
 <div class="cx-status-wrap">
@@ -43,6 +41,9 @@ $fmt_time  = function ( $ts ) {
 		<?php elseif ( 'nobazna' === $_GET['cx_updated'] ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 			<?php // The first price list waits for the first bazna (CX-SID-68). Not a failure: nothing is retried. ?>
 			<div class="notice notice-error is-dismissible"><p><?php echo esc_html( CX_Sidrena_Export::no_bazna_message() ); ?></p></div>
+		<?php elseif ( 'nooib' === $_GET['cx_updated'] ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
+			<?php // No OIB or MBO (CX-SID-159). Not a failure: nothing is retried; the red block below links to the field. ?>
+			<div class="notice notice-error is-dismissible"><p><?php echo esc_html( CX_Sidrena_Export::no_legal_id_message() ); ?></p></div>
 		<?php elseif ( 'busy' === $_GET['cx_updated'] ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 			<?php // Another build was running; one more follows it (CX-SID-119). Not a failure. ?>
 			<div class="notice notice-info is-dismissible"><p><?php echo esc_html__( 'The price list is being generated right now. As soon as that is done, it will be generated once more.', 'cx-sidrena' ); ?></p></div>
@@ -70,6 +71,24 @@ $fmt_time  = function ( $ts ) {
 				<li><?php echo esc_html( sprintf( __( 'Customers now see the CX Sidrena label "%s", without a tooltip.', 'cx-sidrena' ), CX_Sidrena_Settings::instance()->format_prefix_with_date( (string) CX_Sidrena_Settings::instance()->get( 'prefix' ), (string) CX_Sidrena_Settings::instance()->get( 'default_date' ) ) . ':' ) ); ?></li>
 			</ul>
 			<p><a class="button" href="<?php echo esc_url( wp_nonce_url( add_query_arg( 'cx_sidrena_takeover_seen', '1', CX_Sidrena_Admin_Status::url() ), 'cx_sidrena_takeover_seen' ) ); ?>"><?php echo esc_html__( 'Close', 'cx-sidrena' ); ?></a></p>
+		</div>
+	<?php endif; ?>
+
+	<?php if ( $export->waiting_for_legal_id() ) : ?>
+		<?php
+		// CX-SID-159: without an OIB or MBO nothing is published (NN 132/2026-1584 art. 6(3)); what was published stays.
+		// Red, above the rest. To the field's row, not the section: on a phone the field is three link boxes further down
+		// (Norman 110-3).
+		?>
+		<div class="cx-status__banner cx-status__banner--red" id="cx-status-no-oib" role="status">
+			<p class="cx-status__headline"><?php echo esc_html__( 'The price list is not published: the OIB, MBO or MIBPG is missing.', 'cx-sidrena' ); ?></p>
+			<p>
+				<?php echo esc_html__( 'The Pravilnik requires it in the name of every price list file. Until you enter it, no new price list is made and price changes are not published.', 'cx-sidrena' ); ?>
+				<?php if ( $export->ever_published() ) : ?>
+					<?php echo esc_html__( 'The last published price list stays public.', 'cx-sidrena' ); ?>
+				<?php endif; ?>
+			</p>
+			<p><a class="button button-primary" href="<?php echo esc_url( $settings_url . '#cx-oib-row' ); ?>"><?php echo esc_html__( 'Open Settings', 'cx-sidrena' ); ?></a></p>
 		</div>
 	<?php endif; ?>
 
@@ -118,7 +137,8 @@ $fmt_time  = function ( $ts ) {
 			<p class="cx-status__headline"><?php echo esc_html( sprintf( __( 'Products that need attention: %d.', 'cx-sidrena' ), $attention ) ); ?>
 				<a class="button" href="#cx-attention"><?php echo esc_html__( 'Show', 'cx-sidrena' ); ?></a></p>
 		</div>
-	<?php else : ?>
+	<?php elseif ( ! $export->waiting_for_legal_id() ) : ?>
+		<?php // Without the OIB or MBO nothing is published (CX-SID-159): not "all set", the red block above says why. ?>
 		<div class="cx-status__banner cx-status__banner--green" id="cx-status-all-set" role="status"<?php echo ( $display && $display['missed'] ) ? ' hidden' : ''; ?>>
 			<p class="cx-status__headline">
 				<?php echo esc_html__( 'All set. Every product has a bazna cijena.', 'cx-sidrena' ); ?>
@@ -134,7 +154,7 @@ $fmt_time  = function ( $ts ) {
 		<?php // What a customer sees on a product page, measured in a browser (CX-SID-92; assets/js/admin-display-check.js). ?>
 		<div class="cx-status__display" id="cx-display" data-state="<?php echo esc_attr( $display['state'] ); ?>">
 			<div class="cx-status__banner cx-status__banner--yellow" id="cx-display-bad" role="status"<?php echo $display['missed'] ? '' : ' hidden'; ?>>
-				<p class="cx-status__headline"><?php echo esc_html__( 'On the product page customers do not see the bazna cijena (or the struck lowest price next to its caption): the theme hides it or draws its own price.', 'cx-sidrena' ); ?></p>
+				<p class="cx-status__headline"><?php echo esc_html__( 'On the product page customers do not see the bazna cijena (or the line with the lowest price in 30 days): the theme hides it or draws its own price.', 'cx-sidrena' ); ?></p>
 				<p>
 					<span class="cx-display__where"><?php echo esc_html( CX_Sidrena_Admin_Status::display_where( $display['missed'] ) ); ?></span>
 					<a class="cx-display__product" href="<?php echo esc_url( $display['url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html__( 'View the product', 'cx-sidrena' ); ?></a>
@@ -157,15 +177,6 @@ $fmt_time  = function ( $ts ) {
 		<p class="cx-status__line"><?php echo esc_html( CX_Sidrena_Export::b2b_message() ); ?></p>
 	<?php endif; ?>
 
-	<?php if ( ! CX_Sidrena_Settings::instance()->is_b2b_only() && '' === CX_Sidrena_Settings::instance()->legal_id() ) : ?>
-		<?php // CX-SID-110: the price list still goes out, named without the OIB (art. 6(3)); a yellow line, as the address. ?>
-		<p class="cx-status__line">
-			<?php echo esc_html__( 'OIB, MBO or MIBPG is missing. The official name of the price list file must include it; now it does not.', 'cx-sidrena' ); ?>
-			<?php // To the field's row, not the section: on a phone the field is three link boxes further down (Norman 110-3). ?>
-			<a href="<?php echo esc_url( $settings_url . '#cx-oib-row' ); ?>"><?php echo esc_html__( 'Open Settings', 'cx-sidrena' ); ?></a>
-		</p>
-	<?php endif; ?>
-
 	<?php if ( $status->address_missing() ) : ?>
 		<p class="cx-status__line">
 			<?php echo esc_html__( 'Shop address is missing. The price list file is named after the web address.', 'cx-sidrena' ); ?>
@@ -173,9 +184,107 @@ $fmt_time  = function ( $ts ) {
 		</p>
 	<?php endif; ?>
 
+	<?php
+	// CX-SID-130 (Kai B, Norman 3113 S): a service that is offered but not in the price list is the owner's omission
+	// (1584 art. 3(1)), said one line per service, or one line for more than three.
+	$unpub = CX_Sidrena_Catalog::instance()->unpublished_services();
+	$lines = array();
+	if ( count( $unpub ) > 3 ) {
+		/* translators: %d: number of services */
+		$lines[] = sprintf( __( 'Services not in the price list because they have no date or bazna cijena: %d.', 'cx-sidrena' ), count( $unpub ) );
+	} else {
+		foreach ( $unpub as $one ) {
+			if ( 'no_bazna' === $one['reason'] ) {
+				/* translators: 1: service name, 2: date */
+				$lines[] = sprintf( __( 'Service %1$s is not in the price list because it has no bazna cijena. Enter its price on %2$s as the bazna cijena.', 'cx-sidrena' ), $one['naziv'], rtrim( CX_Sidrena_Money::customer_date( $one['date'] ), '.' ) ); // the sentence's dot ends the date (Argus 3209)
+			} elseif ( 'no_date' === $one['reason'] ) {
+				/* translators: %s: service name */
+				$lines[] = sprintf( __( 'Service %s is not in the price list because its bazna cijena has no date. Enter the day the bazna cijena is from.', 'cx-sidrena' ), $one['naziv'] );
+			} else {
+				/* translators: %s: service name */
+				$lines[] = sprintf( __( 'Service %s is not in the price list because it has no date and no bazna cijena. Enter the day you started offering it (10.9.2026. for any day before) and its price on that day.', 'cx-sidrena' ), $one['naziv'] );
+			}
+		}
+	}
+	?>
+	<?php foreach ( $lines as $line ) : ?>
+		<p class="cx-status__line">
+			<?php // A service's name is as typed (CX-SID-142): escaped whole, also an '&amp;' the owner typed. ?>
+			<?php echo CX_Sidrena_Feed_Files::instance()->text_html( $line, true ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- htmlspecialchars() in text_html() ?>
+			<a href="<?php echo esc_url( $settings_url . '#cx-items' ); ?>"><?php echo esc_html__( 'Open Settings', 'cx-sidrena' ); ?></a>
+		</p>
+	<?php endforeach; ?>
+
+	<?php $upit_products = CX_Sidrena_Upit::instance()->count_products(); ?>
+	<?php if ( $upit_products > 0 ) : ?>
+		<?php // CX-SID-76: products shown "by agreement" have no displayed price (ZZP art. 7(1)); a warning, never a block. ?>
+		<p class="cx-status__line">
+			<?php /* translators: %d: number of rows marked as a product */ ?>
+			<?php echo esc_html( sprintf( __( 'Products without a displayed price, in Services with price by agreement: %d.', 'cx-sidrena' ), $upit_products ) ); ?>
+			<a href="<?php echo esc_url( $settings_url . '#cx-upit' ); ?>"><?php echo esc_html__( 'Open Settings', 'cx-sidrena' ); ?></a>
+		</p>
+	<?php endif; ?>
+
+	<?php foreach ( CX_Sidrena_Poslovnice::instance()->problems() as $place ) : ?>
+		<?php
+		// CX-SID-74: what a place of sale lacks for its price list (texts Norman 3178, 3182; Kai 3191). A code shared with
+		// the webshop or another place is red: their price lists share one archive and one storage number.
+		$red  = in_array( $place['type'], array( 'same_code_webshop', 'same_code_pair' ), true );
+		$tell = 'same_code_pair' === $place['type'] && $place['locked']; // nothing the owner can change here: tell us
+		?>
+		<p class="cx-status__line<?php echo $red ? ' cx-status__line--red' : ''; ?>">
+			<?php
+			switch ( $place['type'] ) {
+				case 'no_address':
+					/* translators: %s: name of the place of sale */
+					$text = sprintf( __( "Outlet %s has no address, so that part of its price list's file name is empty. Enter the address.", 'cx-sidrena' ), $place['naziv'] );
+					break;
+				case 'no_kind':
+					/* translators: %s: name of the place of sale */
+					$text = sprintf( __( "Outlet %s has no type, so that part of its price list's file name is empty. Enter the type, e.g. prodavaonica.", 'cx-sidrena' ), $place['naziv'] );
+					break;
+				case 'no_both':
+					/* translators: %s: name of the place of sale */
+					$text = sprintf( __( "Outlet %s has no address and no type, so those parts of its price list's file name are empty. Enter both.", 'cx-sidrena' ), $place['naziv'] );
+					break;
+				case 'same_code_webshop':
+					$text = $place['locked']
+						/* translators: 1: name of the place of sale, 2: its code */
+						? sprintf( __( "Outlet %1\$s has the label %2\$s, which the webshop also has, so their price lists share one archive and one storage number. %1\$s has already published a price list, so its label no longer changes: give the webshop another label in Outlets. The address of the webshop's price list stays the same.", 'cx-sidrena' ), $place['naziv'], $place['oznaka'] )
+						/* translators: 1: name of the place of sale, 2: its code */
+						: sprintf( __( 'Outlet %1$s has the label %2$s, which the webshop also has, so their price lists share one archive and one storage number. %1$s has not published a price list yet: give it another label in Outlets. The webshop keeps %2$s.', 'cx-sidrena' ), $place['naziv'], $place['oznaka'] );
+					break;
+				case 'same_code_pair':
+					$text = $place['locked']
+						/* translators: 1, 2: names of the two places of sale, 3, 4: their codes */
+						? sprintf( __( 'Outlets %1$s and %2$s have the labels %3$s and %4$s, which differ only in letter case, so their price lists share one archive and one storage number. Both have already published price lists, so their labels no longer change here. Tell us and we will correct it.', 'cx-sidrena' ), $place['naziv'], $place['naziv2'], $place['oznaka'], $place['oznaka2'] )
+						/* translators: 1, 2: names of the two places of sale (2 = the one that has not published), 3, 4: their codes */
+						: sprintf( __( 'Outlets %1$s and %2$s have the labels %3$s and %4$s, which differ only in letter case, so their price lists share one archive and one storage number. %2$s has not published a price list yet: give it another label in Outlets.', 'cx-sidrena' ), $place['naziv'], $place['naziv2'], $place['oznaka'], $place['oznaka2'] );
+					break;
+				default:
+					/* translators: %s: name of the place of sale */
+					$text = sprintf( __( 'Place of sale %s has no products, so it has no price list.', 'cx-sidrena' ), $place['naziv'] );
+			}
+			echo CX_Sidrena_Feed_Files::instance()->text_html( $text, true ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- a place's name as typed (CX-SID-142)
+			?>
+			<?php if ( $tell ) : ?>
+				<a href="<?php echo esc_url( CX_Sidrena_Admin_Status::report_links()['bug']['url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html__( 'Tell us', 'cx-sidrena' ); ?></a>
+			<?php else : ?>
+				<a href="<?php echo esc_url( $settings_url . '#cx-outlets' ); ?>"><?php echo esc_html__( 'Open Settings', 'cx-sidrena' ); ?></a>
+			<?php endif; ?>
+		</p>
+	<?php endforeach; ?>
+
+	<?php if ( $n30_off ) : ?>
+		<p class="cx-status__line cx-status__line--n30">
+			<?php echo esc_html__( 'Customers do not see the lowest price in 30 days on products on sale: showing it is turned off.', 'cx-sidrena' ); ?>
+			<a href="<?php echo esc_url( $settings_url . '#cx-n30' ); ?>"><?php echo esc_html__( 'Open Settings', 'cx-sidrena' ); ?></a>
+		</p>
+	<?php endif; ?>
+
 	<?php if ( $status->own_badge_theme() ) : ?>
 		<p class="cx-status__line">
-			<?php echo esc_html__( 'Your theme shows its own discount percentage. CX Sidrena cannot check it. It may be calculated from the regular price.', 'cx-sidrena' ); ?>
+			<?php echo esc_html__( 'Your theme shows its own discount percentage. CX Sidrena cannot check how it is calculated.', 'cx-sidrena' ); ?>
 			<a href="<?php echo esc_url( $settings_url . '#cx-badge' ); ?>"><?php echo esc_html__( 'Hide it', 'cx-sidrena' ); ?></a>
 			· <a href="<?php echo esc_url( CX_Sidrena_Admin_Status::report_links()['bug']['url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html__( 'Tell us', 'cx-sidrena' ); ?></a>
 		</p>
@@ -193,7 +302,7 @@ $fmt_time  = function ( $ts ) {
 		</a>
 		<div class="cx-status__tile">
 			<span class="cx-status__num"><?php echo esc_html( (string) $scan['on_sale'] ); ?></span>
-			<span class="cx-status__desc"><?php echo esc_html__( 'On sale now, with the lowest price in 30 days', 'cx-sidrena' ); ?></span>
+			<span class="cx-status__desc"><?php echo $n30_off ? esc_html__( 'On sale now', 'cx-sidrena' ) : esc_html__( 'On sale now, with the lowest price in 30 days', 'cx-sidrena' ); ?></span>
 		</div>
 		<div class="cx-status__tile">
 			<?php if ( $scan['with'] < 1 && ! $feed ) : ?>
@@ -209,23 +318,27 @@ $fmt_time  = function ( $ts ) {
 				if ( $first > 0 && ( ! $next || $first < $next ) ) {
 					$next = $first;
 				}
+				// Without the OIB or MBO that build is refused (CX-SID-159): no time is promised.
+				if ( $export->waiting_for_legal_id() ) {
+					$next = 0;
+				}
 				?>
 				<span class="cx-status__num">—</span>
 				<span class="cx-status__desc">
 					<?php echo esc_html__( 'Price list', 'cx-sidrena' ); ?>: <?php echo esc_html__( 'Not created yet.', 'cx-sidrena' ); ?>
 					<?php if ( $next ) : ?>
 						<?php /* translators: %s: date and time of the next scheduled run */ ?>
-						<?php echo esc_html( sprintf( __( 'Next: %s.', 'cx-sidrena' ), wp_date( 'j.n.Y. H:i', $next ) ) ); ?>
+						<?php echo esc_html( sprintf( __( 'Next: %s.', 'cx-sidrena' ), CX_Sidrena_Archive::legal_date( 'j.n.Y. H:i', $next ) ) ); ?>
 					<?php endif; ?>
 				</span>
 			<?php else : ?>
 				<span class="cx-status__num"><?php echo esc_html( $fmt_time( $feed ) ); ?></span>
 				<span class="cx-status__desc">
 					<?php echo esc_html__( 'Price list', 'cx-sidrena' ); ?>
-					<?php $next = $export->get_next_daily_timestamp(); ?>
+					<?php $next = $export->waiting_for_legal_id() ? 0 : $export->get_next_daily_timestamp(); // CX-SID-159: refused, no time promised ?>
 					<?php if ( $next ) : ?>
 						<?php /* translators: %s: date and time of the next scheduled run */ ?>
-						· <?php echo esc_html( sprintf( __( 'next: %s', 'cx-sidrena' ), wp_date( 'j.n.Y. H:i', $next ) ) ); ?>
+						· <?php echo esc_html( sprintf( __( 'next: %s', 'cx-sidrena' ), CX_Sidrena_Archive::legal_date( 'j.n.Y. H:i', $next ) ) ); ?>
 					<?php endif; ?>
 					· <a href="<?php echo esc_url( $export->get_public_url() ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( strtoupper( $export->export_format() ) ); ?></a>
 					· <a href="<?php echo esc_url( $export->get_cjenik_url() ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html__( 'Page', 'cx-sidrena' ); ?></a>

@@ -27,12 +27,18 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 	<input type="hidden" name="sidrena_cijena_action" value="save_main_settings" />
 </form>
 
-<?php if ( ! $settings->is_b2b_only() && '' === $settings->legal_id() ) : ?>
-	<?php // CX-SID-110: the Status tab's yellow line here too; without WooCommerce there is no Status tab (Norman 110-2). ?>
-	<p class="cx-status__line">
-		<?php echo esc_html__( 'OIB, MBO or MIBPG is missing. The official name of the price list file must include it; now it does not.', 'cx-sidrena' ); ?>
-		<a href="#cx-oib-row"><?php echo esc_html__( 'Enter it', 'cx-sidrena' ); ?></a>
-	</p>
+<?php if ( $export->waiting_for_legal_id() ) : ?>
+	<?php // CX-SID-159: the Status tab's red block here too; without WooCommerce there is no Status tab (Norman 110-2). ?>
+	<div class="cx-status__banner cx-status__banner--red" id="cx-settings-no-oib" role="status">
+		<p class="cx-status__headline"><?php echo esc_html__( 'The price list is not published: the OIB, MBO or MIBPG is missing.', 'cx-sidrena' ); ?></p>
+		<p>
+			<?php echo esc_html__( 'The Pravilnik requires it in the name of every price list file. Until you enter it, no new price list is made and price changes are not published.', 'cx-sidrena' ); ?>
+			<?php if ( $export->ever_published() ) : ?>
+				<?php echo esc_html__( 'The last published price list stays public.', 'cx-sidrena' ); ?>
+			<?php endif; ?>
+		</p>
+		<p><a class="button button-primary" href="#cx-oib-row"><?php echo esc_html__( 'Enter it', 'cx-sidrena' ); ?></a></p>
+	</div>
 <?php endif; ?>
 
 <?php if ( $woo && class_exists( 'CX_Sidrena_Dates' ) ) : ?>
@@ -126,8 +132,8 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 		<label class="cx-settings__color-choice"><input type="radio" form="<?php echo esc_attr( $f ); ?>" name="cx_line_color_mode" value="own" <?php checked( '' !== $line_color ); ?> /> <span><?php echo esc_html__( 'Own colour', 'cx-sidrena' ); ?></span>
 			<input type="color" form="<?php echo esc_attr( $f ); ?>" name="cx_line_color" id="cx_line_color" value="<?php echo esc_attr( '' !== $line_color ? $line_color : '#666666' ); ?>" aria-label="<?php echo esc_attr__( 'Own colour', 'cx-sidrena' ); ?>" /></label>
 		<p class="cx-settings__color-warn" id="cx-line-color-warn" hidden><?php echo esc_html__( 'Hard to read on a white background.', 'cx-sidrena' ); ?></p>
-		<?php // The preview shows only the bazna line; the colour is also the lowest-price caption's (Norman, CX-SID-41). ?>
-		<p class="description"><?php echo esc_html__( 'Also applies to the lowest-price note on sale products.', 'cx-sidrena' ); ?></p>
+		<?php // The preview shows only the bazna line; the colour is also the lowest-price line's (Norman, CX-SID-41, 179). ?>
+		<p class="description"><?php echo esc_html__( 'Also applies to the lowest-price line on products on sale.', 'cx-sidrena' ); ?></p>
 	</fieldset>
 </section>
 
@@ -136,7 +142,7 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 	$badge_mode    = CX_Sidrena_Badge::mode();
 	$badge_default = CX_Sidrena_Badge::default_mode();
 	$badge_choices = array(
-		'percent' => array( __( 'Show percentage (calculated from the lowest price in 30 days)', 'cx-sidrena' ), '−12 %' ),
+		'percent' => array( __( 'Show percentage (calculated from the regular price)', 'cx-sidrena' ), '−12 %' ),
 		'akcija'  => array( __( 'Show "Akcija" only', 'cx-sidrena' ), 'Akcija' ),
 		'hide'    => array( __( 'Hide', 'cx-sidrena' ), '' ),
 	);
@@ -158,7 +164,6 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 				</label>
 			<?php endforeach; ?>
 		</fieldset>
-		<p class="description"><?php echo esc_html__( 'A sale whose price is not lower than the lowest price in the last 30 days never gets a badge.', 'cx-sidrena' ); ?></p>
 	</section>
 <?php endif; ?>
 
@@ -222,7 +227,7 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 						<p class="cx-field__msg cx-field__msg--<?php echo esc_attr( $xml_notice[0] ); ?>" id="cx-oib-xml-msg"><?php echo esc_html( $xml_notice[1] ); ?></p>
 					<?php endif; ?>
 				<?php endif; ?>
-				<p class="description"><?php echo esc_html__( 'Company (d.o.o., j.d.o.o.): OIB, 11 digits. Craft: MBO. Family farm: MIBPG. For the official name of the price list file. Empty: the name is without it.', 'cx-sidrena' ); ?></p>
+				<p class="description"><?php echo esc_html__( 'Company (d.o.o., j.d.o.o.): OIB, 11 digits. Craft: MBO. Family farm: MIBPG. For the official name of the price list file. Without it, no new price list is published.', 'cx-sidrena' ); ?></p>
 			</td>
 		</tr>
 		<tr>
@@ -240,7 +245,8 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 			</td>
 		</tr>
 		<?php
-		// CX-SID-27: how long a price list file older than the public 30 days is kept, and those files by month.
+		// CX-SID-27: how long a price list file that is no longer public is kept (CX-SID-158: 15 days after a newer one
+		// replaced it), and those files by month.
 		$keep_days  = CX_Sidrena_Archive::keep_days();
 		$keep_opts  = array(
 			30   => __( '30 days (minimum)', 'cx-sidrena' ),
@@ -272,10 +278,10 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 						<option value="<?php echo esc_attr( (string) $days ); ?>" <?php selected( $keep_days, $days ); ?>><?php echo esc_html( $label ); ?></option>
 					<?php endforeach; ?>
 				</select>
-				<p class="description"><?php echo esc_html__( 'Price lists older than 30 days are no longer public. They stay stored on your server, out of public reach, for as long as you choose here. The default is 4 years, the limitation period for a misdemeanour. If you shorten it, older price lists are deleted for good the next morning.', 'cx-sidrena' ); ?></p>
+				<p class="description"><?php echo esc_html__( 'A price list stops being public 15 days after a newer one replaces it. It then stays stored on your server, out of public reach, until the period you choose here has passed since it was published. The default is 4 years, the limitation period for a misdemeanour. If you shorten it, older price lists are deleted for good the next morning.', 'cx-sidrena' ); ?></p>
 				<h3 class="cx-kept__title"><?php echo esc_html__( 'Saved older price lists', 'cx-sidrena' ); ?></h3>
 				<?php if ( array() === $kept_months ) : ?>
-					<p class="cx-kept__empty"><?php echo esc_html__( 'No older price lists yet. Price lists older than 30 days will appear here.', 'cx-sidrena' ); ?></p>
+					<p class="cx-kept__empty"><?php echo esc_html__( 'No older price lists yet. A price list appears here once it is no longer public, 15 days after a newer one replaces it.', 'cx-sidrena' ); ?></p>
 				<?php else : ?>
 					<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>#cx-kept" class="cx-kept__month">
 						<input type="hidden" name="page" value="sidrena-cijena" />
@@ -362,6 +368,26 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 				</td>
 			</tr>
 			<?php endif; ?>
+			<?php if ( $woo && function_exists( 'cx_sidrena_n30_display_enabled' ) ) : ?>
+			<?php
+			// The lowest price in 30 days (CX-SID-63): the option that WP-CLI and the move from MJDD set
+			// (cx_sidrena_n30_display), now also here. The marker field: a form without this row never changes it.
+			$n30_other = class_exists( 'CX_Sidrena_Compat' ) && CX_Sidrena_Compat::lowest_price_plugin_active();
+			?>
+			<tr id="cx-n30">
+				<th scope="row"><?php echo esc_html__( 'Lowest price in 30 days', 'cx-sidrena' ); ?></th>
+				<td>
+					<input type="hidden" form="<?php echo esc_attr( $f ); ?>" name="cx_n30_present" value="1" />
+					<label><input type="checkbox" form="<?php echo esc_attr( $f ); ?>" name="cx_n30_display" value="yes" <?php checked( cx_sidrena_n30_display_enabled() ); ?> /> <?php echo esc_html__( 'Show the lowest price in 30 days on products on sale', 'cx-sidrena' ); ?></label>
+					<?php if ( $n30_other ) : ?>
+						<?php // With another plugin's line, this box changes nothing customers see (class-frontend.php sale_state()), so the description of "off" would not be true (Norman, 63 MUST 1). ?>
+						<p class="description cx-n30-other"><?php echo esc_html__( 'Another plugin shows the lowest price in 30 days, so this choice does not change what customers see. It applies once that plugin is turned off.', 'cx-sidrena' ); ?></p>
+					<?php else : ?>
+						<p class="description"><?php echo esc_html__( 'When this is off, products on sale show the struck regular price and the sale price, without the line with the lowest price in the 30 days before the discount. The law requires the lowest price in 30 days while a sale, a clearance sale or another reduction lasts, so turn this off only if you show it another way. The price history is recorded either way.', 'cx-sidrena' ); ?></p>
+					<?php endif; ?>
+				</td>
+			</tr>
+			<?php endif; ?>
 			<tr>
 				<th scope="row"><?php echo esc_html__( 'Date format', 'cx-sidrena' ); ?></th>
 				<td>
@@ -427,11 +453,11 @@ $sample     = CX_Sidrena_Money::customer_date( '10.09.2026.' );
 					</p>
 					<?php if ( ! empty( $xml_meta['generated'] ) ) : ?>
 						<?php /* translators: %s: datetime */ ?>
-						<p class="description"><?php echo esc_html( sprintf( __( 'Last successful generation: %s.', 'cx-sidrena' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $xml_meta['generated'] ) ) ); ?></p>
+						<p class="description"><?php echo esc_html( sprintf( __( 'Last successful generation: %s.', 'cx-sidrena' ), CX_Sidrena_Archive::legal_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $xml_meta['generated'] ) ) ); ?></p>
 					<?php endif; ?>
 					<?php if ( $next_daily ) : ?>
 						<?php /* translators: %s: datetime */ ?>
-						<p class="description"><?php echo esc_html( sprintf( __( 'Next automatic generation: %s.', 'cx-sidrena' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $next_daily ) ) ); ?></p>
+						<p class="description"><?php echo esc_html( sprintf( __( 'Next automatic generation: %s.', 'cx-sidrena' ), CX_Sidrena_Archive::legal_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $next_daily ) ) ); ?></p>
 					<?php endif; ?>
 					<p><button type="submit" form="<?php echo esc_attr( $f ); ?>" class="button" name="cx_regenerate" value="1"><?php echo esc_html__( 'Save and generate the price list now', 'cx-sidrena' ); ?></button></p>
 				</td>

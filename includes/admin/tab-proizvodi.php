@@ -8,20 +8,34 @@
 defined( 'ABSPATH' ) || exit;
 
 		$rows = CX_Sidrena_Catalog::instance()->all();
-		$json = wp_json_encode( $rows );
-		if ( ! is_string( $json ) ) {
-			$json = '[]';
+		foreach ( $rows as $i => $row ) {
+			// A service that is not in the price list is marked in its row (CX-SID-130, Norman 3113 R).
+			$rows[ $i ]['neobjavljeno'] = ! CX_Sidrena_Catalog::instance()->is_public_row( $row );
+			// The date a published service has, for its empty date field (Norman 130 SHOULD 2).
+			if ( 'usluga' === CX_Sidrena_Catalog::instance()->row_vrsta( $row ) && ! $rows[ $i ]['neobjavljeno'] ) {
+				$rows[ $i ]['datum_usluge'] = CX_Sidrena_Money::customer_date( CX_Sidrena_Catalog::instance()->service_state( $row )['date'] );
+			}
+			// A product saved without a bazna cijena is marked in its row too (CX-SID-133, Norman 3272, Rook 3273).
+			$rows[ $i ]['bez_bazne'] = CX_Sidrena_Catalog::instance()->is_goods_without_bazna( $row );
 		}
-
 		$upit_rows = CX_Sidrena_Upit::instance()->all();
-		$upit_json = wp_json_encode( $upit_rows );
-		if ( ! is_string( $upit_json ) ) {
-			$upit_json = '[]';
-		}
 
 		$woo        = CX_Sidrena_Plugin::woocommerce_active();
 		$cjenik_url = CX_Sidrena_Export::instance()->get_cjenik_url();
+
+		// CX-SID-142, Norman C1 (ev 3240): a list the page's script could not read. The script shows it, turns saving
+		// off and never sends an empty list in its place. The link is the one of 'Tell us' on Status.
+		$report_open = '<a href="' . esc_url( CX_Sidrena_Admin_Status::report_links()['bug']['url'] ) . '" target="_blank" rel="noopener noreferrer">';
+		$load_errors = array(
+			'catalog' => sprintf( esc_html__( 'The items did not load, so they cannot be edited or saved here right now. Your saved items and your price list have not changed. Refresh the page. If this message comes back, %1$stell us%2$s.', 'cx-sidrena' ), $report_open, '</a>' ),
+			'upit'    => sprintf( esc_html__( 'The services with price by agreement did not load, so they cannot be edited or saved here right now. What you saved and your price list have not changed. Refresh the page. If this message comes back, %1$stell us%2$s.', 'cx-sidrena' ), $report_open, '</a>' ),
+		);
+		$items_refused = CX_Sidrena_Admin::items_refused_notice();
 		?>
+		<?php if ( null !== $items_refused ) : ?>
+			<?php // Norman C3: at the part the page lands on, not only at the top. ?>
+			<div class="notice notice-error inline" role="alert"><p><?php echo esc_html( $items_refused ); ?></p></div>
+		<?php endif; ?>
 		<div class="sidrena-cijena-callout">
 			<span class="dashicons dashicons-info-outline" aria-hidden="true"></span>
 			<p>
@@ -70,8 +84,15 @@ defined( 'ABSPATH' ) || exit;
 			<form method="post" action="<?php echo esc_url( $this->get_settings_tab_url( 'proizvodi' ) ); ?>" id="sidrena-cijena-catalog-form">
 				<?php wp_nonce_field( 'sidrena_cijena_save_catalog', 'sidrena_cijena_catalog_nonce' ); ?>
 				<input type="hidden" name="sidrena_cijena_action" value="save_catalog" />
-				<input type="hidden" name="sidrena_cijena_catalog_json" id="sidrena-cijena-catalog-json" value="<?php echo esc_attr( $json ); ?>" />
-				<input type="hidden" name="sidrena_cijena_upit_json" id="sidrena-cijena-upit-json" value="<?php echo esc_attr( $upit_json ); ?>" />
+				<input type="hidden" name="sidrena_cijena_catalog_json" id="sidrena-cijena-catalog-json" value="<?php echo CX_Sidrena_Admin::json_attr( $rows ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_attr() in json_attr() ?>" />
+				<input type="hidden" name="sidrena_cijena_upit_json" id="sidrena-cijena-upit-json" value="<?php echo CX_Sidrena_Admin::json_attr( $upit_rows ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_attr() in json_attr() ?>" />
+				<?php // CX-SID-142: the script sets _loaded once it has read both lists, and _cleared for a list the owner emptied. Without them the save is refused. ?>
+				<input type="hidden" name="sidrena_cijena_catalog_loaded" id="sidrena-cijena-catalog-loaded" value="" />
+				<input type="hidden" name="sidrena_cijena_catalog_cleared" id="sidrena-cijena-catalog-cleared" value="" />
+				<input type="hidden" name="sidrena_cijena_upit_cleared" id="sidrena-cijena-upit-cleared" value="" />
+
+				<?php // The script makes it a red notice when the list did not load; until then it is no notice at all (an empty hidden notice-error read as an error on the page). ?>
+				<div class="sidrena-cijena-load-error" id="sidrena-cijena-catalog-load-error" role="alert" hidden data-cx-message="<?php echo esc_attr( $load_errors['catalog'] ); ?>"></div>
 
 				<div class="sidrena-cijena-catalog-toolbar">
 					<div class="sidrena-cijena-catalog-toolbar__start">
@@ -82,7 +103,7 @@ defined( 'ABSPATH' ) || exit;
 								<option value=""><?php echo esc_html__( 'Webshop', 'cx-sidrena' ); ?></option>
 								<?php foreach ( CX_Sidrena_Poslovnice::instance()->all() as $outlet ) : ?>
 									<?php $outlet_name = '' !== $outlet['naziv'] ? $outlet['naziv'] : $outlet['oznaka']; ?>
-									<option value="<?php echo esc_attr( $outlet['oznaka'] ); ?>"><?php echo esc_html( $outlet_name ); ?></option>
+									<option value="<?php echo esc_attr( $outlet['oznaka'] ); ?>"><?php echo CX_Sidrena_Feed_Files::instance()->text_html( $outlet_name, true ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- as typed (CX-SID-142) ?></option>
 								<?php endforeach; ?>
 							</select>
 						</label>
@@ -130,9 +151,11 @@ defined( 'ABSPATH' ) || exit;
 					<button type="button" class="button" id="sidrena-cijena-catalog-next"><?php echo esc_html__( 'Next', 'cx-sidrena' ); ?></button>
 				</nav>
 
-				<div class="sidrena-cijena-upit-block">
-					<h3 class="sidrena-cijena-upit-head"><?php echo esc_html__( 'Price on request', 'cx-sidrena' ); ?></h3>
-					<p class="description"><?php echo esc_html__( 'These rows are printed at the bottom of the HTML price list.', 'cx-sidrena' ); ?></p>
+				<div class="sidrena-cijena-upit-block" id="cx-upit">
+					<?php // CX-SID-76: Kai's two sentences (1584 art. 4(2), ZZP art. 7(1)), then where they are shown (Norman). ?>
+					<h3 class="sidrena-cijena-upit-head"><?php echo esc_html__( 'Services with price by agreement', 'cx-sidrena' ); ?></h3>
+					<p class="description"><?php echo esc_html__( 'Only for services whose price is set case by case. A service with a known price must be in the price list with its price. They are shown only on the price list page, under the price list; the price list file does not have them.', 'cx-sidrena' ); ?></p>
+					<div class="sidrena-cijena-load-error" id="sidrena-cijena-upit-load-error" role="alert" hidden data-cx-message="<?php echo esc_attr( $load_errors['upit'] ); ?>"></div>
 					<p class="sidrena-cijena-actions">
 						<button type="button" class="button button-secondary" id="sidrena-cijena-upit-add">
 							<span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span>
@@ -145,6 +168,7 @@ defined( 'ABSPATH' ) || exit;
 								<tr>
 									<th><?php echo esc_html__( 'Name', 'cx-sidrena' ); ?></th>
 									<th><?php echo esc_html__( 'Criteria', 'cx-sidrena' ); ?></th>
+									<th><?php echo esc_html__( 'Type', 'cx-sidrena' ); ?></th>
 									<th><span class="screen-reader-text"><?php echo esc_html__( 'Actions', 'cx-sidrena' ); ?></span></th>
 								</tr>
 							</thead>
@@ -154,6 +178,8 @@ defined( 'ABSPATH' ) || exit;
 				</div>
 
 				<?php $this->render_save_button( $woo ? __( 'Save items', 'cx-sidrena' ) : __( 'Save price list', 'cx-sidrena' ) ); ?>
+				<?php // Norman C2: under the button, because on a phone C1 is far above it. ?>
+				<p class="description sidrena-cijena-save-off" id="sidrena-cijena-catalog-save-off" hidden><?php echo esc_html__( 'Saving is off because not everything loaded. See the message above.', 'cx-sidrena' ); ?></p>
 			</form>
 		</section>
 		<?php

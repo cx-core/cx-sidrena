@@ -103,6 +103,7 @@ class CX_Sidrena_Admin {
 		add_action( 'admin_init', array( $this, 'handle_catalog_save' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ), 20 );
 		add_filter( 'admin_body_class', array( $this, 'admin_body_class' ) );
+		add_filter( 'removable_query_args', array( $this, 'removable_query_args' ) );
 		add_action( 'admin_head', array( $this, 'hide_footer_thankyou' ) );
 		add_action( 'admin_footer', array( $this, 'hide_footer_thankyou' ), 999 );
 		add_filter( 'admin_footer_text', array( $this, 'filter_admin_footer_text' ), 999 );
@@ -122,6 +123,11 @@ class CX_Sidrena_Admin {
 		add_action( 'woocommerce_variation_options_pricing', array( $this, 'render_variation_fields' ), 10, 3 );
 		add_action( 'woocommerce_admin_process_product_object', array( $this, 'save_simple_fields' ) );
 		add_action( 'woocommerce_save_product_variation', array( $this, 'save_variation_fields' ), 10, 2 );
+		// A WooCommerce product the owner marks as a service goes into the services price list (CX-SID-138).
+		$fields = CX_Sidrena_Product_Fields::instance();
+		add_filter( 'product_type_options', array( $fields, 'service_type_option' ) );
+		add_action( 'woocommerce_product_options_general_product_data', array( $fields, 'render_service_marker' ) );
+		add_action( 'woocommerce_admin_process_product_object', array( $fields, 'save_service_mark' ) );
 
 		CX_Sidrena_Admin_Products::instance(); // the product list's column and filter (CX-SID-24)
 	}
@@ -175,6 +181,13 @@ class CX_Sidrena_Admin {
 			'outlets' => __( 'Outlets saved.', 'cx-sidrena' ),
 			'items'   => __( 'Additional items saved.', 'cx-sidrena' ),
 		);
+		// CX-SID-130 (Norman 3113 K): services saved but not published say so, yellow, instead of the green "saved".
+		$unpub = isset( $_GET['cx_unpub'] ) ? absint( wp_unslash( $_GET['cx_unpub'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		// CX-SID-133: goods saved without a bazna cijena say so too (before it they vanished under the green "saved").
+		$nobazna = isset( $_GET['cx_nobazna'] ) ? absint( wp_unslash( $_GET['cx_nobazna'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( 'items' === $saved_part && ( $unpub > 0 || $nobazna > 0 ) ) {
+			unset( $saved_msgs['items'] );
+		}
 		$xml_ok    = isset( $_GET['sidrena_xml'] ) && '1' === $_GET['sidrena_xml']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$xml_other = $xml_ok ? null : self::xml_notice(); // busy, failed, no outlet products, B2B: the same text as at the OIB
 		$multi     = $settings->is_multi_poslovnica();
@@ -219,8 +232,37 @@ class CX_Sidrena_Admin {
 				<div class="notice notice-<?php echo esc_attr( $oib_notice[0] ); ?>"><p><?php echo esc_html( $oib_notice[1] ); ?></p></div>
 			<?php endif; ?>
 
+			<?php $items_refused = self::items_refused_notice(); ?>
+			<?php if ( null !== $items_refused ) : ?>
+				<div class="notice notice-error"><p><?php echo esc_html( $items_refused ); ?></p></div>
+			<?php endif; ?>
+
 			<?php if ( isset( $saved_msgs[ $saved_part ] ) ) : ?>
 				<div class="notice notice-success is-dismissible"><p><?php echo esc_html( $saved_msgs[ $saved_part ] ); ?></p></div>
+			<?php endif; ?>
+
+			<?php if ( 'items' === $saved_part && $unpub > 0 ) : ?>
+				<div class="notice notice-warning is-dismissible"><p>
+					<?php /* translators: %d: number of services not in the price list */ ?>
+					<?php echo esc_html( sprintf( __( 'Saved. Services not in the price list yet, because they have no date or bazna cijena: %d. They are marked in the table.', 'cx-sidrena' ), $unpub ) ); ?>
+				</p></div>
+			<?php endif; ?>
+
+			<?php if ( 'items' === $saved_part && $nobazna > 0 ) : ?>
+				<div class="notice notice-warning is-dismissible"><p>
+					<?php
+					// Norman 3272: an instruction (Kai 3265). Under the yellow message of the services (130 K) without
+					// its "Saved.", so it is not read twice.
+					if ( $unpub > 0 ) {
+						/* translators: %d: number of products in the table without a bazna cijena */
+						$nobazna_text = __( 'Products in this table without a bazna cijena: %d. They are in the price list without it. Enter the bazna cijena in the Bazna cijena column.', 'cx-sidrena' );
+					} else {
+						/* translators: %d: number of products in the table without a bazna cijena */
+						$nobazna_text = __( 'Saved. Products in this table without a bazna cijena: %d. They are in the price list without it. Enter the bazna cijena in the Bazna cijena column.', 'cx-sidrena' );
+					}
+					echo esc_html( sprintf( $nobazna_text, $nobazna ) );
+					?>
+				</p></div>
 			<?php endif; ?>
 
 			<?php if ( $xml_ok ) : ?>
@@ -498,6 +540,51 @@ class CX_Sidrena_Admin {
 	}
 
 	/**
+	 * A value as JSON in an HTML attribute that the page's script reads back with JSON.parse (CX-SID-142). Every '<',
+	 * '>', '&', quote and apostrophe in it is a \u escape, so the attribute holds no entity for the browser to decode
+	 * into the JSON: esc_attr() alone does not encode an entity again, and a name stored as '&quot;' came back as a raw
+	 * quote inside a JSON string, so the list did not parse.
+	 *
+	 * @param mixed $value Value.
+	 * @return string Escaped for the attribute.
+	 */
+	public static function json_attr( $value ) {
+		$json = wp_json_encode( $value, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT );
+
+		return esc_attr( is_string( $json ) ? $json : '[]' );
+	}
+
+	/**
+	 * The save of Products / Additional items was refused (CX-SID-142): the page did not confirm that it had read both
+	 * lists, or it sent an empty list the owner did not clear. Norman C3 (ev 3240), at the top and at #cx-items.
+	 *
+	 * @return string|null
+	 */
+	public static function items_refused_notice() {
+		if ( ! isset( $_GET['cx_items_error'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return null;
+		}
+
+		return __( 'Nothing was saved, because the page did not confirm that it had loaded all items, and saving could have deleted the ones it did not show. Your saved items and your price list have not changed. Refresh the page and make your changes again.', 'cx-sidrena' );
+	}
+
+	/**
+	 * Query args shown once. WordPress's canonical script (wp_admin_canonical_url()) takes them out of the address right
+	 * after the page loads, so a refresh does not show the notice again (CX-SID-142, Norman SHOULD 1, ev 3316).
+	 * cx_outlet_error is not here: admin-outlets.js reads it from location.search, and the canonical script would remove
+	 * it before that (CX-SID-131 handles it in the script).
+	 *
+	 * @param string[] $args Removable query args.
+	 * @return string[]
+	 */
+	public function removable_query_args( $args ) {
+		$args   = is_array( $args ) ? $args : array();
+		$args[] = 'cx_items_error';
+
+		return $args;
+	}
+
+	/**
 	 * After a failed build the owner asked for: the next attempt is queued within 5 minutes
 	 * (CX_Sidrena_Export::retry_soon(), CX-SID-119). Settings and Status.
 	 *
@@ -524,12 +611,15 @@ class CX_Sidrena_Admin {
 						: __( 'The public price list has been generated.', 'cx-sidrena' ),
 				);
 			case '2':
-				return array( 'warning', __( 'No outlet has products added. Add products on the Outlets tab.', 'cx-sidrena' ) );
+				return array( 'warning', __( 'No additional outlet has products. Below, open Show advanced settings and, in Outlets, choose All published webshop products or at least one product for each outlet.', 'cx-sidrena' ) );
 			case 'b2b':
 				return array( 'info', CX_Sidrena_Export::b2b_message() );
 			case 'nobazna':
 				// The first price list waits for the first bazna (CX-SID-68). Not a failure: nothing is retried.
 				return array( 'error', CX_Sidrena_Export::no_bazna_message() );
+			case 'nooib':
+				// No OIB or MBO (CX-SID-159). Not a failure: nothing is retried; the red block at the top links to the field.
+				return array( 'error', CX_Sidrena_Export::no_legal_id_message() );
 			case 'busy':
 				// Another build was running; the one with this save follows it (CX-SID-119). Not a failure.
 				return array( 'info', __( 'The price list is being generated right now. As soon as that is done, it will be generated once more, with what you just saved.', 'cx-sidrena' ) );
@@ -759,10 +849,11 @@ class CX_Sidrena_Admin {
 					'fingerprint'  => __( 'File fingerprint: %s', 'cx-sidrena' ),
 					/* translators: %d: products and variations */
 					'count'        => __( 'Products and variations: %d', 'cx-sidrena' ),
+					// Norman T6 (CX-SID-122): true for a file of prices and for one of brands and codes.
 					/* translators: %d: rows of the file that will be imported */
-					'importN'      => __( 'Import prices (%d)', 'cx-sidrena' ),
-					/* translators: %d: prices imported */
-					'imported'     => __( 'Prices imported: %d.', 'cx-sidrena' ),
+					'importN'      => __( 'Import (%d)', 'cx-sidrena' ),
+					/* translators: %d: rows imported */
+					'imported'     => __( 'Imported: %d.', 'cx-sidrena' ),
 					/* translators: %d: rows */
 					'notImported'  => __( 'Not imported: %d.', 'cx-sidrena' ),
 					/* translators: %d: rows */
@@ -773,7 +864,7 @@ class CX_Sidrena_Admin {
 					'lowest'       => __( 'Lowest price in 30 days', 'cx-sidrena' ),
 					/* translators: 1: name of who confirmed, 2: date and time it started */
 					'runningWho'   => __( 'Confirmed by %1$s, started %2$s.', 'cx-sidrena' ),
-					'stopAsk'      => __( 'Stop the import? The prices already imported stay; the rest is not imported.', 'cx-sidrena' ),
+					'stopAsk'      => __( 'Stop the import? What is already imported stays; the rest is not imported.', 'cx-sidrena' ),
 					/* translators: %d: rows */
 					'stopped'      => __( 'Stopped. Not imported: %d.', 'cx-sidrena' ),
 					'otherDone'    => __( 'The other import has finished. You can import your file now.', 'cx-sidrena' ),
@@ -783,8 +874,20 @@ class CX_Sidrena_Admin {
 					// that is not a pause, and a lost connection that does not stop the import.
 					'otherRunning' => __( 'Another import is running', 'cx-sidrena' ),
 					/* translators: 1: name of who confirmed, 2: date and time it started */
-					'stopAskWho'   => __( 'Stop the import (confirmed by %1$s, started %2$s)? The prices already imported stay; the rest is not imported.', 'cx-sidrena' ),
-					'notStopped'   => __( 'Not stopped yet: some prices are being saved right now. The import goes on; press Stop import again in a moment.', 'cx-sidrena' ),
+					'stopAskWho'   => __( 'Stop the import (confirmed by %1$s, started %2$s)? What is already imported stays; the rest is not imported.', 'cx-sidrena' ),
+					'notStopped'   => __( 'Not stopped yet: some rows are being saved right now. The import goes on; press Stop import again in a moment.', 'cx-sidrena' ),
+					// CX-SID-122, Norman T4: the column of Brand, EAN and Barcode in the preview.
+					'codesHead'    => __( 'Brand · EAN · Barcode', 'cx-sidrena' ),
+					'codeLabels'   => array(
+						'marka'  => __( 'Brand', 'cx-sidrena' ),
+						'ean'    => __( 'EAN', 'cx-sidrena' ),
+						'barkod' => __( 'Barcode', 'cx-sidrena' ),
+					),
+					/* translators: 1: Brand, EAN or Barcode, 2: now, 3: after the import */
+					'codeChange'   => __( '%1$s: %2$s → %3$s', 'cx-sidrena' ),
+					/* translators: 1: Brand, EAN or Barcode, 2: the value WooCommerce has */
+					'codeKept'     => __( '%1$s: %2$s from WooCommerce stays', 'cx-sidrena' ),
+					'noChange'     => __( 'no change', 'cx-sidrena' ),
 					'lost'         => __( 'The connection to the shop was lost. The import goes on without this page. Press Continue to show its progress again, or reload the page later.', 'cx-sidrena' ),
 				),
 				'statusUrl'   => CX_Sidrena_Admin_Status::url(),
@@ -832,6 +935,9 @@ class CX_Sidrena_Admin {
 				wp_enqueue_script( 'selectWoo' );
 				$script_deps[] = 'selectWoo';
 			}
+			// Only for wc_enhanced_select_params: the outlet product picker's own messages (type 2 characters, no
+			// results, searching) in WooCommerce's translation (CX-SID-131). It touches only WooCommerce's own classes.
+			wp_enqueue_script( 'wc-enhanced-select' );
 		}
 
 		wp_enqueue_script(
@@ -903,7 +1009,11 @@ class CX_Sidrena_Admin {
 						'skipped'      => __( 'skipped', 'cx-sidrena' ),
 						'missing'      => __( 'SKU not found', 'cx-sidrena' ),
 						'created'      => __( 'added', 'cx-sidrena' ),
+						/* translators: %d: number of services */
+						'importUnpub'  => __( "Services imported but not in the price list yet, because the file has no date or bazna cijena for them: %d. Today's price would be wrong for a service you already offer. Fill in what is missing in the table above; a service goes into the price list when you save.", 'cx-sidrena' ),
 						'special'      => __( 'not imported: the retail price is a special form of sale, and the file has no name of that form (column naziv_posebnog_oblika), so it is not known which price it is. Import the price list downloaded from this page.', 'cx-sidrena' ),
+						// CX-SID-164: an import writes only the price list chosen on its form.
+						'other'        => __( 'not imported: these rows belong to another price list (another outlet or the webshop) and were left as they were. To change them, import the file into that outlet.', 'cx-sidrena' ),
 						// CX-SID-116: a price that cannot be read for sure is never imported as a guess (Kai).
 						'unclear'      => __( 'not imported: a price in the row cannot be read for sure (1.234 can be one thousand two hundred and thirty-four or one point two three four). Nothing in these rows was changed. Write the price with its decimals, e.g. 1234,00 or 1,23, and import the file again.', 'cx-sidrena' ),
 						/* translators: %d: row number in the file, as a spreadsheet shows it */
@@ -925,20 +1035,63 @@ class CX_Sidrena_Admin {
 						'datePlaceholder'  => (string) CX_Sidrena_Settings::instance()->get( 'default_date' ),
 						'vrstaProizvod'    => __( 'Product', 'cx-sidrena' ),
 						'vrstaUsluga'      => __( 'Service', 'cx-sidrena' ),
+						'upitProductWarn'  => __( 'A product must have a displayed price (ZZP art. 7(1)). Enter it with its price, like your other products.', 'cx-sidrena' ),
+						// CX-SID-130 (Norman 3113): the question in a new service row, its help, the row's mark, placeholders.
+						'odPrijeLabel'     => __( 'Do you already offer this service?', 'cx-sidrena' ),
+						'odPrijeNe'        => __( 'No, it is new (from today)', 'cx-sidrena' ),
+						'odPrijeDa'        => __( 'Yes, I already offer it', 'cx-sidrena' ),
+						'odPrijeHelpNe'    => __( "Its date is today and its bazna cijena is today's regular price. That is right only for a new service.", 'cx-sidrena' ),
+						'odPrijeHelpDa'    => __( 'Enter the day you started offering it (for any day before 10.9.2026., 10.9.2026. applies) and, as the bazna cijena, its price on that day. Until both are entered, the service is not in the price list.', 'cx-sidrena' ),
+						'unpubRow'         => __( 'Not in the price list: no date or bazna cijena.', 'cx-sidrena' ),
+						'noBaznaRow'       => __( 'No bazna cijena.', 'cx-sidrena' ), // CX-SID-133, Norman 3272
+						'todayDate'        => CX_Sidrena_Money::customer_date( CX_Sidrena_Archive::legal_date( 'd.m.Y.' ) ),
+						'serviceFrom'      => CX_Sidrena_Money::customer_date( CX_Sidrena_Catalog::SERVICE_FROM ),
+						'regularPrice'     => __( 'Regular price', 'cx-sidrena' ),
 						'webshop'          => __( 'Webshop', 'cx-sidrena' ),
 						'rowCount'       => CX_Sidrena_Plugin::woocommerce_active() ? __( '%d items', 'cx-sidrena' ) : __( '%d products', 'cx-sidrena' ),
 						'outletName'     => __( 'Name', 'cx-sidrena' ),
-						'outletNameHelp' => __( 'For you in admin only. Not included in the file name.', 'cx-sidrena' ),
+						'outletNameHelp' => __( 'Customers see it on this outlet\'s price list page and in the archive. Not included in the file name.', 'cx-sidrena' ),
 						'outletOblik'    => __( 'Outlet type', 'cx-sidrena' ),
-						'outletOblikHelp' => __( 'Written exactly as it should appear, e.g. prodavaonica, webshop or servis.', 'cx-sidrena' ),
+						'outletOblikHelp' => __( 'Goes into the file name exactly as written, e.g. prodavaonica.', 'cx-sidrena' ),
 						'outletAddress'  => __( 'Outlet address', 'cx-sidrena' ),
-						'outletAddressHelp' => __( 'Street and city remain in the name, e.g. Ilica 150 Zagreb.', 'cx-sidrena' ),
+						'outletAddressHelp' => __( 'Street, number and town, e.g. Ilica 150 Zagreb. Goes into the file name.', 'cx-sidrena' ),
 						'outletCode'     => __( 'Outlet label', 'cx-sidrena' ),
-						'outletCodeHelp' => __( 'Internal label, e.g. P-01 or 001. The hyphen is kept. Used in the price list URL: /sidrena-cijena-P-01.xml.', 'cx-sidrena' ),
+						'outletCodeHelp' => __( 'E.g. P-01 or 002: letters without diacritics, digits and hyphens. Goes into the price list address (/sidrena-cijena-P-01.xml) and the file name. Once the outlet publishes its first price list, the label no longer changes.', 'cx-sidrena' ),
+						'outletCodeEmpty' => __( 'Next free number', 'cx-sidrena' ),
+						// D1 (CX-SID-74): a place that has published keeps its code, the field is read-only.
+						'outletCodeLocked' => __( 'This outlet has already published a price list, so its label no longer changes: the address of its price list must stay the same.', 'cx-sidrena' ),
 						'outletSeq'      => __( 'Next storage number', 'cx-sidrena' ),
 						'outletSeqHelp'  => __( 'Goes up by one with each new price list file. You can raise it, but not lower it.', 'cx-sidrena' ),
 						'outletProducts' => __( 'Products', 'cx-sidrena' ),
-						'outletProductsHelp' => __( 'Only selected products are included in this outlet\'s price list.', 'cx-sidrena' ),
+						'outletAll'      => __( 'All published webshop products', 'cx-sidrena' ),
+						'outletPicked'   => __( 'Selected products', 'cx-sidrena' ),
+						'outletSearchHelp' => __( 'Search by name or SKU.', 'cx-sidrena' ),
+						// Without WooCommerce a row checked on an outlet leaves the webshop's price list (belongs_to_webshop).
+						'outletProductsHelp' => __( 'Checked products move from the webshop\'s price list to this outlet\'s.', 'cx-sidrena' ),
+						// Kai (CX-SID-74 3005): a place's price list has the webshop's prices.
+						'outletPrices'   => __( 'This outlet\'s price list uses the webshop\'s prices. If prices at this outlet are different, the price list does not show them correctly.', 'cx-sidrena' ),
+						'outletNoAddress' => __( 'Enter the address. It goes into the official name of this outlet\'s price list file.', 'cx-sidrena' ),
+						'outletNoOblik'  => __( 'Enter the type, e.g. prodavaonica. It goes into the official name of this outlet\'s price list file.', 'cx-sidrena' ),
+						'outletCodeWebshop' => /* translators: %s: the label as it would be saved */ __( 'The webshop already has the label %s. Enter another one, or leave the field empty for the next free number.', 'cx-sidrena' ),
+						'outletCodeTaken' => /* translators: 1: the label as it would be saved, 2: the name of the outlet that has it */ __( 'The outlet %2$s already has the label %1$s. Enter another one, or leave the field empty for the next free number.', 'cx-sidrena' ),
+						'outletCodeOther' => /* translators: %s: the label as it would be saved */ __( 'Another outlet already has the label %s. Enter another one, or leave the field empty for the next free number.', 'cx-sidrena' ),
+						'outletNoProducts' => __( 'Choose at least one product, or All published webshop products.', 'cx-sidrena' ),
+						// A save the server refused (cx_outlet_error): the form shows what was sent (S1), or only the stored state (S2).
+						'outletsRefused' => __( 'The outlets are not saved. The reason is next to the outlet below.', 'cx-sidrena' ),
+						'outletsRefusedStored' => /* translators: %s: the reason */ __( 'The outlets are not saved, so you see the state before your changes. Reason: %s', 'cx-sidrena' ),
+						// S2's reasons (Norman 3132): without the sent values the page knows neither the place nor the label.
+						'outletsWhyAddress' => __( 'An outlet without an address can\'t be saved, because the address goes into the official name of its price list file.', 'cx-sidrena' ),
+						'outletsWhyOblik'   => __( 'An outlet without a type can\'t be saved, because the type goes into the official name of its price list file.', 'cx-sidrena' ),
+						'outletsWhyCode'    => __( 'The webshop or another outlet already has the label you entered, or the outlet has published a price list in the meantime, so its label no longer changes.', 'cx-sidrena' ),
+						// The webshop's label is one a place keeps (cx_outlet_error=oznaka:webshop; Norman W1-W3, 3242/3245).
+						'outletWebCodeTaken' => /* translators: 1: the label as it would be saved, 2: the name of the outlet that has it */ __( 'The outlet %2$s already has the label %1$s. Enter another label for the webshop: the address of the webshop\'s price list has no label, so it stays the same.', 'cx-sidrena' ),
+						'outletWebCodeOther' => /* translators: %s: the label as it would be saved */ __( 'Another outlet already has the label %s. Enter another label for the webshop: the address of the webshop\'s price list has no label, so it stays the same.', 'cx-sidrena' ),
+						'outletWebCodeEmpty' => __( 'An empty field means the label 001.', 'cx-sidrena' ),
+						'outletsRefusedFields' => __( 'The outlets are not saved. The reason is next to the marked fields below.', 'cx-sidrena' ),
+						'outletsWhyWebCode' => __( 'The label you entered for the webshop is already the label of an outlet.', 'cx-sidrena' ),
+						// cx_outlet_error=nepotvrdeno (Tux, CX-SID-142): the page did not confirm it loaded (Norman C3, 3240).
+						'outletsUnconfirmed' => __( 'The outlets are not saved, because the page did not confirm that it had loaded all outlets, and saving could have deleted the ones it did not show. Your saved outlets have not changed. Refresh the page and make your changes again.', 'cx-sidrena' ),
+						'outletsBusy'    => __( 'The outlets are not saved, because they were also being saved somewhere else at the same moment, for example in another browser tab. Your changes are still here. Click Save outlets again.', 'cx-sidrena' ),
 						'searchProducts' => __( 'Search product…', 'cx-sidrena' ),
 						'noCatalog'      => __( 'First add products on the Products tab.', 'cx-sidrena' ),
 						'chooseOutlet'   => __( 'Select the outlet to import into.', 'cx-sidrena' ),

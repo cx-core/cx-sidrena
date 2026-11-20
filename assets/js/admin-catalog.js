@@ -12,8 +12,43 @@
 		var $tbody = $("#sidrena-cijena-catalog tbody");
 		var $count = $("#sidrena-cijena-catalog-count");
 
+		// For text and for a value="" attribute: a quote in a name ended the attribute, so the field showed only what
+		// came before it, and a save stored that (CX-SID-142). .html() of a text node does not escape quotes.
 		function escAttr(value) {
-			return $("<div>").text(value == null ? "" : String(value)).html();
+			return $("<div>")
+				.text(value == null ? "" : String(value))
+				.html()
+				.replace(/"/g, "&quot;")
+				.replace(/'/g, "&#39;");
+		}
+
+		// CX-SID-142: a list that does not parse is never replaced by an empty one. Its part shows Norman's C1, nothing
+		// can be added or saved (C2 under the button), and the form is not sent. Only a page that read both lists says so
+		// to the server (_loaded), and _cleared says the owner deleted every row the page showed.
+		var CATALOG_TEXT = ["naziv", "sku", "marka", "url", "cijena_redovna", "cijena_akcijska", "naziv_posebnog_oblika", "jedinica_mjere", "cijena_jedinice_mjere", "sidrena_cijena", "sidrena_datum", "cjm_suffix"];
+		var UPIT_TEXT = ["naziv", "kriteriji"];
+
+		function hasText(rows, fields) {
+			return rows.some(function (row) {
+				return fields.some(function (key) {
+					return row && row[key] != null && $.trim(String(row[key])) !== "";
+				});
+			});
+		}
+
+		function readList($field) {
+			try {
+				var list = JSON.parse($field.val());
+				return $.isArray(list) ? list : null;
+			} catch (e) {
+				return null;
+			}
+		}
+
+		function showLoadError($box) {
+			$box.addClass("notice notice-error inline").prop("hidden", false);
+			// Filled after it is shown, so a screen reader announces it (role=alert). The text is the server's.
+			$box.html("<p>" + ($box.attr("data-cx-message") || "") + "</p>");
 		}
 
 		function emptyRow(partial) {
@@ -36,9 +71,94 @@
 					dostupnost: "dostupno",
 					cjm: "",
 					cjm_suffix: "",
+					od_prije: "",
+					neobjavljeno: false,
+					bez_bazne: false,
 				},
 				partial || {}
 			);
+		}
+
+		// CX-SID-130: a new service row asks whether the service is offered from before (Kai U1). "No" (also unanswered):
+		// its date is today and its bazna today's regular price. "Yes": its own date and bazna, and until both are in, it
+		// is not in the price list. Placeholders show what will apply, never the default date of goods.
+		function isService(row) {
+			return row.vrsta === "usluga";
+		}
+
+		function datePlaceholder(row) {
+			if (!isService(row)) {
+				return i18n.datePlaceholder || "";
+			}
+			if (!row.id) {
+				return row.od_prije === "da" ? "" : i18n.todayDate || "";
+			}
+			// A stored service shows the date it is published with; one that is not in the price list shows none, so its
+			// empty field does not read as filled (Norman 130 SHOULD 2).
+			return row.neobjavljeno ? "" : row.datum_usluge || "";
+		}
+
+		function baznaPlaceholder(row) {
+			return isService(row) && !row.id && row.od_prije !== "da" ? i18n.regularPrice || "" : "";
+		}
+
+		function odPrijeHtml(row) {
+			if (row.id) {
+				return "";
+			}
+			var yes = row.od_prije === "da";
+			return (
+				'<div class="sidrena-cijena-od-prije js-od-prije-wrap"' +
+				(isService(row) ? "" : " hidden") +
+				">" +
+				"<label>" +
+				escAttr(i18n.odPrijeLabel || "") +
+				' <select class="js-od-prije">' +
+				'<option value="ne"' +
+				(yes ? "" : " selected") +
+				">" +
+				escAttr(i18n.odPrijeNe || "") +
+				"</option>" +
+				'<option value="da"' +
+				(yes ? " selected" : "") +
+				">" +
+				escAttr(i18n.odPrijeDa || "") +
+				"</option>" +
+				"</select></label>" +
+				'<p class="description js-od-prije-help">' +
+				escAttr(yes ? i18n.odPrijeHelpDa || "" : i18n.odPrijeHelpNe || "") +
+				"</p></div>"
+			);
+		}
+
+		function unpubHtml(row) {
+			return (
+				(row.neobjavljeno
+					? '<input type="hidden" class="js-unpub" value="1" /><p class="sidrena-cijena-unpub" role="status">' +
+					  escAttr(i18n.unpubRow || "") +
+					  "</p>"
+					: "") +
+				// CX-SID-133 (Norman 3272, Rook 3273): a product saved without a bazna cijena, marked as a service is.
+				(row.bez_bazne
+					? '<input type="hidden" class="js-nobazna" value="1" /><p class="sidrena-cijena-unpub" role="status">' +
+					  escAttr(i18n.noBaznaRow || "") +
+					  "</p>"
+					: "")
+			);
+		}
+
+		function syncServiceRow($tr) {
+			var row = {
+				id: $.trim($tr.find(".js-id").val() || ""),
+				vrsta: $tr.find(".js-vrsta").val() === "usluga" ? "usluga" : "proizvod",
+				od_prije: $tr.find(".js-od-prije").val() === "da" ? "da" : "",
+				neobjavljeno: $tr.find(".js-unpub").length > 0,
+				datum_usluge: $tr.find(".js-datum").attr("data-datum-usluge") || "",
+			};
+			$tr.find(".js-od-prije-wrap").prop("hidden", !isService(row));
+			$tr.find(".js-od-prije-help").text(row.od_prije === "da" ? i18n.odPrijeHelpDa || "" : i18n.odPrijeHelpNe || "");
+			$tr.find(".js-datum").attr("placeholder", datePlaceholder(row));
+			$tr.find(".js-sidrena").attr("placeholder", baznaPlaceholder(row));
 		}
 
 		function iconButton(cls, icon, label, extraClass) {
@@ -163,7 +283,9 @@
 				cjmStored(row) +
 				'<input type="text" class="js-naziv regular-text" value="' +
 				escAttr(row.naziv) +
-				'" /></td>' +
+				'" />' +
+				unpubHtml(row) +
+				"</td>" +
 				// The columns every row needs first (CX-SID-100), as the table head in tab-proizvodi.php. Reading and
 				// saving go by class, not by position.
 				'<td><input type="url" class="js-url" value="' +
@@ -172,11 +294,17 @@
 				'<td><input type="text" class="js-regular" inputmode="decimal" value="' +
 				escAttr(row.cijena_redovna) +
 				'" /></td>' +
-				'<td><input type="text" class="js-sidrena" inputmode="decimal" value="' +
+				'<td><input type="text" class="js-sidrena" inputmode="decimal" placeholder="' +
+				escAttr(baznaPlaceholder(row)) +
+				'" value="' +
 				escAttr(row.sidrena_cijena) +
 				'" /></td>' +
-				'<td><input type="text" class="js-datum" placeholder="' +
-				escAttr(i18n.datePlaceholder || "") +
+				"<td>" +
+				odPrijeHtml(row) +
+				'<input type="text" class="js-datum" data-datum-usluge="' +
+				escAttr(row.datum_usluge || "") +
+				'" placeholder="' +
+				escAttr(datePlaceholder(row)) +
 				'" value="' +
 				escAttr(row.sidrena_datum) +
 				'" /></td>' +
@@ -254,6 +382,9 @@
 						? "yes"
 						: "",
 					cjm_suffix: $.trim($tr.find(".js-cjm-suffix").val() || ""),
+					od_prije: $tr.find(".js-od-prije").length && $tr.find(".js-od-prije").val() === "da" ? "da" : "",
+					neobjavljeno: $tr.find(".js-unpub").length > 0,
+					bez_bazne: $tr.find(".js-nobazna").length > 0,
 				});
 			});
 			return rows;
@@ -307,6 +438,11 @@
 		}
 
 		function renderPage() {
+			if (!catalogLoaded) {
+				$tbody.empty();
+				$pager.attr("hidden", "hidden");
+				return;
+			}
 			var pages = pageCount();
 			if (page > pages) {
 				page = pages;
@@ -439,14 +575,10 @@
 			$tbody.find("tr").eq(local).find(".js-naziv").trigger("focus");
 		}
 
-		try {
-			allRows = JSON.parse($json.val() || "[]");
-		} catch (e) {
-			allRows = [];
-		}
-		if (!$.isArray(allRows)) {
-			allRows = [];
-		}
+		var catalogRead = readList($json);
+		var catalogLoaded = catalogRead !== null;
+		allRows = catalogLoaded ? catalogRead : [];
+		var catalogShown = hasText(allRows, CATALOG_TEXT);
 		activeScope = currentScope();
 		syncViewFromAll();
 		renderPage();
@@ -535,9 +667,16 @@
 					naziv: "",
 					kriteriji: "",
 					poslovnica: "",
+					vrsta: "usluga",
 				},
 				partial || {}
 			);
+		}
+
+		// CX-SID-76: a row is a service unless marked a product (also a row without the key); a product is saved, but
+		// warned about in its row (ZZP art. 7(1)).
+		function upitVrsta(row) {
+			return row && row.vrsta === "proizvod" ? "proizvod" : "usluga";
 		}
 
 		function blankUpit() {
@@ -560,6 +699,23 @@
 				'<td><input type="text" class="js-kriteriji regular-text" value="' +
 				escAttr(row.kriteriji) +
 				'" /></td>' +
+				'<td><select class="js-upit-vrsta">' +
+				'<option value="usluga"' +
+				(upitVrsta(row) === "usluga" ? " selected" : "") +
+				">" +
+				escAttr(i18n.vrstaUsluga || "Service") +
+				"</option>" +
+				'<option value="proizvod"' +
+				(upitVrsta(row) === "proizvod" ? " selected" : "") +
+				">" +
+				escAttr(i18n.vrstaProizvod || "Product") +
+				"</option>" +
+				"</select>" +
+				'<p class="sidrena-cijena-upit-warn" role="status"' +
+				(upitVrsta(row) === "proizvod" ? "" : " hidden") +
+				">" +
+				escAttr(i18n.upitProductWarn || "") +
+				"</p></td>" +
 				'<td class="sidrena-cijena-catalog-actions">' +
 				iconButton("js-del", "dashicons-trash", i18n.remove || "Remove", "is-danger") +
 				"</td>" +
@@ -576,6 +732,7 @@
 					naziv: $.trim($tr.find(".js-naziv").val() || ""),
 					kriteriji: $.trim($tr.find(".js-kriteriji").val() || ""),
 					poslovnica: $.trim($tr.find(".js-poslovnica").val() || ""),
+					vrsta: $tr.find(".js-upit-vrsta").val() === "proizvod" ? "proizvod" : "usluga",
 				});
 			});
 			return rows;
@@ -629,22 +786,55 @@
 			if (!$upitBody.length) {
 				return;
 			}
+			if (!upitLoaded) {
+				$upitBody.empty();
+				return;
+			}
 			renderUpit(scoped ? upitFor(activeScope) : upitRows);
 		}
 
-		try {
-			upitRows = JSON.parse($upitJson.val() || "[]");
-		} catch (e) {
-			upitRows = [];
-		}
-		if (!$.isArray(upitRows)) {
-			upitRows = [];
-		}
+		var upitRead = $upitJson.length ? readList($upitJson) : [];
+		var upitLoaded = upitRead !== null;
+		upitRows = upitLoaded ? upitRead : [];
+		var upitShown = hasText(upitRows, UPIT_TEXT);
 		showUpit();
+
+		var allLoaded = catalogLoaded && upitLoaded;
+		if (!allLoaded) {
+			var described = [];
+			if (!catalogLoaded) {
+				showLoadError($("#sidrena-cijena-catalog-load-error"));
+				described.push("sidrena-cijena-catalog-load-error");
+				$tbody.empty();
+			}
+			if (!upitLoaded) {
+				showLoadError($("#sidrena-cijena-upit-load-error"));
+				described.push("sidrena-cijena-upit-load-error");
+			}
+			$("#sidrena-cijena-catalog-save-off").prop("hidden", false);
+			described.push("sidrena-cijena-catalog-save-off");
+			$form.find('button[type="submit"]').prop("disabled", true).attr("aria-describedby", described.join(" "));
+			$("#sidrena-cijena-catalog-add, #sidrena-cijena-upit-add").prop("disabled", true);
+		}
 
 		$("#sidrena-cijena-upit-add").on("click", function () {
 			$upitBody.append(upitHtml(blankUpit()));
 			$upitBody.find("tr:last .js-naziv").trigger("focus");
+		});
+
+		$tbody.on("change", ".js-vrsta, .js-od-prije", function () {
+			var $tr = $(this).closest("tr");
+			syncServiceRow($tr);
+			// On a phone the table scrolls sideways: the question appears in the date cell, far to the left of Vrsta, so
+			// it is brought into view (Norman 130 SHOULD 1).
+			var $q = $tr.find(".js-od-prije-wrap");
+			if ($(this).hasClass("js-vrsta") && $q.length && !$q.prop("hidden") && $q[0].scrollIntoView) {
+				$q[0].scrollIntoView({ block: "nearest", inline: "nearest" });
+			}
+		});
+
+		$upitBody.on("change", ".js-upit-vrsta", function () {
+			$(this).closest("td").find(".sidrena-cijena-upit-warn").prop("hidden", $(this).val() !== "proizvod");
 		});
 
 		$upitBody.on("click", ".js-del", function () {
@@ -664,15 +854,24 @@
 			showUpit();
 		});
 
-		$form.on("submit", function () {
+		$form.on("submit", function (event) {
+			if (!allLoaded) {
+				event.preventDefault();
+				return false;
+			}
 			commitPage();
+			var sentUpit;
 			if (scoped) {
 				commitUpit();
-				$upitJson.val(JSON.stringify(upitRows));
+				sentUpit = upitRows;
 			} else {
-				$upitJson.val(JSON.stringify(collectUpit()));
+				sentUpit = collectUpit();
 			}
+			$upitJson.val(JSON.stringify(sentUpit));
 			$json.val(JSON.stringify(allRows));
+			$("#sidrena-cijena-catalog-loaded").val("1");
+			$("#sidrena-cijena-catalog-cleared").val(catalogShown && !hasText(allRows, CATALOG_TEXT) ? "1" : "");
+			$("#sidrena-cijena-upit-cleared").val(upitShown && !hasText(sentUpit, UPIT_TEXT) ? "1" : "");
 		});
 	}
 

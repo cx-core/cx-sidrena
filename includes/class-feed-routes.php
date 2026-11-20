@@ -147,6 +147,11 @@ class CX_Sidrena_Feed_Routes {
 			return;
 		}
 
+		// A place with nothing to publish has no file and none is coming (CX-SID-74, N4): serve_outlet_feed() says so.
+		if ( '' !== $oznaka && $this->outlet_has_nothing( $oznaka ) ) {
+			return;
+		}
+
 		// A place without services has no services file and none is coming: nothing to build (serve_no_services()).
 		if ( $this->has_no_services( $oznaka, $this->requested_vrsta() ) ) {
 			return;
@@ -184,8 +189,9 @@ class CX_Sidrena_Feed_Routes {
 		}
 
 		// The first price list waits for the first bazna (CX-SID-68): a visit would only queue a build that publishes
-		// nothing, every 15 minutes. The ways a bazna gets in queue the build themselves.
-		if ( CX_Sidrena_Export::instance()->awaiting_bazna() ) {
+		// nothing, every 15 minutes. The ways a bazna gets in queue the build themselves. The same without an OIB or MBO
+		// (CX-SID-159): saving it queues the build.
+		if ( CX_Sidrena_Export::instance()->awaiting_bazna() || CX_Sidrena_Export::instance()->waiting_for_legal_id() ) {
 			return;
 		}
 
@@ -275,8 +281,7 @@ class CX_Sidrena_Feed_Routes {
 					$this->serve_no_services( '', $vrsta );
 					$this->serve_missing_public_feed( $ext );
 				}
-				$this->redirect_to_file( '', $vrsta, $ext );
-				CX_Sidrena_Feed_Files::instance()->send_public_file( $path, CX_Sidrena_Archive::instance()->published_filename( $ext ), $ext );
+				$this->serve_live_file( $path, '', $vrsta, $ext );
 				return;
 			}
 			$this->serve_outlet_feed( $oznaka, $ext, $vrsta );
@@ -299,8 +304,7 @@ class CX_Sidrena_Feed_Routes {
 			$this->serve_missing_public_feed( $ext );
 		}
 
-		$this->redirect_to_file( '', $vrsta, $ext );
-		CX_Sidrena_Feed_Files::instance()->send_public_file( $path, CX_Sidrena_Archive::instance()->published_filename( $ext ), $ext );
+		$this->serve_live_file( $path, '', $vrsta, $ext );
 	}
 
 	/**
@@ -327,9 +331,10 @@ class CX_Sidrena_Feed_Routes {
 	 * @param string $oznaka Outlet code, empty for the webshop.
 	 * @param string $vrsta  proizvod (main address) or usluga.
 	 * @param string $ext    xml|csv.
+	 * @param string $sha    sha256 of the live file's bytes as read for sending (CX-SID-163); '' = read the file now.
 	 * @return string
 	 */
-	public function current_file_name( $oznaka, $vrsta, $ext ) {
+	public function current_file_name( $oznaka, $vrsta, $ext, $sha = '' ) {
 		$meta = $this->scope_meta( $oznaka );
 		$name = 'usluga' === $vrsta
 			? ( isset( $meta['vrste']['usluga']['filename'] ) ? (string) $meta['vrste']['usluga']['filename'] : '' )
@@ -341,6 +346,9 @@ class CX_Sidrena_Feed_Routes {
 		}
 
 		$file = trailingslashit( $arch->get_archive_dir() ) . $name;
+		if ( '' !== $sha ) {
+			return is_file( $file ) && hash_file( 'sha256', $file ) === $sha ? $name : '';
+		}
 		$live = CX_Sidrena_Feed_Files::instance()->get_public_path( $ext, $oznaka, $vrsta );
 		if ( ! is_file( $file ) || ! is_file( $live ) || filesize( $file ) !== filesize( $live ) || hash_file( 'sha256', $file ) !== hash_file( 'sha256', $live ) ) {
 			return '';
@@ -350,9 +358,80 @@ class CX_Sidrena_Feed_Routes {
 	}
 
 	/**
-	 * The stable address answers 302 to the file with its legal name (CX-SID-110, art. 6(3)), so whoever downloads
-	 * it gets that name. No cache: a kept 302 would lead to yesterday's price list. The name has spaces and may have
-	 * letters with diacritics, so it is encoded. Nothing to point at: back to the caller, which serves the live file.
+	 * A stable address answers with its live file itself, 200 (CX-SID-163; NN 132/2026-1584 art. 6(2): the changed
+	 * price list is published at the same URL), not a 302 to the archive file as since CX-SID-110. The file is read once
+	 * and named from those bytes, so a build that replaces it meanwhile (copy_atomic renames) can never pair one file's
+	 * content with another's name. Not cached anywhere: the same address has a new file after each change.
+	 *
+	 * @param string                    $path   Live file.
+	 * @param string                    $oznaka Outlet code, empty for the webshop.
+	 * @param string                    $vrsta  proizvod (main address) or usluga.
+	 * @param string                    $ext    xml|csv.
+	 * @param array<string, mixed>|null $outlet The outlet, for an outlet's address.
+	 */
+	public function serve_live_file( $path, $oznaka, $vrsta, $ext, $outlet = null ) {
+		if ( CX_Sidrena_Feed_Files::instance()->export_format() !== $ext ) {
+			// The old format's address before the first build in the new one (redirect_old_format() returned): its file
+			// is still the price list, and the address stays the 302 to its archive file it was (Rook, CX-SID-163 L5).
+			// Here, not in redirect_old_format(), so it comes after the 404 of an unknown place and of a missing file,
+			// as before 163.
+			$this->redirect_to_file( $oznaka, $vrsta, $ext );
+		}
+
+		$body = @file_get_contents( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		if ( false === $body ) {
+			$this->serve_missing_public_feed( $ext ); // gone since file_exists(): as if it had not been there
+		}
+
+		$name = $this->live_download_name( $oznaka, $vrsta, $ext, hash( 'sha256', $body ), $outlet );
+		CX_Sidrena_Feed_Files::instance()->send_live_body( $body, $name, $ext );
+	}
+
+	/**
+	 * The name a stable address gives its file (Content-Disposition; art. 6(3)): the archive file with the same bytes
+	 * (current_file_name()). Otherwise, as before 163, the last build's name of that file (services: the services file's,
+	 * never the goods file's), but only when no archive file of that name holds other bytes: a live file someone else
+	 * wrote (a move back to MJDD and over again) is never passed off as one of ours (Argus L6). Then the address's own
+	 * name, which claims nothing.
+	 *
+	 * @param string                    $oznaka Outlet code, empty for the webshop.
+	 * @param string                    $vrsta  proizvod (main address) or usluga.
+	 * @param string                    $ext    xml|csv.
+	 * @param string                    $sha    sha256 of the bytes being sent.
+	 * @param array<string, mixed>|null $outlet The outlet, for an outlet's address.
+	 * @return string
+	 */
+	public function live_download_name( $oznaka, $vrsta, $ext, $sha, $outlet = null ) {
+		$name = $this->current_file_name( $oznaka, $vrsta, $ext, $sha );
+		if ( '' !== $name ) {
+			return $name;
+		}
+
+		$arch = CX_Sidrena_Archive::instance();
+		if ( 'usluga' === $vrsta ) {
+			$meta = $this->scope_meta( $oznaka );
+			$name = isset( $meta['vrste']['usluga']['filename'] ) ? $arch->sanitize_archive_name( (string) $meta['vrste']['usluga']['filename'] ) : '';
+		} elseif ( is_array( $outlet ) ) {
+			$name = $this->outlet_download_name( $outlet, $ext );
+		} else {
+			$name = $arch->published_filename( $ext );
+		}
+
+		$file = '' !== $name ? trailingslashit( $arch->get_archive_dir() ) . $name : '';
+		if ( '' === $name || file_exists( $file ) ) {
+			// Here an archive file of that name is never these bytes: current_file_name() would have named it.
+			$name = CX_Sidrena_Export::PUBLIC_STEM . ( 'usluga' === $vrsta ? '-usluge' : '' ) . ( '' !== $oznaka ? '-' . $oznaka : '' ) . '.' . $ext;
+		}
+
+		return $name;
+	}
+
+	/**
+	 * The old format's address (redirect_old_format()) answers 302 to the current file with its legal name (CX-SID-110,
+	 * art. 6(3)), one hop; so does it while its own file is still the price list, before the first build in the new
+	 * format (serve_live_file()). The stable address itself serves its file since CX-SID-163. No cache: a
+	 * kept 302 would lead to yesterday's price list. The name has spaces and may have letters with diacritics, so it is
+	 * encoded. Nothing to point at: back to the caller.
 	 *
 	 * @param string $oznaka Outlet code, empty for the webshop.
 	 * @param string $vrsta  proizvod (main address) or usluga.
@@ -455,13 +534,14 @@ class CX_Sidrena_Feed_Routes {
 
 	/**
 	 * 503 a missing live feed. Rebuild is queued, never run inside this request. 404 while the first price list waits
-	 * for the first bazna.
+	 * for the first bazna, or for the OIB or MBO (CX-SID-159).
 	 *
 	 * @param string $ext xml|csv.
 	 */
 	public function serve_missing_public_feed( $ext ) {
-		// Before the first bazna there is no price list, and none comes in two minutes: 404, not 503 (CX-SID-68).
-		if ( CX_Sidrena_Export::instance()->awaiting_bazna() ) {
+		// Before the first bazna there is no price list, and none comes in two minutes: 404, not 503 (CX-SID-68). Nor
+		// without an OIB or MBO (CX-SID-159).
+		if ( CX_Sidrena_Export::instance()->awaiting_bazna() || CX_Sidrena_Export::instance()->waiting_for_legal_id() ) {
 			status_header( 404 );
 			nocache_headers();
 			header( 'Content-Type: text/plain; charset=utf-8' );
@@ -608,12 +688,43 @@ class CX_Sidrena_Feed_Routes {
 
 		$path = CX_Sidrena_Feed_Files::instance()->get_public_path( $ext, $oznaka, $vrsta );
 		if ( ! file_exists( $path ) ) {
+			$this->serve_outlet_nothing( $outlet );
 			$this->serve_no_services( $oznaka, $vrsta );
 			$this->serve_missing_public_feed( $ext );
 		}
 
-		$this->redirect_to_file( $oznaka, $vrsta, $ext );
-		CX_Sidrena_Feed_Files::instance()->send_public_file( $path, $this->outlet_download_name( $outlet, $ext ), $ext );
+		$this->serve_live_file( $path, $oznaka, $vrsta, $ext, $outlet );
+	}
+
+	/**
+	 * Whether a place exists but has nothing to publish: no products and no rows of its own (CX-SID-74, N4).
+	 *
+	 * @param string $oznaka Code.
+	 * @return bool
+	 */
+	public function outlet_has_nothing( $oznaka ) {
+		$places = CX_Sidrena_Poslovnice::instance();
+		$outlet = $places->get_by_oznaka( $oznaka );
+
+		return is_array( $outlet ) && ! $places->has_rows( $outlet );
+	}
+
+	/**
+	 * A place with nothing to publish: 404 with the reason, not cached, and no build queued. Before CX-SID-74 the
+	 * address answered 503 "not generated yet" for ever and every visit queued a build (N4).
+	 *
+	 * @param array<string, mixed> $outlet Place.
+	 */
+	public function serve_outlet_nothing( $outlet ) {
+		if ( CX_Sidrena_Poslovnice::instance()->has_rows( $outlet ) ) {
+			return;
+		}
+
+		status_header( 404 );
+		nocache_headers();
+		header( 'Content-Type: text/plain; charset=utf-8' );
+		echo esc_html__( 'This place of sale has no products in its price list yet.', 'cx-sidrena' );
+		exit;
 	}
 
 	/**
@@ -794,7 +905,7 @@ class CX_Sidrena_Feed_Routes {
 		$path = '' !== $name ? trailingslashit( CX_Sidrena_Archive::instance()->get_archive_dir() ) . $name : '';
 		$ext  = '' !== $name ? strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) ) : 'xml';
 
-		// Older than the public 30 days: not public, also before the move has put it away (CX-SID-27).
+		// No longer public (replaced more than 15 days ago, CX-SID-158), also before the move has put it away (CX-SID-27).
 		if ( '' === $name || ! file_exists( $path ) || ! CX_Sidrena_Archive::instance()->is_public( $name ) ) {
 			status_header( 404 );
 			header( 'Content-Type: text/plain; charset=utf-8' );
@@ -834,13 +945,14 @@ class CX_Sidrena_Feed_Routes {
 		echo '<h1>' . esc_html( $title ) . '</h1>';
 		echo '<p>' . esc_html( $shop ) . ' - ' . esc_html(
 			CX_Sidrena_Settings::instance()->is_multi_poslovnica()
-				? __( 'Price lists from the last 30 days. A new file is made at each price change and every morning, for each outlet separately.', 'cx-sidrena' )
-				: __( 'Price lists from the last 30 days. A new file is made at each price change and every morning.', 'cx-sidrena' )
+				? __( 'Current price lists, and those a newer one replaced in the last 15 days. A new file is made at each price change and every morning, for each outlet separately.', 'cx-sidrena' )
+				: __( 'Current price lists, and those a newer one replaced in the last 15 days. A new file is made at each price change and every morning.', 'cx-sidrena' )
 		) . '</p>';
 
-		if ( empty( $files ) && CX_Sidrena_Export::instance()->awaiting_bazna() ) {
+		if ( empty( $files ) && ( CX_Sidrena_Export::instance()->awaiting_bazna() || CX_Sidrena_Export::instance()->waiting_for_legal_id() ) ) {
 			// Before the first bazna neither the morning nor a price change makes a file (CX-SID-68; proposal 2837 quoted
-			// this text wrongly, fixed by Rook's (a)): no promise, the page's sentence instead.
+			// this text wrongly, fixed by Rook's (a)): no promise, the page's sentence instead. The same without an OIB
+			// or MBO (CX-SID-159).
 			echo '<p class="empty">' . esc_html( __( 'The archive is empty.', 'cx-sidrena' ) . ' ' . CX_Sidrena_Export::not_published_message() ) . '</p>';
 		} elseif ( empty( $files ) ) {
 			echo '<p class="empty">' . esc_html__( 'The archive is still empty. The first price list will appear here the next morning or at the first price change.', 'cx-sidrena' ) . '</p>';
@@ -914,22 +1026,23 @@ class CX_Sidrena_Feed_Routes {
 	}
 
 	/**
-	 * Archive index grouped by object code: webshop, outlets, then older names.
+	 * Archive index grouped by owner (CX-SID-143): the webshop, the outlets, then codes nobody has (or files either could
+	 * have written), then older names. Whose a file is: CX_Sidrena_Archive::file_owner().
 	 *
 	 * @param array<int, array<string, mixed>> $files Archive rows, newest first.
 	 */
 	private function render_archive_groups( $files ) {
 		$archive = CX_Sidrena_Archive::instance();
+		$ctx     = $archive->owner_context();
 		$buckets = array();
-		$usluge  = array(); // codes whose place also has files of services (CX-SID-110)
+		$usluge  = array(); // owners that also have files of services (CX-SID-110)
 		foreach ( $files as $file ) {
-			$name = isset( $file['name'] ) ? (string) $file['name'] : '';
-			$code = $archive->archive_file_oznaka( $name );
-			$key  = '' !== $code ? $code : 'legacy';
-			$p    = $archive->parse_name( $name );
-			if ( '' !== $code && null !== $p && 'usluga' === $p['vrsta'] ) {
-				$usluge[ $code ] = true;
-				$key            .= '|usluga';
+			$o     = $archive->file_owner( isset( $file['name'] ) ? (string) $file['name'] : '', $ctx );
+			$owner = 'legacy' === $o['owner'] || 'webshop' === $o['owner'] ? $o['owner'] : $o['owner'] . ':' . $o['code'];
+			$key   = $owner;
+			if ( 'legacy' !== $owner && 'usluga' === $o['vrsta'] ) {
+				$usluge[ $owner ] = true;
+				$key             .= '|usluga';
 			}
 			if ( ! isset( $buckets[ $key ] ) ) {
 				$buckets[ $key ] = array();
@@ -937,42 +1050,51 @@ class CX_Sidrena_Feed_Routes {
 			$buckets[ $key ][] = $file;
 		}
 
-		$order = array( $this->webshop_oznaka() );
+		$order = array( 'webshop' );
 		foreach ( CX_Sidrena_Poslovnice::instance()->all() as $outlet ) {
-			if ( ! in_array( $outlet['oznaka'], $order, true ) ) {
-				$order[] = $outlet['oznaka'];
-			}
+			$order[] = 'place:' . $outlet['oznaka'];
 		}
-		// The order lists places; a place's services are the key 'code|usluga' and go right after its goods (Norman 110-4:
+		// The order lists owners; an owner's services are the key 'owner|usluga' and go right after its goods (Norman 110-4:
 		// that key in the order listed them a second time, under the key itself as the heading).
-		$places = array();
+		$owners = array();
 		foreach ( array_keys( $buckets ) as $key ) {
-			$code = explode( '|', (string) $key, 2 )[0];
-			if ( 'legacy' !== $code ) {
-				$places[ $code ] = true;
+			$owner = explode( '|', (string) $key, 2 )[0];
+			if ( 'legacy' !== $owner ) {
+				$owners[ $owner ] = true;
 			}
-			if ( 'legacy' !== $code && ! in_array( $code, $order, true ) ) {
-				$order[] = $code;
+			if ( 'legacy' !== $owner && ! in_array( $owner, $order, true ) ) {
+				$order[] = $owner;
 			}
 		}
 		$order[] = 'legacy';
-		// One place (no outlets, files of one code): its headings are just Goods and Services, the code says nothing
+		// One place (no outlets, files of one owner): its headings are just Goods and Services, the code says nothing
 		// to a visitor there (Norman 110-5).
-		$one_place = ! CX_Sidrena_Settings::instance()->is_multi_poslovnica() && count( $places ) <= 1;
+		$one_place = ! CX_Sidrena_Settings::instance()->is_multi_poslovnica() && count( $owners ) <= 1;
+		// What the headings need to tell equal codes apart (CX-SID-152): whether a place has the webshop's code, and the
+		// codes with a neutral group on this page.
+		$seen = array(
+			'collision' => is_array( CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $this->webshop_oznaka() ) ),
+			'neutral'   => array(),
+		);
+		foreach ( array_keys( $owners ) as $owner ) {
+			if ( 0 === strpos( (string) $owner, 'oznaka:' ) ) {
+				$seen['neutral'][ substr( (string) $owner, 7 ) ] = true;
+			}
+		}
 
-		foreach ( $order as $code ) {
-			foreach ( array( $code, $code . '|usluga' ) as $key ) {
+		foreach ( $order as $owner ) {
+			foreach ( array( $owner, $owner . '|usluga' ) as $key ) {
 				if ( empty( $buckets[ $key ] ) ) {
 					continue;
 				}
-				$heading = $this->archive_group_heading( $code );
-				if ( isset( $usluge[ $code ] ) && $one_place ) {
-					$heading = $key === $code ? __( 'Goods', 'cx-sidrena' ) : __( 'Services', 'cx-sidrena' );
-				} elseif ( isset( $usluge[ $code ] ) ) {
+				$heading = $this->archive_group_heading( $owner, $seen );
+				if ( isset( $usluge[ $owner ] ) && $one_place ) {
+					$heading = $key === $owner ? __( 'Goods', 'cx-sidrena' ) : __( 'Services', 'cx-sidrena' );
+				} elseif ( isset( $usluge[ $owner ] ) ) {
 					/* translators: %s: the shop or outlet. */
-					$heading = sprintf( $key === $code ? __( '%s - goods', 'cx-sidrena' ) : __( '%s - services', 'cx-sidrena' ), $heading );
+					$heading = sprintf( $key === $owner ? __( '%s - goods', 'cx-sidrena' ) : __( '%s - services', 'cx-sidrena' ), $heading );
 				}
-				echo '<h2>' . esc_html( $heading ) . '</h2>';
+				echo '<h2>' . CX_Sidrena_Feed_Files::instance()->text_html( $heading, true ) . '</h2>'; // a place's name as typed (CX-SID-142)
 				echo '<ol>';
 				$this->render_archive_file_items( $buckets[ $key ] );
 				echo '</ol>';
@@ -999,26 +1121,49 @@ class CX_Sidrena_Feed_Routes {
 	}
 
 	/**
-	 * Heading for one archive group.
+	 * Heading for one archive group: the webshop's code, a place's name, the code alone (a code nobody has, CX-SID-143),
+	 * or "Older files". No two headings of the page are the same bare code (CX-SID-152, Norman 3429/3460, Kai 3431/3465):
+	 * while a place has the webshop's code the webshop's heading says "(webshop)"; a place without a name says
+	 * "(outlet)" while it has the webshop's code or a neutral group is under its code; the neutral group (files either
+	 * could have written, decision e of 143) under a code a place has says it is the webshop's or that place's.
 	 *
-	 * @param string $code Object code, or legacy.
+	 * @param string $owner webshop | place:<code> | oznaka:<code> | legacy.
+	 * @param array  $seen  collision: a place has the webshop's code; neutral: code => true, a neutral group is on the page.
 	 * @return string
 	 */
-	private function archive_group_heading( $code ) {
-		if ( 'legacy' === $code ) {
+	private function archive_group_heading( $owner, $seen ) {
+		if ( 'legacy' === $owner ) {
 			return __( 'Older files', 'cx-sidrena' );
 		}
-
-		if ( $code === $this->webshop_oznaka() ) {
-			return $code;
+		$web = $this->webshop_oznaka();
+		if ( 'webshop' === $owner && $seen['collision'] ) {
+			/* translators: %s: object code. */
+			return sprintf( __( '%s (webshop)', 'cx-sidrena' ), $web );
+		}
+		if ( 'webshop' === $owner ) {
+			return $web;
 		}
 
-		$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $code );
-		if ( is_array( $outlet ) ) {
-			return $this->outlet_label( $outlet );
+		list( $kind, $code ) = explode( ':', $owner, 2 );
+		$outlet              = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $code );
+		if ( ! is_array( $outlet ) ) {
+			return $code; // a code nobody has
+		}
+		$name = isset( $outlet['naziv'] ) ? trim( (string) $outlet['naziv'] ) : '';
+		if ( 'oznaka' === $kind && '' !== $name ) {
+			/* translators: 1: object code, 2: the outlet's name. */
+			return sprintf( __( '%1$s (webshop or %2$s)', 'cx-sidrena' ), $code, $name );
+		}
+		if ( 'oznaka' === $kind ) {
+			/* translators: %s: object code. */
+			return sprintf( __( '%s (webshop or outlet)', 'cx-sidrena' ), $code );
+		}
+		if ( '' === $name && ( $code === $web || isset( $seen['neutral'][ $code ] ) ) ) {
+			/* translators: %s: object code. */
+			return sprintf( __( '%s (outlet)', 'cx-sidrena' ), $code );
 		}
 
-		return $code;
+		return $this->outlet_label( $outlet );
 	}
 
 	/**
@@ -1033,6 +1178,14 @@ class CX_Sidrena_Feed_Routes {
 			$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );
 			if ( ! is_array( $outlet ) ) {
 				$this->serve_cjenik_empty_page();
+				return;
+			}
+			if ( ! CX_Sidrena_Poslovnice::instance()->has_offer( $outlet ) ) {
+				// Nothing to publish (CX-SID-74, N4): the reason, not "being prepared" for ever with a build each visit.
+				// Rows by agreement alone are a page without a file (CX-SID-145): the build writes its HTML.
+				status_header( 404 );
+				// Not cached (Norman 3177 MAY 5, Argus): a visitor sees the price list as soon as the place has products.
+				$this->serve_cjenik_empty_page( __( 'This place of sale has no products in its price list yet.', 'cx-sidrena' ), true );
 				return;
 			}
 		}
@@ -1080,18 +1233,22 @@ class CX_Sidrena_Feed_Routes {
 		echo '<p class="cjenik-kicker">' . esc_html( $shop ) . '</p>';
 		echo '<h1>' . esc_html( $title ) . '</h1>';
 		if ( '' !== $scope ) {
-			echo '<p>' . esc_html( $scope ) . '</p>';
+			echo '<p>' . CX_Sidrena_Feed_Files::instance()->text_html( $scope, true ) . '</p>'; // a place's name as typed (CX-SID-142)
 		}
 		// No single bazna date under the title (CX-SID-79): since CX-SID-21 each product has its own (by category, or the
 		// day it was added), and it is in its row. The old line showed MJDD's one reference date above rows with others.
-		echo '<p class="cjenik-meta">' . esc_html(
-			sprintf(
-				/* translators: 1: datetime, 2: count */
-				__( 'Updated %1$s · %2$d products', 'cx-sidrena' ),
-				$stamp,
-				$count
-			)
-		) . '</p>';
+		// A place with only rows by agreement has no file, so no time of one and no count (CX-SID-145, Norman N1): the
+		// line would show today and "0 products" above its list.
+		if ( ! is_array( $outlet ) || CX_Sidrena_Poslovnice::instance()->has_rows( $outlet ) ) {
+			echo '<p class="cjenik-meta">' . esc_html(
+				sprintf(
+					/* translators: 1: datetime, 2: count */
+					__( 'Updated %1$s · %2$d products', 'cx-sidrena' ),
+					$stamp,
+					$count
+				)
+			) . '</p>';
+		}
 		echo '<div class="cjenik-actions">';
 		$this->render_cjenik_downloads( $oznaka, $feed_lbl );
 		echo '<a class="cjenik-btn cjenik-btn--ghost" href="' . esc_url( CX_Sidrena_Feed_Files::instance()->get_archive_url() ) . '">' . esc_html__( 'Archive', 'cx-sidrena' ) . '</a>';
@@ -1157,7 +1314,10 @@ class CX_Sidrena_Feed_Routes {
 		}
 
 		$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );
-		$name   = is_array( $outlet ) ? $this->outlet_label( $outlet ) : $oznaka;
+		if ( is_array( $outlet ) && ! CX_Sidrena_Poslovnice::instance()->has_rows( $outlet ) ) {
+			return; // only rows by agreement: no file to download (CX-SID-145)
+		}
+		$name = is_array( $outlet ) ? $this->outlet_label( $outlet ) : $oznaka;
 		$this->render_scope_downloads( $oznaka, $feed_lbl, ' - ' . $name );
 	}
 
@@ -1185,15 +1345,15 @@ class CX_Sidrena_Feed_Routes {
 	private function render_scope_downloads( $oznaka, $feed_lbl, $suffix ) {
 		$files = CX_Sidrena_Feed_Files::instance();
 		if ( ! $this->scope_has_both( $oznaka ) ) {
-			echo '<a class="cjenik-btn" href="' . esc_url( $files->get_public_url( '', $oznaka ) ) . '">' . esc_html( $feed_lbl . $suffix ) . '</a>';
+			echo '<a class="cjenik-btn" href="' . esc_url( $files->get_public_url( '', $oznaka ) ) . '">' . $files->text_html( $feed_lbl . $suffix, true ) . '</a>';
 			return;
 		}
 
 		$csv   = 'csv' === $files->export_format();
 		$goods = $csv ? __( 'Download goods CSV', 'cx-sidrena' ) : __( 'Download goods XML', 'cx-sidrena' );
 		$serv  = $csv ? __( 'Download services CSV', 'cx-sidrena' ) : __( 'Download services XML', 'cx-sidrena' );
-		echo '<a class="cjenik-btn" href="' . esc_url( $files->get_public_url( '', $oznaka ) ) . '">' . esc_html( $goods . $suffix ) . '</a>';
-		echo '<a class="cjenik-btn" href="' . esc_url( $files->get_public_url( '', $oznaka, 'usluga' ) ) . '">' . esc_html( $serv . $suffix ) . '</a>';
+		echo '<a class="cjenik-btn" href="' . esc_url( $files->get_public_url( '', $oznaka ) ) . '">' . $files->text_html( $goods . $suffix, true ) . '</a>';
+		echo '<a class="cjenik-btn" href="' . esc_url( $files->get_public_url( '', $oznaka, 'usluga' ) ) . '">' . $files->text_html( $serv . $suffix, true ) . '</a>';
 	}
 
 	/**
@@ -1212,23 +1372,31 @@ class CX_Sidrena_Feed_Routes {
 			echo '<a class="cjenik-btn cjenik-btn--ghost" href="' . esc_url( $files->get_cjenik_url() ) . '">' . esc_html( $this->webshop_oznaka() ) . '</a>';
 		}
 
-		foreach ( CX_Sidrena_Poslovnice::instance()->with_products() as $outlet ) {
+		// Every place with a page, also one with only rows by agreement (CX-SID-145).
+		foreach ( CX_Sidrena_Poslovnice::instance()->with_pages() as $outlet ) {
 			if ( $outlet['oznaka'] === $current ) {
 				continue;
 			}
-			echo '<a class="cjenik-btn cjenik-btn--ghost" href="' . esc_url( $files->get_cjenik_url( $outlet['oznaka'] ) ) . '">' . esc_html( $this->outlet_label( $outlet ) ) . '</a>';
+			echo '<a class="cjenik-btn cjenik-btn--ghost" href="' . esc_url( $files->get_cjenik_url( $outlet['oznaka'] ) ) . '">' . $files->text_html( $this->outlet_label( $outlet ), true ) . '</a>';
 		}
 	}
 
 	/**
-	 * Unknown outlet code. Does not fall back to the webshop table.
+	 * Unknown outlet code, or a place with nothing to publish. Does not fall back to the webshop table.
+	 *
+	 * @param string $message  The text, by default "The price list is empty.".
+	 * @param bool   $no_cache Not cached (a place that will have a price list soon).
 	 */
-	public function serve_cjenik_empty_page() {
+	public function serve_cjenik_empty_page( $message = '', $no_cache = false ) {
 		$shop  = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
 		$title = __( 'Price list', 'cx-sidrena' );
 
 		header( 'Content-Type: text/html; charset=utf-8' );
-		header( 'Cache-Control: public, max-age=300' );
+		if ( $no_cache ) {
+			nocache_headers();
+		} else {
+			header( 'Cache-Control: public, max-age=300' );
+		}
 
 		echo '<!DOCTYPE html><html lang="hr"><head><meta charset="utf-8" />';
 		echo '<meta name="viewport" content="width=device-width, initial-scale=1" />';
@@ -1242,7 +1410,7 @@ class CX_Sidrena_Feed_Routes {
 		wp_print_styles( 'mjdd-sidrena-cijena-cjenik' );
 		echo '</head><body><main>';
 		echo '<h1>' . esc_html( $title ) . '</h1>';
-		echo '<p class="empty">' . esc_html__( 'The price list is empty.', 'cx-sidrena' ) . '</p>';
+		echo '<p class="empty">' . esc_html( '' !== $message ? $message : __( 'The price list is empty.', 'cx-sidrena' ) ) . '</p>';
 		echo '<p class="back"><a href="' . esc_url( CX_Sidrena_Feed_Files::instance()->get_cjenik_url() ) . '">' . esc_html__( 'Price list', 'cx-sidrena' ) . '</a></p>';
 		echo '</main></body></html>';
 		exit;
@@ -1250,12 +1418,12 @@ class CX_Sidrena_Feed_Routes {
 
 	/**
 	 * Short page while the HTML snapshot is still being generated, or while the first price list waits for the first
-	 * bazna (CX-SID-68: then it is not being prepared, it is not published yet).
+	 * bazna (CX-SID-68: then it is not being prepared, it is not published yet) or for the OIB or MBO (CX-SID-159).
 	 */
 	public function serve_cjenik_pending_page() {
 		$shop  = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
 		$title = __( 'Price list', 'cx-sidrena' );
-		$text  = CX_Sidrena_Export::instance()->awaiting_bazna()
+		$text  = CX_Sidrena_Export::instance()->awaiting_bazna() || CX_Sidrena_Export::instance()->waiting_for_legal_id()
 			? CX_Sidrena_Export::not_published_message()
 			: __( 'The price list is being prepared. Refresh the page in a few minutes.', 'cx-sidrena' );
 

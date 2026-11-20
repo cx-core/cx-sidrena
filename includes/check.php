@@ -84,7 +84,7 @@ function cx_sidrena_check() {
 	$dir   = trailingslashit( CX_Sidrena_Feed_Files::instance()->get_public_dir() );
 	$files = array_merge( glob( $dir . '*.xml' ) ?: array(), glob( $dir . '*.csv' ) ?: array() ); // no GLOB_BRACE: missing on musl hosts
 	$files = array_filter( $files, function ( $f ) { return false === strpos( basename( $f ), 'arhiv' ); } );
-	$feed  = $files ? wp_date( 'd.m.Y. H:i', max( array_map( 'filemtime', $files ) ) ) : __( 'no file', 'cx-sidrena' );
+	$feed  = $files ? CX_Sidrena_Archive::legal_date( 'd.m.Y. H:i', max( array_map( 'filemtime', $files ) ) ) : __( 'no file', 'cx-sidrena' ); // the legal clock (CX-SID-59)
 
 	$cron = ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON )
 		? __( 'WP-Cron is disabled in wp-config.php (a server cron job is required)', 'cx-sidrena' )

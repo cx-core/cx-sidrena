@@ -68,13 +68,18 @@ class CX_Sidrena_Frontend {
 			return;
 		}
 
-		// One block per price, built in one place (spec §2.3): price (struck lowest in 30 days + current), the caption,
-		// the bazna line. Always on, because the lowest price is required even where the owner turned the automatic
+		// One block per price, built in one place (spec §2.3): WooCommerce's price (on a sale the regular price struck, then
+		// the sale price), the lowest price in 30 days with its amount, the unit price, the bazna line. Always on, because the lowest price is required even where the owner turned the automatic
 		// bazna line off; the bazna part checks that setting itself.
 		add_filter( 'woocommerce_get_price_html', array( $this, 'price_block' ), 9999, 2 );
-		// The sale badge: only where the lowest price in 30 days is shown with it (Kai: ZZP art. 19(4) and (6)), a
-		// percentage only from the struck amount (spec §2.5, CX-SID-26).
+		// The sale badge: on every sale, a percentage from the regular price WooCommerce strikes (CX-SID-179, CX-SID-26).
 		CX_Sidrena_Badge::instance();
+		// A chosen size's unit price (CX-SID-38) for the case where WooCommerce shows no price box for it (every size costs
+		// the same): frontend.js puts it into the parent's block. Always, as the caption: not part of the bazna line.
+		add_filter( 'woocommerce_available_variation', array( $this, 'add_unit_data' ), 12, 3 );
+		// A chosen size's lowest price in 30 days (CX-SID-179), for the same case: frontend.js puts its amount into the
+		// parent's line, which names the lowest of the sizes.
+		add_filter( 'woocommerce_available_variation', array( $this, 'add_n30_data' ), 11, 3 );
 
 		if ( CX_Sidrena_Settings::instance()->is_auto_display_enabled() ) {
 			add_filter( 'render_block_woocommerce/product-price', array( $this, 'append_to_price_block' ), 20, 3 );
@@ -219,7 +224,8 @@ class CX_Sidrena_Frontend {
 
 	/**
 	 * The whole price block of one product: the price as WooCommerce and the theme print it (on a sale: the lowest price
-	 * in 30 days struck), then the caption, then the bazna line. One filter, so a page never shows a line twice.
+	 * in 30 days struck), then the caption, the form's line and the unit price, then the bazna line. One filter, so a page
+	 * never shows a line twice.
 	 *
 	 * @param string     $html    Price HTML.
 	 * @param WC_Product $product Product.
@@ -240,77 +246,164 @@ class CX_Sidrena_Frontend {
 	}
 
 	/**
-	 * Price part of a sale (ZZP art. 19(4)): the struck amount is the lowest price in the 30 days before the sale, and a
-	 * caption under it says what it is (Kai: exactly this text, not shorter).
-	 *
-	 * - Sale price not lower than that lowest price: no reduction, so the plain price and no caption (spec §2.3).
-	 * - Variable product whose sizes have different prices: WooCommerce strikes nothing on a range, so no caption until
-	 *   a size is chosen (spec §2.4, Norman); the chosen size gets its own block.
+	 * The price part of the block, then the unit price (CX-SID-38, Norman SPEC §3.1): after the price and the lowest-price
+	 * line, before the bazna line that append_to_price_html() adds. Merged as that line is, so beside another lowest-price
+	 * plugin's line it stands before it, and the bazna line after ours.
 	 *
 	 * @param string     $html    Price HTML.
 	 * @param WC_Product $product Product.
-	 * @param bool       $own_row The caption stands after a theme's price wrapper (CX-SID-93).
+	 * @param bool       $own_row The lines stand after a theme's price wrapper (CX-SID-93).
 	 * @return string
 	 */
 	private function lowest_part( $html, $product, $own_row = false ) {
+		return CX_Sidrena_Compat::merge_price_html( $this->sale_part( $html, $product, $own_row ), $this->unit_line( $product, $own_row ), false );
+	}
+
+	/**
+	 * A sale as the owner set it (CX-SID-179, Hrvoje 20.11.2026): WooCommerce's price stays as it is (the owner's regular
+	 * price struck, then the sale price), and under it the lowest price in the 30 days before the sale with its amount
+	 * (ZZP art. 19(4)) while our line is on and no other lowest-price plugin draws one. Whether the sale price is below that
+	 * lowest price is the owner's responsibility: the customer sees every sale as a sale, and Status reminds the owner.
+	 * A variable product whose sizes have different prices strikes nothing and has no line until a size is chosen (the
+	 * size's own block has it); a grouped product neither.
+	 *
+	 * @param string     $html    Price HTML.
+	 * @param WC_Product $product Product.
+	 * @param bool       $own_row The line stands after a theme's price wrapper (CX-SID-93).
+	 * @return string
+	 */
+	private function sale_part( $html, $product, $own_row = false ) {
 		$state = $this->sale_state( $product );
-		if ( null === $state || 'range' === $state['kind'] ) {
+		if ( null === $state || 'sale' !== $state['kind'] || ! self::lowest_line_on() || '' === $state['low'] ) {
 			return $html;
 		}
 
-		$sale = wc_get_price_to_display( $product, array( 'price' => $state['sale'] ) );
-		if ( 'not_lower' === $state['kind'] ) {
-			return $this->price_anew( $html, wc_price( $sale ) . $product->get_price_suffix(), $own_row );
-		}
-
-		if ( abs( (float) $state['prior'] - (float) $state['regular'] ) > 0.0001 ) {
-			$prior = wc_get_price_to_display( $product, array( 'price' => $state['prior'] ) );
-			$html  = $this->price_anew( $html, wc_format_sale_price( $prior, $sale ) . $product->get_price_suffix(), $own_row );
-		}
-
-		return $html . $this->caption_html( $product->is_type( 'variable' ), $own_row );
+		return $html . $this->lowest_line( $product, $state, $own_row );
 	}
 
 	/**
-	 * The amounts drawn anew (a sale that is no reduction, or one whose struck amount is not the regular price). In a
-	 * theme's wrapper only its content changes, so the wrapper and the theme's look of the amounts stay (CX-SID-99);
-	 * otherwise, as before, the new amounts are the whole price HTML.
+	 * Whether our lowest-price line is drawn: the shop shows it (cx_sidrena_n30_display, Settings, CX-SID-63) and no other
+	 * lowest-price plugin draws its own.
 	 *
-	 * @param string $html    Price HTML as WooCommerce and the theme gave it.
-	 * @param string $amounts The amounts drawn anew.
-	 * @param bool   $own_row The price is in a theme's wrapper.
+	 * @return bool
+	 */
+	public static function lowest_line_on() {
+		return function_exists( 'cx_sidrena_n30_display_enabled' ) && cx_sidrena_n30_display_enabled() && ! CX_Sidrena_Compat::lowest_price_plugin_active();
+	}
+
+	/**
+	 * "Najniža cijena u 30 dana prije sniženja: X" under the price. Text, never a tooltip (a tooltip does not work on a
+	 * phone). X on the basis the shop shows its prices on, as WooCommerce's struck amount (CX-SID-160). A variable parent
+	 * at one price names the lowest of its sizes' amounts, or "X – Y" when they differ; frontend.js puts the chosen
+	 * size's own amount in its place (cx_n30_html). The class is kept from the bazna add-on: themes may style it.
+	 *
+	 * @param WC_Product $product Product or size.
+	 * @param array      $state   sale_state(), kind "sale".
+	 * @param bool       $own_row After a theme's price wrapper: a row of its own (CX-SID-93).
 	 * @return string
 	 */
-	private function price_anew( $html, $amounts, $own_row ) {
-		$kept = $own_row ? CX_Sidrena_Compat::replace_price_element_content( $html, $amounts ) : null;
+	private function lowest_line( $product, $state, $own_row = false ) {
+		$amount = wc_price( wc_get_price_to_display( $product, array( 'price' => $state['low'] ) ) );
+		if ( abs( (float) $state['high'] - (float) $state['low'] ) > 0.0001 ) {
+			$amount .= ' – ' . wc_price( wc_get_price_to_display( $product, array( 'price' => $state['high'] ) ) );
+		}
+		$text = sprintf(
+			/* translators: %s: the lowest price in the 30 days before the sale; on a product whose sizes have different ones, the lowest and the highest ("X – Y"). */
+			esc_html__( 'Lowest price in the 30 days before the discount: %s', 'cx-sidrena' ),
+			$amount
+		);
 
-		return null !== $kept ? $kept : $amounts;
+		return '<span class="bazna-najniza30' . ( $product->is_type( 'variable' ) ? ' bazna-najniza30--variable' : '' ) . ( $own_row ? ' ' . self::OWN_ROW : '' ) . '" style="display:block">'
+			. $text . '</span>';
 	}
 
 	/**
-	 * "Najniža cijena u 30 dana prije sniženja" under the struck amount. Text, never a tooltip (a tooltip does not work
-	 * on a phone). Class kept from the bazna add-on, themes may style it.
+	 * The unit price under the price on the product's own page (CX-SID-38, Norman SPEC §3): "19,95 €/l", from the one
+	 * unit_price() the price list uses, so the two never differ. With a screen reader's label before it, hidden on
+	 * screen. None where unit_price() says the page does not show it (under 50 g or 50 ml, or equal to the price), for a
+	 * variable product before a size is chosen, or anywhere but the product's own page. Its class must not contain
+	 * "sidrena-cijena": the bazna line is added only to price HTML without that word (append_to_price_html()).
 	 *
-	 * @param bool $on_parent Line of a variable parent: hidden by frontend.js when a size is chosen.
-	 * @param bool $own_row   After a theme's price wrapper: a row of its own (CX-SID-93).
+	 * @param WC_Product $product Product or size.
+	 * @param bool       $own_row After a theme's price wrapper: a row of its own (CX-SID-93).
 	 * @return string
 	 */
-	private function caption_html( $on_parent, $own_row = false ) {
-		return '<span class="bazna-najniza30' . ( $on_parent ? ' bazna-najniza30--variable' : '' ) . ( $own_row ? ' ' . self::OWN_ROW : '' ) . '" style="display:block">'
-			. esc_html__( 'Lowest price in the 30 days before the discount', 'cx-sidrena' ) . '</span>';
+	public function unit_line( $product, $own_row = false ) {
+		if ( ! $product instanceof WC_Product || ! $this->unit_on_page( $product ) ) {
+			return '';
+		}
+
+		$meta = CX_Sidrena_Product_Meta::instance();
+		$unit = $meta->unit_price( $product );
+		if ( null === $unit || ! $unit['page'] ) {
+			return '';
+		}
+
+		return '<span class="cx-sidrena-jm' . ( $own_row ? ' ' . self::OWN_ROW : '' ) . '">'
+			. '<span class="cx-sidrena-sr">' . esc_html__( 'Unit price:', 'cx-sidrena' ) . ' </span>'
+			. $meta->unit_price_html( $unit ) . '</span>';
 	}
 
 	/**
-	 * How a product on sale is shown, or null where we leave WooCommerce's price as it is: not on sale, the lowest-price
-	 * line turned off for this shop (cx_sidrena_n30_display), or another lowest-price plugin that draws its own.
+	 * Whether the unit price is drawn here (Norman SPEC §3.2): only on the product's own page, for it or its chosen size,
+	 * also when WooCommerce fetches that size by ajax (more than 30 sizes). Not on cards, related products, a quick view,
+	 * the cart or the Store API.
+	 *
+	 * @param WC_Product $product Product or size.
+	 * @return bool
+	 */
+	private function unit_on_page( $product ) {
+		if ( $product->is_type( 'variation' ) && wp_doing_ajax() && isset( $_GET['wc-ajax'] ) && 'get_variation' === $_GET['wc-ajax'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return true;
+		}
+
+		return is_singular( 'product' ) && $this->is_queried_product( $product );
+	}
+
+	/**
+	 * A size's unit price for the product's page (cx_jm_html): frontend.js puts it into the parent's block when the size
+	 * has no price box of its own (every size costs the same). Same price and another quantity is another unit price, so
+	 * the parent's text can never stand in for it (Norman SPEC §3.2).
+	 *
+	 * @param array                $data      Variation data.
+	 * @param WC_Product           $product   Parent.
+	 * @param WC_Product_Variation $variation Size.
+	 * @return array
+	 */
+	public function add_unit_data( $data, $product, $variation ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		$data['cx_jm_html'] = $variation instanceof WC_Product ? $this->unit_line( $variation ) : '';
+
+		return $data;
+	}
+
+	/**
+	 * A size's lowest-price line for its product's page (cx_n30_html): frontend.js puts it into the parent's line when the
+	 * size is chosen and WooCommerce shows no price box for it (every size costs the same; the parent's line names the
+	 * lowest of the sizes, or their range). '' where the size is not on sale or our line is off.
+	 *
+	 * @param array                $data      Variation data.
+	 * @param WC_Product           $product   Parent.
+	 * @param WC_Product_Variation $variation Size.
+	 * @return array
+	 */
+	public function add_n30_data( $data, $product, $variation ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		$data['cx_n30_html'] = $variation instanceof WC_Product ? $this->sale_part( '', $variation ) : '';
+
+		return $data;
+	}
+
+	/**
+	 * How a product on sale is shown, or null where WooCommerce's sale stays as it is with nothing of ours: not on sale,
+	 * no price, or another lowest-price plugin that draws its own line.
 	 *
 	 * @param WC_Product $product Product.
-	 * @return array{kind:string,prior:string,regular:string,sale:string}|null kind: "sale" (the lowest price in 30 days
-	 *         is higher than the sale price: a real reduction), "not_lower", or "range" (sizes or grouped items with
-	 *         different prices: nothing is struck).
+	 * @return array{kind:string,regular:string,sale:string,low:string,high:string}|null kind: "sale" (WooCommerce strikes
+	 *         the regular price; low and high: the lowest price in the 30 days before the sale, for a variable product the
+	 *         lowest and the highest of its sizes on sale, otherwise the same amount), or "range" (sizes or grouped items
+	 *         with different prices: nothing is struck, no line and no badge; only while our line is on, as in 0.3.0).
 	 */
 	public function sale_state( $product ) {
-		if ( ! $product instanceof WC_Product || ! function_exists( 'cx_sidrena_n30_prior' ) || ! cx_sidrena_n30_display_enabled() ) {
+		if ( ! $product instanceof WC_Product || ! function_exists( 'cx_sidrena_n30_prior' ) || ! $product->is_on_sale() ) {
 			return null;
 		}
 
@@ -319,7 +412,7 @@ class CX_Sidrena_Frontend {
 		}
 
 		if ( $product->is_type( 'grouped' ) ) {
-			return $product->is_on_sale() ? array( 'kind' => 'range', 'prior' => '', 'regular' => '', 'sale' => '' ) : null;
+			return self::lowest_line_on() ? self::range_state() : null;
 		}
 
 		if ( '' === (string) $product->get_price() ) {
@@ -330,67 +423,79 @@ class CX_Sidrena_Frontend {
 			return $this->variable_sale_state( $product );
 		}
 
-		$prior = cx_sidrena_n30_prior( $product );
-		if ( null === $prior || '' === $prior ) {
-			return null;
-		}
-
-		// Sale price, not get_price(): between a scheduled start date and WooCommerce's cron run _price is still the old one.
-		$sale = (string) $product->get_sale_price();
+		$low = (string) cx_sidrena_n30_prior( $product );
 
 		return array(
-			'kind'    => (float) $prior > (float) $sale ? 'sale' : 'not_lower',
-			'prior'   => (string) $prior,
+			'kind'    => 'sale',
 			'regular' => (string) $product->get_regular_price(),
-			'sale'    => $sale,
+			// Sale price, not get_price(): between a scheduled start date and WooCommerce's cron run _price is still the old one.
+			'sale'    => (string) $product->get_sale_price(),
+			'low'     => $low,
+			'high'    => $low,
 		);
 	}
 
 	/**
-	 * Variable parent on sale. One price for every size: WooCommerce strikes one amount on the parent, and we strike the
-	 * LOWEST prior of the sizes instead (never a bigger reduction than any size really has). Otherwise a range.
+	 * A variable product, its sizes priced differently: nothing struck, no line, no badge (0.3.0, spec §2.4).
+	 *
+	 * @return array{kind:string,regular:string,sale:string,low:string,high:string}
+	 */
+	private static function range_state() {
+		return array( 'kind' => 'range', 'regular' => '', 'sale' => '', 'low' => '', 'high' => '' );
+	}
+
+	/**
+	 * Variable parent on sale. One price for every size: WooCommerce strikes the regular price on the parent, and the line
+	 * names the lowest prices of the sizes on sale (the lowest and the highest of them). Otherwise a range.
 	 *
 	 * @param WC_Product_Variable $product Parent.
-	 * @return array{kind:string,prior:string,regular:string,sale:string}|null
+	 * @return array{kind:string,regular:string,sale:string,low:string,high:string}|null
 	 */
 	private function variable_sale_state( $product ) {
-		if ( ! $product->is_on_sale() ) {
-			return null;
-		}
-
-		$priors = array();
-		$one    = null;
+		$lows = array();
+		$one  = null;
 		foreach ( $product->get_visible_children() as $variation_id ) {
 			$variation = wc_get_product( $variation_id );
 			if ( $variation && $variation->is_on_sale() && $variation->is_purchasable() ) {
-				$priors[] = (float) cx_sidrena_n30_prior( $variation );
-				$one      = array( (string) $variation->get_regular_price(), (string) $variation->get_sale_price() );
+				$lows[] = (string) cx_sidrena_n30_prior( $variation );
+				$one    = array( (string) $variation->get_regular_price(), (string) $variation->get_sale_price() );
 			}
 		}
 
-		if ( ! $priors ) {
+		if ( ! $lows ) {
 			return null;
 		}
 
 		$prices = $product->get_variation_prices( true );
 		$single = $prices['price'] && min( $prices['price'] ) === max( $prices['price'] ) && min( $prices['regular_price'] ) === max( $prices['regular_price'] );
 		if ( ! $single ) {
-			return array( 'kind' => 'range', 'prior' => '', 'regular' => '', 'sale' => '' );
+			return self::lowest_line_on() ? self::range_state() : null;
 		}
 
-		$prior = (string) min( $priors );
+		$low  = $lows[0];
+		$high = $lows[0];
+		foreach ( $lows as $l ) {
+			if ( (float) $l < (float) $low ) {
+				$low = $l;
+			}
+			if ( (float) $l > (float) $high ) {
+				$high = $l;
+			}
+		}
 
 		return array(
-			'kind'    => (float) $prior > (float) $one[1] ? 'sale' : 'not_lower',
-			'prior'   => $prior,
+			'kind'    => 'sale',
 			'regular' => $one[0],
 			'sale'    => $one[1],
+			'low'     => $low,
+			'high'    => $high,
 		);
 	}
 
 	/**
-	 * "Akcija" may stand only where the lowest price in 30 days is shown with it (Kai: ZZP art. 19(4) and (6), also for
-	 * advertising): not on a sale that is no reduction, not on a parent or a card that strikes nothing.
+	 * The sale badge stands on every sale (CX-SID-179): the customer sees each sale as a sale, also one whose price is not
+	 * below the lowest in 30 days. Not on a parent or a card that strikes nothing (sizes with different prices) while our
+	 * line is on, as in 0.3.0.
 	 *
 	 * @param WC_Product $product Product.
 	 * @return bool
@@ -573,7 +678,7 @@ class CX_Sidrena_Frontend {
 			}
 
 			$row = CX_Sidrena_Catalog::instance()->get( $product );
-			return $row ? $this->get_html_for_catalog_row( $row ) : '';
+			return ( $row && CX_Sidrena_Catalog::instance()->is_public_row( $row ) ) ? $this->get_html_for_catalog_row( $row ) : '';
 		}
 
 		$resolved = $this->current_product();
@@ -785,8 +890,8 @@ class CX_Sidrena_Frontend {
 		$raw_id = isset( $atts['id'] ) ? trim( (string) $atts['id'] ) : '';
 		if ( preg_match( '/^d(\d+)$/i', $raw_id, $match ) ) {
 			$row = CX_Sidrena_Catalog::instance()->get( $match[1] );
-			if ( ! $row ) {
-				return '';
+			if ( ! $row || ! CX_Sidrena_Catalog::instance()->is_public_row( $row ) ) {
+				return ''; // a service not published yet shows nothing (CX-SID-130)
 			}
 
 			return '' !== $prikaz ? $this->catalog_plain_amount( $row, $prikaz ) : $this->get_html_for_catalog_row( $row );
@@ -818,7 +923,7 @@ class CX_Sidrena_Frontend {
 		}
 
 		$row = CX_Sidrena_Catalog::instance()->get( $item_id );
-		if ( ! $row ) {
+		if ( ! $row || ! CX_Sidrena_Catalog::instance()->is_public_row( $row ) ) {
 			return '';
 		}
 

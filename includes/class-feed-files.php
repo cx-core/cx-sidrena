@@ -210,12 +210,13 @@ class CX_Sidrena_Feed_Files {
 	}
 
 	/**
-	 * Price columns written with a Croatian decimal comma in CSV only.
+	 * Columns written with a Croatian decimal comma in CSV only: the amounts, and the net quantity (CX-SID-38: Excel
+	 * would read '1.5' as a date).
 	 *
 	 * @return array<int, string>
 	 */
 	public function csv_price_keys() {
-		return array( 'cijena_redovna', 'cijena_akcijska', 'cijena_jedinice_mjere', 'maloprodajna_cijena', 'sidrena_cijena', 'bazna_cijena' );
+		return array( 'cijena_redovna', 'cijena_akcijska', 'cijena_jedinice_mjere', 'maloprodajna_cijena', 'sidrena_cijena', 'bazna_cijena', 'neto_kolicina' );
 	}
 
 	/**
@@ -298,13 +299,13 @@ class CX_Sidrena_Feed_Files {
 		$value = static function ( $key ) use ( $row ) {
 			return isset( $row[ $key ] ) ? (string) $row[ $key ] : '';
 		};
-		$codes = $this->split_barcode( $value( 'barkod' ) );
+		$codes = $this->row_codes( $row );
 
 		return array(
 			'naziv'                 => $value( 'naziv' ),
 			'sifra'                 => $value( 'sku' ),
 			'marka'                 => $value( 'marka' ),
-			'neto_kolicina'         => '', // no such field yet (v0.3); the column is in its place, empty
+			'neto_kolicina'         => $value( 'neto_kolicina' ), // from the net quantity (CX-SID-38), dot decimal
 			'jedinica_mjere'        => $value( 'jedinica_mjere' ),
 			'maloprodajna_cijena'   => $value( 'maloprodajna_cijena' ),
 			'poseban_oblik'         => 'da' === $value( 'poseban_oblik' ) ? 'DA' : 'NE',
@@ -333,15 +334,34 @@ class CX_Sidrena_Feed_Files {
 	}
 
 	/**
-	 * The product's one code in its column: exactly 8 or 13 digits is an EAN (EAN-8, EAN-13), anything else (UPC-A's
-	 * 12, GTIN-14, letters) a barcode. The check digit is not checked.
+	 * The two codes of a row, one place for the files and the page (CX-SID-122). A WooCommerce product's row carries its
+	 * EAN and its barcode apart (CX_Sidrena_Feed_Rows::product_codes()); any other row (a manual one) has one code, in
+	 * the column its shape says.
 	 *
-	 * @param string $code Code from CX_Sidrena_Feed_Rows::product_barcode().
+	 * @param array<string, string> $row Public row.
+	 * @return array{barkod:string,ean_barkod:string}
+	 */
+	public function row_codes( $row ) {
+		if ( isset( $row['ean_barkod'] ) ) {
+			return array(
+				'barkod'     => isset( $row['barkod'] ) ? trim( (string) $row['barkod'] ) : '',
+				'ean_barkod' => trim( (string) $row['ean_barkod'] ),
+			);
+		}
+
+		return $this->split_barcode( isset( $row['barkod'] ) ? trim( (string) $row['barkod'] ) : '' );
+	}
+
+	/**
+	 * One code in its column: exactly 8 or 13 digits is an EAN (EAN-8, EAN-13), anything else (UPC-A's 12, GTIN-14,
+	 * letters) a barcode. The check digit is not checked.
+	 *
+	 * @param string $code Code.
 	 * @return array{barkod:string,ean_barkod:string}
 	 */
 	public function split_barcode( $code ) {
 		$code = (string) $code;
-		if ( 1 === preg_match( '/^(?:\d{8}|\d{13})$/D', $code ) ) {
+		if ( CX_Sidrena_Feed_Rows::is_ean( $code ) ) {
 			return array( 'barkod' => '', 'ean_barkod' => $code );
 		}
 
@@ -631,20 +651,21 @@ class CX_Sidrena_Feed_Files {
 		foreach ( $rows as $row ) {
 			// Public: each row its own columns, <proizvod> those of goods and <usluga> those of services (art. 3(2)-(3)).
 			$row_tag = $public_fields ? $this->row_vrsta( $row ) : 'proizvod';
+			$exact   = ! empty( $row['tekst'] ); // a manual row's text is as typed (CX-SID-142)
 			$xml    .= "\t<" . $row_tag . ">\n";
 			if ( $public_fields ) {
 				$legal = $this->legal_row( $row );
 				foreach ( $this->public_column_keys( array(), $row_tag ) as $key ) {
-					$xml .= "\t\t<" . $key . ">" . $this->xml_value( $legal[ $key ] ) . "</" . $key . ">\n";
+					$xml .= "\t\t<" . $key . ">" . $this->xml_text( $legal[ $key ], $exact ) . "</" . $key . ">\n";
 				}
 				if ( $admin ) {
 					foreach ( $this->admin_row( $row ) as $key => $value ) {
-						$xml .= "\t\t<" . $key . ">" . $this->xml_value( $value ) . "</" . $key . ">\n";
+						$xml .= "\t\t<" . $key . ">" . $this->xml_text( $value, $exact ) . "</" . $key . ">\n";
 					}
 				}
 			} else {
-				$xml .= "\t\t<naziv>" . $this->xml_value( $row['naziv'] ) . "</naziv>\n";
-				$xml .= "\t\t<sku>" . $this->xml_value( $row['sku'] ) . "</sku>\n";
+				$xml .= "\t\t<naziv>" . $this->xml_text( $row['naziv'], $exact ) . "</naziv>\n";
+				$xml .= "\t\t<sku>" . $this->xml_text( $row['sku'], $exact ) . "</sku>\n";
 				$xml .= "\t\t<cijena_redovna>" . $this->xml_value( $row['cijena_redovna'] ) . "</cijena_redovna>\n";
 				$xml .= "\t\t<cijena_akcijska>" . $this->xml_value( $row['cijena_akcijska'] ) . "</cijena_akcijska>\n";
 				$xml .= "\t\t<sidrena_cijena>" . $this->xml_value( $row['sidrena_cijena'] ) . "</sidrena_cijena>\n";
@@ -666,6 +687,15 @@ class CX_Sidrena_Feed_Files {
 	 * @return array<string, mixed>|WP_Error
 	 */
 	public function write_feed_file( $rows, $oznaka = '', $outlet = null ) {
+		// A service that is not published yet (no date or no bazna, CX-SID-130) is in neither file nor on the page.
+		$rows   = array_values(
+			array_filter(
+				$rows,
+				static function ( $row ) {
+					return ! isset( $row['objava'] ) || 'ne' !== $row['objava'];
+				}
+			)
+		);
 		$format = $this->export_format();
 		$now    = time(); // one instant: generated in the file, the time in its name, "Updated"
 		$dir    = $this->get_public_dir();
@@ -922,6 +952,44 @@ class CX_Sidrena_Feed_Files {
 	}
 
 	/**
+	 * Remove the live files (XML and CSV of goods and services, the HTML table) of every place whose code is not in
+	 * $codes: a place deleted, renamed before it published, or with nothing to publish (CX-SID-74, N6). Its address then
+	 * answers as for a place that has none, and nobody opens a stale price list from the folder. The webshop's files and
+	 * the archive are never touched (CX-SID-27). A place with only rows by agreement keeps its HTML table and loses
+	 * its XML and CSV (CX-SID-145).
+	 *
+	 * @param array<int, string> $codes Codes of the places just built.
+	 * @param array<int, string> $pages Codes of the places whose page was just written without a file (CX-SID-145).
+	 * @return int Files removed.
+	 */
+	public function remove_other_places_live( $codes, $pages = array() ) {
+		$dir = $this->get_public_dir();
+		if ( '' === $dir || ! is_dir( $dir ) ) {
+			return 0;
+		}
+
+		$keep    = array_fill_keys( array_map( 'strval', (array) $codes ), true );
+		$html    = array_fill_keys( array_map( 'strval', (array) $pages ), true );
+		$stem    = preg_quote( CX_Sidrena_Export::PUBLIC_STEM, '/' );
+		$removed = 0;
+		foreach ( glob( trailingslashit( $dir ) . CX_Sidrena_Export::PUBLIC_STEM . '*' ) ?: array() as $path ) {
+			$name    = basename( $path );
+			$is_html = (bool) preg_match( '/^' . $stem . '-cjenik-([A-Za-z0-9-]+)\.html$/D', $name, $m );
+			if ( ! is_file( $path )
+				|| ! ( $is_html
+					|| preg_match( '/^' . $stem . '_usluge-([A-Za-z0-9-]+)\.(?:xml|csv)$/D', $name, $m )
+					|| preg_match( '/^' . $stem . '-([A-Za-z0-9-]+)\.(?:xml|csv)$/D', $name, $m ) )
+				|| isset( $keep[ $m[1] ] ) || ( $is_html && isset( $html[ $m[1] ] ) ) ) {
+				continue;
+			}
+			wp_delete_file( $path );
+			$removed += file_exists( $path ) ? 0 : 1;
+		}
+
+		return $removed;
+	}
+
+	/**
 	 * Write the HTML table next to the live feed. Public requests only read this file.
 	 *
 	 * @param array<int, array<string, string>> $rows   Catalog rows.
@@ -964,7 +1032,6 @@ class CX_Sidrena_Feed_Files {
 	 * @return string
 	 */
 	public function build_cjenik_embed_html( $rows, $dom_id, $oznaka = '' ) {
-		$catalog = CX_Sidrena_Catalog::instance();
 		$upit    = CX_Sidrena_Upit::instance()->for_oznaka( $oznaka );
 		$html    = '<div class="sidrena-cjenik" id="' . esc_attr( $dom_id ) . '">';
 
@@ -987,25 +1054,55 @@ class CX_Sidrena_Feed_Files {
 			return $html;
 		}
 
-		$columns    = $this->cjenik_visible_columns( $rows );
-		$with_stock = isset( $columns['dostupnost'] );
+		// Goods and services in their own tables, as in their own files (CX-SID-75; art. 6(3)-(4) of NN 132/2026-1584):
+		// the services' table has the services' columns, after the goods. A place of services only has only theirs (Kai).
+		$kinds     = $this->rows_by_vrsta( $rows );
+		$row_index = 0;
+		if ( array() !== $kinds['proizvod'] ) {
+			$html .= $this->cjenik_table_html( $kinds['proizvod'], $this->cjenik_visible_columns( $kinds['proizvod'] ), $row_index, 'cjenik-table' );
+		}
+		if ( array() !== $kinds['usluga'] ) {
+			if ( array() !== $kinds['proizvod'] ) {
+				$html .= '<h2 class="cjenik-usluge-title">' . esc_html__( 'Services', 'cx-sidrena' ) . '</h2>';
+			}
+			$html .= $this->cjenik_table_html( $kinds['usluga'], $this->cjenik_service_columns( $kinds['usluga'] ), $row_index, 'cjenik-table cjenik-table--usluge' );
+		}
+		$html .= '<nav class="cjenik-pager" data-page-size="' . (int) self::CJENIK_PAGE_SIZE . '" hidden aria-label="' . esc_attr__( 'Price list pages', 'cx-sidrena' ) . '"></nav>';
+		$html .= $this->build_upit_section( $upit );
+		$html .= '<p class="cjenik-empty-filter" hidden>' . esc_html__( 'No products match the search.', 'cx-sidrena' ) . '</p>';
+		$html .= '</div>';
+		$html .= $this->cjenik_filter_script( $dom_id );
 
-		$html .= '<div class="cjenik-table-wrap"><table class="cjenik-table">';
-		$html .= '<thead><tr>';
+		return $html;
+	}
+
+	/**
+	 * One table of the price list page: the rows of one kind with its columns. Rows past the first page are hidden
+	 * ($row_index counts across both tables, as the page's script pages them).
+	 *
+	 * @param array<int, array<string, string>>   $rows      Rows of one kind.
+	 * @param array<string, array<string, string>> $columns   Columns (cjenik_visible_columns() or cjenik_service_columns()).
+	 * @param int                                 $row_index Rows already printed on the page.
+	 * @param string                              $class     Table classes.
+	 * @return string
+	 */
+	private function cjenik_table_html( $rows, $columns, &$row_index, $class ) {
+		$catalog    = CX_Sidrena_Catalog::instance();
+		$with_stock = isset( $columns['dostupnost'] );
+		$html       = '<div class="cjenik-table-wrap"><table class="' . esc_attr( $class ) . '">';
+		$html      .= '<thead><tr>';
 		foreach ( $columns as $column ) {
 			$html .= '<th>' . esc_html( $column['label'] ) . '</th>';
 		}
 		$html .= '</tr></thead><tbody>';
 
-		$row_index = 0;
 		foreach ( $rows as $row ) {
 			$naziv       = isset( $row['naziv'] ) ? (string) $row['naziv'] : '';
 			$sku         = isset( $row['sku'] ) ? (string) $row['sku'] : '';
 			$marka       = isset( $row['marka'] ) ? trim( (string) $row['marka'] ) : '';
 			$url         = isset( $row['url'] ) ? (string) $row['url'] : '';
-			$barkod      = isset( $row['barkod'] ) ? trim( (string) $row['barkod'] ) : '';
+			$codes       = $this->row_codes( $row );
 			$jedinica    = isset( $row['jedinica_mjere'] ) ? trim( (string) $row['jedinica_mjere'] ) : '';
-			$oblik       = isset( $row['naziv_posebnog_oblika'] ) ? trim( (string) $row['naziv_posebnog_oblika'] ) : '';
 			$vrsta       = ( isset( $row['vrsta'] ) && 'usluga' === $row['vrsta'] ) ? 'usluga' : 'proizvod';
 			$vrsta_label = 'usluga' === $vrsta ? __( 'Service', 'cx-sidrena' ) : __( 'Product', 'cx-sidrena' );
 			$datum       = isset( $row['sidrena_datum'] ) ? trim( (string) $row['sidrena_datum'] ) : '';
@@ -1013,25 +1110,28 @@ class CX_Sidrena_Feed_Files {
 			$stock_label = 'nedostupno' === $dostupnost
 				? __( 'Out of stock', 'cx-sidrena' )
 				: __( 'In stock', 'cx-sidrena' );
-			$search_src  = $naziv . ' ' . $sku . ' ' . $marka . ' ' . $barkod . ' ' . $jedinica . ' ' . $oblik . ' ' . $vrsta_label . ( $with_stock ? ' ' . $stock_label : '' );
+			// Without the name of the form of sale: the page shows only Yes/No (Pravilnik 1584 art. 3(2)), so a search for
+			// "rasprodaja" must not pick out the rows the page does not name (CX-SID-32, Kai).
+			$search_src  = $naziv . ' ' . $sku . ' ' . $marka . ' ' . trim( $codes['barkod'] . ' ' . $codes['ean_barkod'] ) . ' ' . $jedinica . ' ' . $vrsta_label . ( $with_stock ? ' ' . $stock_label : '' );
 			$search      = function_exists( 'mb_strtolower' ) ? mb_strtolower( $search_src, 'UTF-8' ) : strtolower( $search_src );
+			$exact       = ! empty( $row['tekst'] ); // a manual row's text is as typed (CX-SID-142)
 
 			$naziv_html = '' !== $url
-				? '<a href="' . esc_url( $url ) . '">' . esc_html( $naziv ) . '</a>'
-				: esc_html( $naziv );
-			$codes      = $this->split_barcode( $barkod );
+				? '<a href="' . esc_url( $url ) . '">' . $this->text_html( $naziv, $exact ) . '</a>'
+				: $this->text_html( $naziv, $exact );
 
 			$cells = array(
 				'naziv'                 => $naziv_html,
-				'sku'                   => esc_html( $sku ),
-				'marka'                 => esc_html( '' !== $marka ? $marka : '-' ),
-				'neto_kolicina'         => '-',
-				'jedinica_mjere'        => esc_html( '' !== $jedinica ? $jedinica : '-' ),
+				'sku'                   => $this->text_html( $sku, $exact ),
+				'marka'                 => $this->text_html( '' !== $marka ? $marka : '-', $exact ),
+				// The file's dot decimal with a comma, as this page's amounts (CX-SID-38).
+				'neto_kolicina'         => esc_html( '' !== trim( isset( $row['neto_kolicina'] ) ? (string) $row['neto_kolicina'] : '' ) ? str_replace( '.', ',', trim( (string) $row['neto_kolicina'] ) ) : '-' ),
+				'jedinica_mjere'        => $this->text_html( '' !== $jedinica ? $jedinica : '-', $exact ),
 				'maloprodajna_cijena'   => esc_html( $catalog->format_amount( isset( $row['maloprodajna_cijena'] ) ? $row['maloprodajna_cijena'] : '' ) ),
 				'poseban_oblik'         => esc_html( ( isset( $row['poseban_oblik'] ) && 'da' === $row['poseban_oblik'] ) ? __( 'Yes', 'cx-sidrena' ) : __( 'No', 'cx-sidrena' ) ),
 				'cijena_jedinice_mjere' => esc_html( $catalog->format_amount( isset( $row['cijena_jedinice_mjere'] ) ? $row['cijena_jedinice_mjere'] : '' ) ),
-				'barkod'                => esc_html( '' !== $codes['barkod'] ? $codes['barkod'] : '-' ),
-				'ean_barkod'            => esc_html( '' !== $codes['ean_barkod'] ? $codes['ean_barkod'] : '-' ),
+				'barkod'                => $this->text_html( '' !== $codes['barkod'] ? $codes['barkod'] : '-', $exact ),
+				'ean_barkod'            => $this->text_html( '' !== $codes['ean_barkod'] ? $codes['ean_barkod'] : '-', $exact ),
 				'sidrena_cijena'        => esc_html( $catalog->format_amount( isset( $row['sidrena_cijena'] ) ? $row['sidrena_cijena'] : '' ) ),
 				'sidrena_datum'         => esc_html( '' !== $datum ? $datum : '-' ),
 				'dostupnost'            => '<span class="cjenik-stock is-' . esc_attr( $dostupnost ) . '">' . esc_html( $stock_label ) . '</span>',
@@ -1040,7 +1140,7 @@ class CX_Sidrena_Feed_Files {
 			$hidden = $row_index >= self::CJENIK_PAGE_SIZE ? ' hidden' : '';
 			++$row_index;
 
-			$html .= '<tr data-search="' . esc_attr( $search ) . '"' . $hidden . '>';
+			$html .= '<tr data-search="' . ( $exact ? $this->text_html( $search, true ) : esc_attr( $search ) ) . '"' . $hidden . '>';
 			foreach ( $columns as $key => $column ) {
 				$html .= '<td data-label="' . esc_attr( $column['label'] ) . '">' . $cells[ $key ] . '</td>';
 			}
@@ -1048,13 +1148,27 @@ class CX_Sidrena_Feed_Files {
 		}
 
 		$html .= '</tbody></table></div>';
-		$html .= '<nav class="cjenik-pager" data-page-size="' . (int) self::CJENIK_PAGE_SIZE . '" hidden aria-label="' . esc_attr__( 'Price list pages', 'cx-sidrena' ) . '"></nav>';
-		$html .= $this->build_upit_section( $upit );
-		$html .= '<p class="cjenik-empty-filter" hidden>' . esc_html__( 'No products match the search.', 'cx-sidrena' ) . '</p>';
-		$html .= '</div>';
-		$html .= $this->cjenik_filter_script( $dom_id );
 
 		return $html;
+	}
+
+	/**
+	 * Columns of the services' table on the page: those of the services' file (art. 3(3)), in its order, and the date of
+	 * the bazna cijena when a row has one, as for goods (Kai, CX-SID-75).
+	 *
+	 * @param array<int, array<string, string>> $rows Services.
+	 * @return array<string, array<string, string>>
+	 */
+	public function cjenik_service_columns( $rows ) {
+		$all = $this->cjenik_visible_columns( $rows );
+		$out = array();
+		foreach ( array( 'naziv', 'maloprodajna_cijena', 'poseban_oblik', 'sidrena_cijena', 'sidrena_datum' ) as $key ) {
+			if ( isset( $all[ $key ] ) ) {
+				$out[ $key ] = $all[ $key ];
+			}
+		}
+
+		return $out;
 	}
 
 	/**
@@ -1068,29 +1182,41 @@ class CX_Sidrena_Feed_Files {
 			return '';
 		}
 
+		// CX-SID-76: these rows are not in the price list file (art. 4(2) of NN 132/2026-1584), and the page says so. The
+		// heading is true for every row under it (Kai): "services" only when all of them are services.
+		$products = 0;
+		foreach ( $rows as $row ) {
+			$products += 'proizvod' === CX_Sidrena_Upit::row_vrsta( $row ) ? 1 : 0;
+		}
+		if ( 0 === $products ) {
+			$title = __( 'Services with price by agreement', 'cx-sidrena' );
+			$note  = __( 'The price of these services is set case by case, so they are not in the price list. You will get the price on request.', 'cx-sidrena' );
+		} else {
+			$title = __( 'Price by agreement', 'cx-sidrena' );
+			$note  = __( 'What is listed below is not in the price list, because its price is set case by case. You will get the price on request.', 'cx-sidrena' );
+		}
+
 		$label_naziv     = __( 'Name', 'cx-sidrena' );
 		$label_kriteriji = __( 'Criteria', 'cx-sidrena' );
-		$label_cijena    = __( 'Price', 'cx-sidrena' );
-		$cijena          = __( 'Price on request', 'cx-sidrena' );
 
-		$html  = '<h2 class="cjenik-upit-title">' . esc_html__( 'Price on request', 'cx-sidrena' ) . '</h2>';
+		$html  = '<h2 class="cjenik-upit-title">' . esc_html( $title ) . '</h2>';
+		$html .= '<p class="cjenik-upit-note">' . esc_html( $note ) . '</p>';
 		$html .= '<div class="cjenik-table-wrap"><table class="cjenik-upit">';
 		$html .= '<thead><tr>';
 		$html .= '<th>' . esc_html( $label_naziv ) . '</th>';
 		$html .= '<th>' . esc_html( $label_kriteriji ) . '</th>';
-		$html .= '<th>' . esc_html( $label_cijena ) . '</th>';
 		$html .= '</tr></thead><tbody>';
 
 		foreach ( $rows as $row ) {
 			$naziv     = isset( $row['naziv'] ) ? (string) $row['naziv'] : '';
 			$kriteriji = isset( $row['kriteriji'] ) ? (string) $row['kriteriji'] : '';
-			$search    = $naziv . ' ' . $kriteriji . ' ' . $cijena;
+			$search    = $naziv . ' ' . $kriteriji;
 			$search    = function_exists( 'mb_strtolower' ) ? mb_strtolower( $search, 'UTF-8' ) : strtolower( $search );
 
-			$html .= '<tr data-search="' . esc_attr( $search ) . '">';
-			$html .= '<td data-label="' . esc_attr( $label_naziv ) . '">' . esc_html( $naziv ) . '</td>';
-			$html .= '<td data-label="' . esc_attr( $label_kriteriji ) . '">' . esc_html( $kriteriji ) . '</td>';
-			$html .= '<td data-label="' . esc_attr( $label_cijena ) . '">' . esc_html( $cijena ) . '</td>';
+			$exact = ! empty( $row['tekst'] ); // as typed (CX-SID-142)
+			$html .= '<tr data-search="' . ( $exact ? $this->text_html( $search, true ) : esc_attr( $search ) ) . '">';
+			$html .= '<td data-label="' . esc_attr( $label_naziv ) . '">' . $this->text_html( $naziv, $exact ) . '</td>';
+			$html .= '<td data-label="' . esc_attr( $label_kriteriji ) . '">' . $this->text_html( $kriteriji, $exact ) . '</td>';
 			$html .= '</tr>';
 		}
 
@@ -1247,7 +1373,7 @@ JS;
 		$filled = array();
 		foreach ( $rows as $row ) {
 			// One code, two columns: an EAN fills only EAN barcode, any other code only Barcode (as in the file).
-			$row = array_merge( $row, $this->split_barcode( isset( $row['barkod'] ) ? trim( (string) $row['barkod'] ) : '' ) );
+			$row = array_merge( $row, $this->row_codes( $row ) );
 			foreach ( $all as $key => $column ) {
 				if ( isset( $filled[ $key ] ) ) {
 					continue;
@@ -1324,8 +1450,9 @@ JS;
 		}
 
 		$snapshot = $this->read_cjenik_snapshot( $oznaka );
-		if ( null === $snapshot && CX_Sidrena_Export::instance()->awaiting_bazna() ) {
-			// Before the first bazna: not being prepared, not published yet, and no build queued (CX-SID-68).
+		if ( null === $snapshot && ( CX_Sidrena_Export::instance()->awaiting_bazna() || CX_Sidrena_Export::instance()->waiting_for_legal_id() ) ) {
+			// Before the first bazna: not being prepared, not published yet, and no build queued (CX-SID-68). The same
+			// without an OIB or MBO (CX-SID-159).
 			return '<p class="sidrena-cjenik-pending">' . esc_html( CX_Sidrena_Export::not_published_message() ) . '</p>';
 		}
 		if ( null === $snapshot ) {
@@ -1369,6 +1496,30 @@ JS;
 	}
 
 	/**
+	 * A value of a row for XML. A manual row's text is as typed (CX-SID-142), so all of it is escaped, also an '&amp;'
+	 * the owner typed: esc_xml() leaves one as it is, and the file would say '&'. Other rows as xml_value().
+	 *
+	 * @param mixed $value Value.
+	 * @param bool  $exact The row's text is as typed.
+	 * @return string
+	 */
+	public function xml_text( $value, $exact ) {
+		return $exact ? htmlspecialchars( wp_check_invalid_utf8( (string) $value ), ENT_QUOTES | ENT_XML1, 'UTF-8', true ) : $this->xml_value( $value );
+	}
+
+	/**
+	 * A value of a row for the HTML page, in an element or an attribute. As xml_text(): a manual row's text whole
+	 * (esc_html() and esc_attr() leave an entity as it is), other rows as esc_html().
+	 *
+	 * @param mixed $value Value.
+	 * @param bool  $exact The row's text is as typed.
+	 * @return string
+	 */
+	public function text_html( $value, $exact ) {
+		return $exact ? htmlspecialchars( wp_check_invalid_utf8( (string) $value ), ENT_QUOTES, 'UTF-8', true ) : esc_html( (string) $value );
+	}
+
+	/**
 	 * Download headers.
 	 *
 	 * @param string $content_type MIME type.
@@ -1386,13 +1537,6 @@ JS;
 	}
 
 	/**
-	 * Stream a public file with type-specific headers.
-	 *
-	 * @param string $path     Absolute path.
-	 * @param string $filename Download name.
-	 * @param string $ext      xml|csv.
-	 */
-	/**
 	 * The plain filename= of a Content-Disposition header: ASCII only (RFC 6266), letters with diacritics without them
 	 * (Čakovec -> Cakovec), anything else non-ASCII as "_". The full name is in filename*, which browsers prefer. A raw
 	 * UTF-8 filename= is refused by some servers (the Playground's answered 500 for an address in Čakovec, CX-SID-110).
@@ -1407,7 +1551,49 @@ JS;
 		return str_replace( array( '"', '\\' ), '', $name );
 	}
 
+	/**
+	 * Stream an archive file: it never changes, so a browser or a proxy may keep it for 5 minutes.
+	 *
+	 * @param string $path     Absolute path.
+	 * @param string $filename Download name.
+	 * @param string $ext      xml|csv.
+	 */
 	public function send_public_file( $path, $filename, $ext ) {
+		$this->public_file_headers( $filename, $ext );
+		header( 'Cache-Control: public, max-age=300' );
+
+		readfile( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile
+		exit;
+	}
+
+	/**
+	 * Send a stable address's live file, read once by the caller (CX-SID-163). The same address has a new file after
+	 * each change (art. 6(2)), so nothing may keep it: no-cache from WordPress and no "public" line after it (a second
+	 * Cache-Control header replaces the first), DONOTCACHEPAGE for page caches that read it (W3 Total Cache and others),
+	 * and LiteSpeed's own header.
+	 *
+	 * @param string $body     The file's bytes.
+	 * @param string $filename Download name.
+	 * @param string $ext      xml|csv.
+	 */
+	public function send_live_body( $body, $filename, $ext ) {
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true );
+		}
+		$this->public_file_headers( $filename, $ext );
+		header( 'X-LiteSpeed-Cache-Control: no-cache' );
+
+		echo $body; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- the price list file itself
+		exit;
+	}
+
+	/**
+	 * Headers of a public price list file: not cached by default, its type, and its name in both forms.
+	 *
+	 * @param string $filename Download name.
+	 * @param string $ext      xml|csv.
+	 */
+	private function public_file_headers( $filename, $ext ) {
 		if ( function_exists( 'nocache_headers' ) ) {
 			nocache_headers();
 		}
@@ -1421,9 +1607,5 @@ JS;
 
 		header( 'Content-Disposition: inline; filename="' . self::ascii_filename( $filename ) . '"; filename*=UTF-8\'\'' . rawurlencode( $filename ) );
 		header( 'X-Robots-Tag: noindex, follow' );
-		header( 'Cache-Control: public, max-age=300' );
-
-		readfile( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile
-		exit;
 	}
 }

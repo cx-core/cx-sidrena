@@ -896,6 +896,37 @@ body.sidrena-cijena-screen #footer-left {
 	min-width: 200px;
 }
 
+/* CX-SID-130: a service not in the price list, marked in its row; the question in a new service row. */
+.sidrena-cijena-unpub {
+	margin: 4px 0 0;
+	padding: 2px 8px;
+	border-left: 4px solid #dba617;
+	background: #fcf9e8;
+	font-size: 12px;
+	white-space: normal;
+}
+
+.sidrena-cijena-od-prije {
+	margin: 0 0 6px;
+	min-width: 16em;
+	white-space: normal;
+}
+
+.sidrena-cijena-od-prije select {
+	display: block;
+	max-width: 100%;
+}
+
+/* CX-SID-76: a row marked as a product, warned in its row (never blocked). */
+.sidrena-cijena-upit-warn {
+	margin: 6px 0 0;
+	padding: 2px 8px;
+	border-left: 4px solid #dba617;
+	background: #fcf9e8;
+	max-width: 22em;
+	white-space: normal;
+}
+
 .sidrena-cijena-catalog.sidrena-cijena-upit .js-kriteriji {
 	min-width: 280px;
 }
@@ -1128,6 +1159,76 @@ body.sidrena-cijena-screen #footer-left {
 	vertical-align: text-bottom;
 }
 
+/* CX-SID-131: an outlet's products (all of the webshop's, or the picked ones), its messages and a refused save. */
+.sidrena-poslovnica__products {
+	margin: 4px 0 0;
+	padding: 0;
+	border: 0;
+	min-width: 0;
+}
+
+.sidrena-poslovnica__products legend {
+	margin-bottom: 4px;
+	padding: 0;
+	font-weight: 600;
+}
+
+.sidrena-poslovnica__products > label.sidrena-poslovnica__choice {
+	display: block;
+	margin: 0 0 6px;
+	font-weight: 400;
+}
+
+.sidrena-poslovnica__picker {
+	margin: 0 0 8px 24px;
+}
+
+.sidrena-poslovnica__picker .description {
+	display: block;
+	margin-top: 4px;
+}
+
+.sidrena-poslovnica__prices {
+	margin: 4px 0 0;
+}
+
+.sidrena-poslovnica .cx-field__msg {
+	display: block;
+}
+
+.sidrena-poslovnica .cx-field__msg[hidden],
+.sidrena-poslovnice__refused[hidden] {
+	display: none;
+}
+
+.sidrena-cijena-settings .sidrena-poslovnice__refused {
+	margin: 0 0 12px;
+	max-width: none;
+}
+
+.sidrena-poslovnica__field input[readonly] {
+	background: #f0f0f1;
+}
+
+/* The page after a save lands on the section: its heading and a refused save's line clear of the admin bar. */
+.sidrena-cijena-settings #cx-outlets {
+	scroll-margin-top: 48px;
+}
+
+/* A phone (Norman, 390 px): "Additional outlets" and its button do not fit in one row, so the button goes under the
+   heading at full width. */
+@media (max-width: 600px) {
+	.sidrena-poslovnice__head {
+		flex-direction: column;
+		align-items: stretch;
+	}
+
+	.sidrena-poslovnice__head .button {
+		width: 100%;
+		text-align: center;
+	}
+}
+
 @media (max-width: 782px) {
 	.sidrena-cijena-hero {
 		padding: 22px 18px 46px;
@@ -1245,6 +1346,10 @@ body.sidrena-cijena-screen #footer-left {
 	padding: 6px 12px;
 	border-left: 4px solid #dba617;
 	background: #fff;
+}
+.cx-status__line--red {
+	border-left-color: #d63638;
+	background: #fcf0f1;
 }
 .cx-status__takeover ul {
 	margin: 0.2em 0 0.6em 1.4em;
@@ -1507,3 +1612,20 @@ button.cx-status__tile.is-active { border-color: #2271b1; box-shadow: inset 0 -3
 	border-left-color: #72aee6;
 	background: #f0f6fc;
 }
+
+/* CX-SID-38: Net quantity on the product and size screens (Norman SPEC §2.2). The number about 7em, its unit right after
+   it on the same line; the line, the disclosure and the status under them in the field's column. */
+.cx-neto .cx-neto__q { width: 7em !important; float: none !important; }
+.cx-neto .cx-neto__u { width: auto !important; min-width: 4.5em; float: none !important; margin-left: 0.5em; vertical-align: middle; }
+.cx-neto p.cx-neto__field { margin-bottom: 0; }
+.cx-neto .cx-neto__help p { margin: 4px 0; }
+.cx-neto .cx-neto__help p.description { display: block; }
+.cx-neto details.cx-neto__more { margin: 4px 0; max-width: 40em; }
+.cx-neto details.cx-neto__more summary { cursor: pointer; color: #2271b1; }
+.cx-neto details.cx-neto__more p { color: #50575e; }
+.woocommerce_options_panel .cx-neto .cx-neto__help { margin: 0 20px 9px 162px; }
+@media only screen and (max-width: 500px) {
+	.woocommerce_options_panel .cx-neto .cx-neto__help { margin-left: 20px; }
+}
+.woocommerce_variation .cx-neto { clear: both; }
+.woocommerce_variation .cx-neto .cx-neto__help { margin: 0 0 9px; }

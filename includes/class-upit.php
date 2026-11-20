@@ -63,6 +63,11 @@ class CX_Sidrena_Upit {
 
 			$clean = $this->sanitize_row( $row );
 			if ( null !== $clean ) {
+				if ( empty( $row['tekst'] ) ) {
+					// Stored before 0.3.0 by sanitize_text_field(): read as typed (CX-SID-142).
+					$clean['naziv']     = CX_Sidrena_Money::legacy_text( $clean['naziv'] );
+					$clean['kriteriji'] = CX_Sidrena_Money::legacy_text( $clean['kriteriji'] );
+				}
 				$out[] = $clean;
 			}
 		}
@@ -162,6 +167,59 @@ class CX_Sidrena_Upit {
 	}
 
 	/**
+	 * usluga or proizvod (CX-SID-76). These rows are for services whose price is set case by case (art. 4(2) of
+	 * NN 132/2026-1584); a product here is allowed but warned about (ZZP art. 7(1): goods on offer show their price).
+	 * A row without the key (MJDD's, and ours before 0.3.0) is a service.
+	 *
+	 * @param array<string, mixed> $row Row.
+	 * @return string
+	 */
+	public static function row_vrsta( $row ) {
+		$value = is_array( $row ) && isset( $row['vrsta'] ) ? strtolower( trim( (string) $row['vrsta'] ) ) : '';
+
+		return in_array( $value, array( 'proizvod', 'roba', 'product' ), true ) ? 'proizvod' : 'usluga';
+	}
+
+	/**
+	 * Rows marked as a product, in every place (Status, CX-SID-76).
+	 *
+	 * @return int
+	 */
+	public function count_products() {
+		$n = 0;
+		foreach ( $this->all() as $row ) {
+			$n += 'proizvod' === $row['vrsta'] ? 1 : 0;
+		}
+
+		return $n;
+	}
+
+	/**
+	 * Move the rows of one place to its new code (CX-SID-74: a place renamed before it published, or its code written in
+	 * capitals). Exact codes: the rows of another place are never touched.
+	 *
+	 * @param string $from Old code.
+	 * @param string $to   New code.
+	 */
+	public function move_poslovnica( $from, $to ) {
+		if ( '' === $from || $from === $to ) {
+			return;
+		}
+
+		$rows = $this->all();
+		$moved = false;
+		foreach ( $rows as $i => $row ) {
+			if ( $this->row_poslovnica( $row ) === $from ) {
+				$rows[ $i ]['poslovnica'] = $to;
+				$moved                    = true;
+			}
+		}
+		if ( $moved ) {
+			$this->save( $rows, true );
+		}
+	}
+
+	/**
 	 * Drop rows that belong to one outlet.
 	 *
 	 * @param string $oznaka Outlet code.
@@ -208,10 +266,11 @@ class CX_Sidrena_Upit {
 		$id = isset( $row['id'] ) ? preg_replace( '/\D/', '', (string) $row['id'] ) : '';
 		$id = is_string( $id ) ? $id : '';
 
-		$naziv = isset( $row['naziv'] ) ? sanitize_text_field( wp_unslash( (string) $row['naziv'] ) ) : '';
+		// Text as typed (CX-SID-142): the page escapes it.
+		$naziv = isset( $row['naziv'] ) ? CX_Sidrena_Money::plain_text( wp_unslash( (string) $row['naziv'] ) ) : '';
 		$naziv = is_string( $naziv ) ? $naziv : '';
 
-		$kriteriji = isset( $row['kriteriji'] ) ? sanitize_text_field( wp_unslash( (string) $row['kriteriji'] ) ) : '';
+		$kriteriji = isset( $row['kriteriji'] ) ? CX_Sidrena_Money::plain_text( wp_unslash( (string) $row['kriteriji'] ) ) : '';
 		$kriteriji = is_string( $kriteriji ) ? $kriteriji : '';
 
 		if ( '' === $naziv || '' === $kriteriji ) {
@@ -223,6 +282,8 @@ class CX_Sidrena_Upit {
 			'naziv'      => $naziv,
 			'kriteriji'  => $kriteriji,
 			'poslovnica' => $this->row_poslovnica( $row ),
+			'vrsta'      => self::row_vrsta( $row ),
+			'tekst'      => '1', // CX-SID-142: stored as typed; a stored row without it is from before 0.3.0 (all())
 		);
 	}
 

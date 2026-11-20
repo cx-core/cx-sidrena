@@ -148,13 +148,20 @@ final class CX_Sidrena_Sale_Rule {
 	 * @return string
 	 */
 	public static function rule_label( array $r ) {
+		// CX-SID-162: a suggestion comes from today's sale and prices, the regulation asks for the reference day's. The date
+		// ends the sentence with its own dot (02.05.2025.), so the text has none after it.
+		$check = sprintf(
+			/* translators: %s: date of the bazna cijena */
+			__( 'Suggested from today\'s sale and prices: in your own records, check the sale and price on %s', 'cx-sidrena' ),
+			$r['date']
+		);
 		if ( 'lowest_30' === $r['rule'] ) {
 			/* translators: %s: date of the bazna cijena */
-			return sprintf( __( '%s: the lowest price in the 30 days before the sale', 'cx-sidrena' ), $r['date'] );
+			return sprintf( __( '%s: the lowest price in the 30 days before the sale', 'cx-sidrena' ), $r['date'] ) . '. ' . $check;
 		}
 		if ( 'regular' === $r['rule'] ) {
 			/* translators: %s: date of the bazna cijena */
-			return sprintf( __( '%s: the regular price before the sale', 'cx-sidrena' ), $r['date'] );
+			return sprintf( __( '%s: the regular price before the sale', 'cx-sidrena' ), $r['date'] ) . '. ' . $check;
 		}
 		/* translators: %s: date of the bazna cijena */
 		return sprintf( __( '%s: no rule for this date, enter the bazna cijena', 'cx-sidrena' ), $r['date'] );

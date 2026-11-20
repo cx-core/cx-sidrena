@@ -136,15 +136,17 @@ class CX_Sidrena_CLI {
 				'sku'       => $r['sku'],
 				'now'       => $r['now'] ? $r['now']['bazna'] . ' ' . $r['now']['date'] : '-',
 				'new'       => $r['new'] ? $r['new']['bazna'] . ' ' . $r['new']['date'] : '-',
-				'date_from' => $r['new'] ? $r['new']['date_from'] : '',
+				'date_from' => $r['new'] && isset( $r['new']['date_from'] ) ? $r['new']['date_from'] : '',
 				'lowest'    => $r['lowest'] ? $r['lowest']['new'] : '',
+				// CX-SID-122: what the price list shows now and after, per brand, EAN or barcode that changes.
+				'codes'     => isset( $r['codes'] ) ? implode( '; ', array_map( array( __CLASS__, 'code_change' ), $r['codes'] ) ) : '',
 			);
 		}
 		foreach ( $p['lists']['not_found'] as $r ) {
-			$items[] = array( 'line' => $r['line'], 'sku' => $r['sku'], 'now' => '', 'new' => 'NOT FOUND', 'date_from' => '', 'lowest' => '' );
+			$items[] = array( 'line' => $r['line'], 'sku' => $r['sku'], 'now' => '', 'new' => 'NOT FOUND', 'date_from' => '', 'lowest' => '', 'codes' => '' );
 		}
 		foreach ( $p['lists']['invalid'] as $r ) {
-			$items[] = array( 'line' => $r['line'], 'sku' => $r['sku'], 'now' => '', 'new' => 'INVALID: ' . $r['message'], 'date_from' => '', 'lowest' => '' );
+			$items[] = array( 'line' => $r['line'], 'sku' => $r['sku'], 'now' => '', 'new' => 'INVALID: ' . $r['message'], 'date_from' => '', 'lowest' => '', 'codes' => '' );
 		}
 		if ( $items ) {
 			usort(
@@ -154,7 +156,7 @@ class CX_Sidrena_CLI {
 				}
 			);
 			$format = isset( $assoc_args['format'] ) && 'csv' === $assoc_args['format'] ? 'csv' : 'table';
-			WP_CLI\Utils\format_items( $format, $items, array( 'line', 'sku', 'now', 'new', 'date_from', 'lowest' ) );
+			WP_CLI\Utils\format_items( $format, $items, array_merge( array( 'line', 'sku', 'now', 'new', 'date_from', 'lowest' ), ! empty( $p['has_codes'] ) ? array( 'codes' ) : array() ) );
 		}
 		$by = trim( (string) WP_CLI\Utils\get_flag_value( $assoc_args, 'confirmed-by', '' ) );
 		if ( '' === $by ) {
@@ -165,7 +167,7 @@ class CX_Sidrena_CLI {
 		if ( is_wp_error( $token ) ) {
 			WP_CLI::error( $token->get_error_message() );
 		}
-		WP_CLI::log( 'Confirmation: ' . CX_Sidrena_Import::consent_text() );
+		WP_CLI::log( 'Confirmation: ' . CX_Sidrena_Import::consent_text( $p ) );
 		$r = CX_Sidrena_Import::confirm(
 			$token,
 			array(
@@ -180,6 +182,16 @@ class CX_Sidrena_CLI {
 		}
 		$done = self::run_job();
 		WP_CLI::success( sprintf( 'Imported: %d. Skipped: %d. Import %d, file fingerprint %s.', (int) $done['updated'], (int) $done['skipped'], (int) $r['import_id'], substr( $p['sha256'], 0, 8 ) ) );
+	}
+
+	/**
+	 * One code change of the Import preview for the CLI's table: 'ean: - -> 3850012345678'.
+	 *
+	 * @param array{0:string,1:string,2:string} $c Field, now, after.
+	 * @return string
+	 */
+	public static function code_change( $c ) {
+		return $c[0] . ': ' . ( '' !== $c[1] ? $c[1] : '-' ) . ' -> ' . ( '' !== $c[2] ? $c[2] : '-' );
 	}
 
 	/**
@@ -260,6 +272,10 @@ class CX_Sidrena_CLI {
 		}
 		$none = count( array_filter( $rows, static function ( $r ) { return '' === $r['rule']; } ) );
 		self::write_out( CX_Sidrena_Sale_Rule::csv( $rows ), $assoc_args );
+		if ( count( $rows ) > $none ) {
+			// CX-SID-162. warning() writes to STDERR, so `sale-rule > file.csv` keeps it out of the file.
+			WP_CLI::warning( 'The suggested bazna cijena is worked out from today\'s sale and prices. The bazna cijena is the price the product had on its date (Rule column); if it was on sale that day, the price before that sale, as the Rule column says, not the sale price. Check this in your own records before you import the file.' );
+		}
 		WP_CLI::success( sprintf( 'On sale without a bazna cijena: %d (no rule for the date: %d). Nothing written to products.', count( $rows ), $none ) );
 	}
 
@@ -289,7 +305,8 @@ class CX_Sidrena_CLI {
 	}
 
 	/**
-	 * The archive of published price lists: the public files (the last 30 days) and the kept ones.
+	 * The archive of published price lists: the public files (the current ones, and those replaced in the last 15 days)
+	 * and the kept ones.
 	 *
 	 * ## OPTIONS
 	 *
@@ -306,7 +323,7 @@ class CX_Sidrena_CLI {
 	 * : For get: the file's name, as list shows it.
 	 *
 	 * [--kept]
-	 * : list: the kept files (older than the public 30 days) instead of the public ones.
+	 * : list: the kept files (no longer public) instead of the public ones.
 	 *
 	 * [--out=<file>]
 	 * : get: write the file there. Without it, the file goes to the output.
@@ -358,7 +375,7 @@ class CX_Sidrena_CLI {
 			);
 		}
 		WP_CLI\Utils\format_items( 'table', $rows, array( 'name', 'time', 'bytes' ) );
-		WP_CLI::log( sprintf( '%s: %d. Kept for %s.', $kept ? 'Kept' : 'Public (last 30 days)', count( $rows ), 0 === CX_Sidrena_Archive::keep_days() ? 'ever' : CX_Sidrena_Archive::keep_days() . ' days' ) );
+		WP_CLI::log( sprintf( '%s: %d. Kept for %s.', $kept ? 'Kept' : 'Public (current, and replaced in the last 15 days)', count( $rows ), 0 === CX_Sidrena_Archive::keep_days() ? 'ever' : CX_Sidrena_Archive::keep_days() . ' days' ) );
 	}
 
 	/**

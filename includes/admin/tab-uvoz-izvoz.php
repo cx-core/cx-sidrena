@@ -120,7 +120,7 @@ defined( 'ABSPATH' ) || exit;
 							<option value="webshop"><?php echo esc_html__( 'Webshop', 'cx-sidrena' ); ?></option>
 							<?php foreach ( CX_Sidrena_Poslovnice::instance()->all() as $outlet ) : ?>
 								<?php $outlet_name = '' !== $outlet['naziv'] ? $outlet['naziv'] : $outlet['oznaka']; ?>
-								<option value="<?php echo esc_attr( $outlet['oznaka'] ); ?>"><?php echo esc_html( $outlet_name ); ?></option>
+								<option value="<?php echo esc_attr( $outlet['oznaka'] ); ?>"><?php echo CX_Sidrena_Feed_Files::instance()->text_html( $outlet_name, true ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- as typed (CX-SID-142) ?></option>
 							<?php endforeach; ?>
 						</select>
 					</label>

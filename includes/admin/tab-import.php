@@ -37,6 +37,8 @@ $template_url = wp_nonce_url( admin_url( 'admin-post.php?action=cx_sidrena_impor
 				<a class="button" href="<?php echo esc_url( $template_url ); ?>"><?php echo esc_html__( 'Download template', 'cx-sidrena' ); ?></a>
 			</p>
 			<p class="description"><?php echo esc_html__( 'Columns: SKU, Product name, Bazna cijena, Date, Lowest price in 30 days. An empty date keeps the product\'s own date; a product without one takes it from Dates in Settings, or the day it was added.', 'cx-sidrena' ); ?></p>
+			<?php // CX-SID-122, Norman T1. ?>
+			<p class="description"><?php echo esc_html__( 'Optional columns: Brand, EAN and Barcode. Take them from the product, its packaging or your supplier. EAN has 8 or 13 digits; any other code goes in Barcode. An empty cell changes nothing, and a dash (-) removes what you imported before. An EAN (GTIN) or brand set on the product in WooCommerce comes first and is not changed here. A file may have only SKU and these columns; bazna cijene then stay as they are.', 'cx-sidrena' ); ?></p>
 			<p class="cx-import__error notice notice-error inline" role="alert" hidden></p>
 		</form>
 		<?php
@@ -48,6 +50,8 @@ $template_url = wp_nonce_url( admin_url( 'admin-post.php?action=cx_sidrena_impor
 				<?php if ( $dates_saved ) : ?>
 					<p><?php echo esc_html__( 'Products on sale without a bazna cijena: download a file with a suggested bazna cijena for each, check it, correct it where needed, then upload it here.', 'cx-sidrena' ); ?></p>
 					<p><a class="button" href="<?php echo esc_url( CX_Sidrena_Sale_Rule::url() ); ?>"><?php echo esc_html__( 'Download file for products on sale', 'cx-sidrena' ); ?></a></p>
+					<?php // CX-SID-162: the regulation asks for the price before a sale on the reference day; the file only knows today's. ?>
+					<p class="notice notice-warning inline cx-import__sale-rule-check"><?php echo esc_html__( 'The suggestion is worked out from today\'s sale and prices. The bazna cijena is the price the product had on its date (Rule column). If it was on sale that day, the bazna cijena is the price before that sale, as the Rule column says, not the sale price. Check this in your own records and correct the file before you upload it.', 'cx-sidrena' ); ?></p>
 				<?php else : ?>
 					<p class="description"><?php echo esc_html__( 'The file for products on sale without a bazna cijena can be downloaded once Dates are saved in Settings.', 'cx-sidrena' ); ?></p>
 				<?php endif; ?>
@@ -84,7 +88,7 @@ $template_url = wp_nonce_url( admin_url( 'admin-post.php?action=cx_sidrena_impor
 	<section class="sidrena-cijena-card cx-import__step" data-step="confirm" hidden>
 		<div class="sidrena-cijena-card__head">
 			<h2><?php echo esc_html__( 'Confirm', 'cx-sidrena' ); ?></h2>
-			<p><?php echo esc_html__( 'Who confirmed these prices for the shop. Kept with the import as proof.', 'cx-sidrena' ); ?></p>
+			<p><?php echo esc_html__( 'Who confirmed this file for the shop. Kept with the import as proof.', 'cx-sidrena' ); ?></p>
 		</div>
 		<p>
 			<label for="cx-import-by"><?php echo esc_html__( 'Confirmed by', 'cx-sidrena' ); ?></label><br />
@@ -152,7 +156,7 @@ $template_url = wp_nonce_url( admin_url( 'admin-post.php?action=cx_sidrena_impor
 				<th scope="col"><?php echo esc_html__( 'Date', 'cx-sidrena' ); ?></th>
 				<th scope="col"><?php echo esc_html__( 'Imported by', 'cx-sidrena' ); ?></th>
 				<th scope="col"><?php echo esc_html__( 'Confirmed by', 'cx-sidrena' ); ?></th>
-				<th scope="col"><?php echo esc_html__( 'Prices', 'cx-sidrena' ); ?></th>
+				<th scope="col"><?php echo esc_html__( 'Imported', 'cx-sidrena' ); ?></th>
 				<th scope="col"><?php echo esc_html__( 'File', 'cx-sidrena' ); ?></th>
 				<th scope="col"><?php echo esc_html__( 'File fingerprint', 'cx-sidrena' ); ?></th>
 			</tr></thead>

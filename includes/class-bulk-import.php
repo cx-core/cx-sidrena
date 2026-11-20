@@ -238,7 +238,9 @@ class CX_Sidrena_Bulk_Import {
 		$missing   = isset( $_POST['missing'] ) ? absint( wp_unslash( $_POST['missing'] ) ) : 0;
 		$created   = isset( $_POST['created'] ) ? absint( wp_unslash( $_POST['created'] ) ) : 0;
 		$special   = isset( $_POST['special'] ) ? absint( wp_unslash( $_POST['special'] ) ) : 0;
+		$unpub     = isset( $_POST['unpub'] ) ? absint( wp_unslash( $_POST['unpub'] ) ) : 0;
 		$unclear   = isset( $_POST['unclear'] ) ? absint( wp_unslash( $_POST['unclear'] ) ) : 0;
+		$other     = isset( $_POST['other'] ) ? absint( wp_unslash( $_POST['other'] ) ) : 0; // rows of another price list (CX-SID-164)
 		$examples  = array();
 		$amounts   = array_filter( array( $regular, $sale, $sidrena, $jedinica_cijena ) );
 		$from_xml  = isset( $job['kind'] ) && 'xml' === $job['kind'];
@@ -288,6 +290,8 @@ class CX_Sidrena_Bulk_Import {
 						++$updated;
 					} elseif ( 'created' === $result ) {
 						++$created;
+					} elseif ( 'other' === $result ) {
+						++$other;
 					} else {
 						++$skipped;
 					}
@@ -399,12 +403,11 @@ class CX_Sidrena_Bulk_Import {
 					$changed = true;
 				}
 
+				// No import writes the list of places (CX-SID-129): its writer saved the whole list as read at the start
+				// of the step, so an Outlets save in between was lost. This branch is refused with WooCommerce anyway
+				// (refuse_with_woocommerce, CX-SID-43), and without it an import into a place writes catalog rows only.
 				$stock_value = $this->mapped_text( $row, $dostupnost );
-				$outlet_import = ( 'webshop' !== strtolower( $import_outlet ) );
-				if ( $outlet_import ) {
-					CX_Sidrena_Poslovnice::instance()->set_product_dostupnost( $import_outlet, $product_id, null === $stock_value ? '' : $stock_value );
-					$changed = true;
-				} elseif ( null !== $stock_value ) {
+				if ( null !== $stock_value ) {
 					$flag = CX_Sidrena_Catalog::instance()->normalize_dostupnost( $stock_value );
 					$product->set_stock_status( 'nedostupno' === $flag ? 'outofstock' : 'instock' );
 					$changed       = true;
@@ -474,11 +477,16 @@ class CX_Sidrena_Bulk_Import {
 				}
 
 				$result = $catalog->upsert_working_row( $item );
+				if ( in_array( $result, array( 'updated', 'created' ), true ) && ! $catalog->is_public_row( $catalog->last_upsert_row() ) ) {
+					++$unpub; // a service without its date or bazna waits (CX-SID-130)
+				}
 
 				if ( 'updated' === $result ) {
 					++$updated;
 				} elseif ( 'created' === $result ) {
 					++$created;
+				} elseif ( 'other' === $result ) {
+					++$other;
 				} else {
 					++$skipped;
 				}
@@ -517,7 +525,9 @@ class CX_Sidrena_Bulk_Import {
 				'missing'   => $missing,
 				'created'   => $created,
 				'special'   => $special,
+				'unpub'     => $unpub,
 				'unclear'   => $unclear,
+				'other'     => $other,
 				'unclear_examples' => $examples,
 				'done'      => $done,
 				'percent'   => $total ? (int) round( ( $processed / $total ) * 100 ) : 100,

@@ -72,6 +72,7 @@ class CX_Sidrena_Fields {
 
 		self::save_change( $product->get_id(), null );
 		self::save_posted( $product->get_id(), null );
+		self::save_neto( $product->get_id(), null );
 	}
 
 	/**
@@ -83,6 +84,7 @@ class CX_Sidrena_Fields {
 	public static function save_variation( $variation_id, $i ) {
 		self::save_change( $variation_id, (int) $i );
 		self::save_posted( $variation_id, $i );
+		self::save_neto( $variation_id, (int) $i );
 	}
 
 	/**
@@ -122,6 +124,54 @@ class CX_Sidrena_Fields {
 			$what    = $product ? wp_strip_all_tags( $product->get_name() ) : '#' . $product_id;
 			/* translators: 1: product or variation name, 2: why */
 			WC_Admin_Meta_Boxes::add_error( sprintf( __( 'Bazna cijena of %1$s was not changed: %2$s', 'cx-sidrena' ), $what, $result->get_error_message() ) );
+		}
+	}
+
+	/**
+	 * The net quantity from the product screen (CX-SID-38, Norman SPEC §2.4). Only when the form had the field: quick
+	 * edit, bulk edit, REST and a size panel that was never loaded post nothing, and nothing changes. An empty number
+	 * clears it (the hand-typed unit and unit price count again). A number the setter refuses, or one without a unit,
+	 * changes nothing, and WooCommerce shows why above the product, as for the bazna; the number's error first (D2).
+	 *
+	 * @param int      $product_id Product or variation.
+	 * @param int|null $index      Variation loop index; null for a simple product.
+	 */
+	private static function save_neto( $product_id, $index ) {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- WooCommerce checked the product/variations nonce.
+		$posted = null === $index
+			? ( isset( $_POST['cx_neto'] ) ? wp_unslash( $_POST['cx_neto'] ) : null ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			: ( isset( $_POST['cx_neto_var'][ $index ] ) ? wp_unslash( $_POST['cx_neto_var'][ $index ] ) : null ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+		if ( ! is_array( $posted ) || ! array_key_exists( 'q', $posted ) ) {
+			return;
+		}
+
+		$meta     = CX_Sidrena_Product_Meta::instance();
+		$quantity = is_scalar( $posted['q'] ) ? trim( str_replace( "\xc2\xa0", ' ', (string) $posted['q'] ) ) : '';
+		$unit     = ( isset( $posted['u'] ) && is_scalar( $posted['u'] ) ) ? (string) $posted['u'] : '';
+		if ( '' === $quantity ) {
+			$meta->set_neto( $product_id, '', '' );
+			return;
+		}
+
+		if ( '' === $meta->normalize_neto( $quantity ) ) {
+			/* translators: %s: product or variation name */
+			$error = __( 'Net quantity of %s was not saved: enter a number greater than 0, for example 200 or 0.75.', 'cx-sidrena' );
+		} elseif ( '' === $meta->normalize_neto_unit( $unit ) ) {
+			/* translators: %s: product or variation name */
+			$error = __( 'Net quantity of %s was not saved: choose g, kg, ml or l.', 'cx-sidrena' );
+		} elseif ( ! $meta->set_neto( $product_id, $quantity, $unit ) ) {
+			// More decimals than the price list writes (Rook 19.11.: one of a g or ml, four of a kg or l).
+			/* translators: %s: product or variation name */
+			$error = __( 'Net quantity of %s was not saved: enter a number greater than 0, for example 200 or 0.75.', 'cx-sidrena' );
+		} else {
+			return;
+		}
+
+		if ( class_exists( 'WC_Admin_Meta_Boxes' ) ) {
+			$product = wc_get_product( $product_id );
+			$what    = $product ? wp_strip_all_tags( $product->get_name() ) : '#' . $product_id;
+			WC_Admin_Meta_Boxes::add_error( sprintf( $error, $what ) );
 		}
 	}
 

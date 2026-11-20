@@ -137,7 +137,7 @@ class CX_Sidrena_Admin_Status {
 	 * Published simple products and variations with a price: what has a bazna, what does not, and whose bazna date is
 	 * later than expected. One query, as the add-on's check (cx_sidrena_check), without loading products.
 	 *
-	 * @return array{total:int, with:int, missing:int[], two_cat:int[], late:int[], not_lower:int[], on_sale:int, rows:array<int,object>}
+	 * @return array{total:int, with:int, missing:int[], two_cat:int[], late:int[], n30_reminder:int[], on_sale:int, rows:array<int,object>}
 	 */
 	public function scan() {
 		if ( null !== $this->scan ) {
@@ -172,7 +172,7 @@ class CX_Sidrena_Admin_Status {
 		);
 		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-		$out = array( 'total' => 0, 'with' => 0, 'missing' => array(), 'late' => array(), 'not_lower' => array(), 'on_sale' => 0, 'rows' => array() );
+		$out = array( 'total' => 0, 'with' => 0, 'missing' => array(), 'late' => array(), 'n30_reminder' => array(), 'on_sale' => 0, 'rows' => array() );
 		// With CX-SID-21's dates, "later than expected" is judged against each product's own rule date, exactly as
 		// wp cx-sidrena check does (includes/check.php): its category's date, or the day it was added when later.
 		$by_rule = class_exists( 'CX_Sidrena_Dates' ) && method_exists( 'CX_Sidrena_Dates', 'date_for' );
@@ -223,19 +223,24 @@ class CX_Sidrena_Admin_Status {
 			}
 		}
 
-		// On sale: WooCommerce's cached list; only those few are loaded, to tell a real reduction from one that is not.
-		if ( function_exists( 'wc_get_product_ids_on_sale' ) && class_exists( 'CX_Sidrena_Frontend' ) ) {
+		// On sale: WooCommerce's cached list; only those few are loaded. A sale whose price is not below the lowest price in
+		// the 30 days before it is listed as a reminder to the owner (CX-SID-179): the customer still sees it as a sale and
+		// the price list says DA, so nothing is blocked or changed. Only while our line is on and no other plugin draws one.
+		if ( function_exists( 'wc_get_product_ids_on_sale' ) && function_exists( 'cx_sidrena_n30_prior' ) ) {
+			$remind = class_exists( 'CX_Sidrena_Frontend' ) && CX_Sidrena_Frontend::lowest_line_on();
 			foreach ( wc_get_product_ids_on_sale() as $sid ) {
 				$sid = (int) $sid;
 				if ( ! isset( $out['rows'][ $sid ] ) ) {
 					continue; // a variable parent, a draft, or an item without a price
 				}
 				$product = wc_get_product( $sid );
-				$state   = $product ? CX_Sidrena_Frontend::instance()->sale_state( $product ) : null;
-				if ( null !== $state && 'not_lower' === $state['kind'] ) {
-					$out['not_lower'][] = $sid;
-				} elseif ( $product && $product->is_on_sale() ) {
-					$out['on_sale']++;
+				if ( ! $product || ! $product->is_on_sale() ) {
+					continue;
+				}
+				$out['on_sale']++;
+				$low = $remind ? (string) cx_sidrena_n30_prior( $product ) : '';
+				if ( '' !== $low && (float) $product->get_sale_price() >= (float) $low ) {
+					$out['n30_reminder'][] = $sid;
 				}
 			}
 		}
@@ -381,7 +386,7 @@ class CX_Sidrena_Admin_Status {
 	public function problems() {
 		$s    = $this->scan();
 		$list = array();
-		foreach ( array( 'missing', 'two_cat', 'late', 'not_lower' ) as $kind ) {
+		foreach ( array( 'missing', 'two_cat', 'late', 'n30_reminder' ) as $kind ) {
 			foreach ( $s[ $kind ] as $id ) {
 				$list[] = array( 'id' => $id, 'problem' => $kind );
 			}
@@ -424,7 +429,7 @@ class CX_Sidrena_Admin_Status {
 	/**
 	 * Problem text.
 	 *
-	 * @param string $kind missing | two_cat | late | not_lower.
+	 * @param string $kind missing | two_cat | late | n30_reminder.
 	 * @return string
 	 */
 	public static function problem_text( $kind ) {
@@ -436,7 +441,7 @@ class CX_Sidrena_Admin_Status {
 			case 'late':
 				return __( 'Bazna cijena date is later than expected', 'cx-sidrena' );
 			default:
-				return __( 'Sale price is not lower than the lowest price in the last 30 days. Shown as a regular price.', 'cx-sidrena' );
+				return __( 'The sale price is not lower than the lowest price in the 30 days before the sale. Customers see it as a sale. If it is not a reduction, enter it as the regular price.', 'cx-sidrena' );
 		}
 	}
 
@@ -465,7 +470,8 @@ class CX_Sidrena_Admin_Status {
 
 	/**
 	 * Red: the day's price list is not public by the deadline. Only once there is a bazna (before it there is no price
-	 * list, and that is not a failure), and only when the daily run is on.
+	 * list, and that is not a failure), and only when the daily run is on. Not without an OIB or MBO (CX-SID-159): the
+	 * scheduled tasks did run, the build was refused, and the red block of the number says why.
 	 *
 	 * @param DateTimeImmutable|null $now Now (tests); null = the real time.
 	 * @return string|null Reason, or null when not red.
@@ -474,6 +480,9 @@ class CX_Sidrena_Admin_Status {
 		$s = $this->scan();
 		// A B2B shop publishes no price list (CX-SID-28): nothing is late.
 		if ( $s['with'] < 1 || 'yes' !== CX_Sidrena_Settings::instance()->get( 'daily_xml' ) || CX_Sidrena_Settings::instance()->is_b2b_only() ) {
+			return null;
+		}
+		if ( CX_Sidrena_Export::instance()->waiting_for_legal_id() ) {
 			return null;
 		}
 
