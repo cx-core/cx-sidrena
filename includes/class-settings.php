@@ -105,6 +105,9 @@ class CX_Sidrena_Settings {
 			// The dostupno/nedostupno column in the public price list: off unless the owner turns it on. Only the repealed
 			// Decision asked for it (CX-SID-28); a shop updated from 0.1.0 has no key and gets 'no' too.
 			'feed_dostupnost' => 'no',
+			// One price list for every place of sale, named ZA_SVA_PRODAJNA_MJESTA (NN 132/2026-1584 art. 6(4), CX-SID-113):
+			// off unless the owner turns it on under Places of sale. A shop updated from 0.3.0 has no key and gets 'no'.
+			'isti_cjenik'     => 'no',
 		);
 	}
 
@@ -238,6 +241,7 @@ class CX_Sidrena_Settings {
 			'i18n'           => $this->sanitize_i18n( isset( $settings['i18n'] ) ? $settings['i18n'] : array() ),
 			'line_color'     => self::sanitize_line_color( isset( $settings['line_color'] ) ? $settings['line_color'] : '' ),
 			'feed_dostupnost' => ( isset( $settings['feed_dostupnost'] ) && 'yes' === $settings['feed_dostupnost'] ) ? 'yes' : 'no',
+			'isti_cjenik'     => ( isset( $settings['isti_cjenik'] ) && 'yes' === $settings['isti_cjenik'] ) ? 'yes' : 'no',
 		);
 
 		if ( '' === $clean['default_date'] ) {
@@ -364,6 +368,33 @@ class CX_Sidrena_Settings {
 		}
 
 		return array() !== CX_Sidrena_Poslovnice::instance()->all();
+	}
+
+	/**
+	 * Whether one price list is published for every place of sale (CX-SID-113; NN 132/2026-1584 art. 6(4): a trader who
+	 * applies the same price list at all places names its file ZA_SVA_PRODAJNA_MJESTA). The owner's statement: the plugin
+	 * does not check the prices in the shops (T74). It applies only while there is a place; without one the webshop alone
+	 * is the price list of art. 6(3).
+	 *
+	 * @return bool
+	 */
+	public function is_isti_cjenik() {
+		return 'yes' === $this->get( 'isti_cjenik', 'no' ) && $this->is_multi_poslovnica();
+	}
+
+	/**
+	 * T77 (Norman, CX-SID-113): a place's own items (an imported price list, Additional items or rows by agreement with
+	 * its code) are refused while one price list is published for all places, as they would be in no price list.
+	 *
+	 * @param string $oznaka The place's code.
+	 * @return string
+	 */
+	public static function isti_cjenik_refusal( $oznaka ) {
+		$place = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );
+		$naziv = is_array( $place ) && '' !== (string) $place['naziv'] ? (string) $place['naziv'] : (string) $oznaka;
+
+		/* translators: %s: name of the place of sale */
+		return sprintf( __( "Not saved: the same price list for all places of sale is turned on, so %s can't have items of its own. To give it its own prices, turn that off in Settings, under Places of sale.", 'cx-sidrena' ), $naziv );
 	}
 
 	/**

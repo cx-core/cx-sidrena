@@ -1562,6 +1562,8 @@ button.cx-status__tile.is-active { border-color: #2271b1; box-shadow: inset 0 -3
 .cx-display__where:not(:empty) { margin-right: 6px; font-weight: 600; }
 /* "Checked" is good news: not the yellow edge of the warnings (.cx-status__line), WordPress's green (Norman 92-5). */
 #cx-display-ok { border-left-color: #00a32a; }
+/* A state, not a problem: WordPress's blue of notice-info (CX-SID-113, Norman T86: the same price list for all places). */
+.cx-status__line--info { border-left-color: #72aee6; }
 /* A disabled button looks disabled, one look for every button of ours (CX-SID-107: before, only Status and Import had
    it; other disabled primaries kept WordPress's grey and the Products pager's Previous/Next looked enabled). The button
    colours above use !important, so this does too; :hover because the plain button's hover rule is more specific.

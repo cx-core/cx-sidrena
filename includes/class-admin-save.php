@@ -65,6 +65,23 @@ class CX_Sidrena_Admin_Save {
 		}
 		$webshop = isset( $_POST['sidrena_cijena_file_oznaka'] ) ? (string) wp_unslash( $_POST['sidrena_cijena_file_oznaka'] ) : (string) CX_Sidrena_Settings::instance()->get( 'file_oznaka', '001' ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
+		// CX-SID-113: the box "the same price list for all places of sale" is on this form. A page from before it (no
+		// _shown) keeps the stored value. Switching it on is refused while a place has rows of its own (T75): the same
+		// price list means the same content, not one the plugin picks. Nothing on the form is saved then (as 74).
+		$settings = CX_Sidrena_Settings::instance();
+		$isti_was = $settings->is_isti_cjenik();
+		$isti     = (string) $settings->get( 'isti_cjenik', 'no' );
+		if ( isset( $_POST['sidrena_cijena_isti_cjenik_shown'] ) ) {
+			$isti = isset( $_POST['sidrena_cijena_isti_cjenik'] ) && 'yes' === $_POST['sidrena_cijena_isti_cjenik'] ? 'yes' : 'no'; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked above
+		}
+		if ( 'yes' === $isti && 'yes' !== $settings->get( 'isti_cjenik', 'no' ) ) {
+			$own = CX_Sidrena_Poslovnice::instance()->first_with_own_rows();
+			if ( null !== $own ) {
+				wp_safe_redirect( self::settings_url( 'cx-outlets', array( 'updated' => false, 'cx_outlet_error' => rawurlencode( 'isti:' . $own['oznaka'] ) ) ) );
+				exit;
+			}
+		}
+
 		// All or nothing (CX-SID-74): a place that breaks a rule saves nothing, also not the webshop's fields of the same
 		// form, and nothing is kept on the server (the form keeps what was typed; Rook with Linus).
 		$result = CX_Sidrena_Poslovnice::instance()->save_from_form( $posted, $loaded, $webshop );
@@ -96,10 +113,20 @@ class CX_Sidrena_Admin_Save {
 			CX_Sidrena_Catalog::instance()->move_poslovnica( (string) $from, (string) $to );
 			CX_Sidrena_Upit::instance()->move_poslovnica( (string) $from, (string) $to );
 		}
+		// The shape of a deleted place's last imported file goes with it, also when a new place gets its id (CX-SID-196).
+		if ( class_exists( 'CX_Sidrena_Bulk_Import' ) ) {
+			CX_Sidrena_Bulk_Import::forget_gone_places( $result['deleted'], $result['renamed'] );
+		}
 
+		// Without a place the box does not apply: it is off, so a first place added later publishes its own (CX-SID-113).
+		$isti = array() === $saved ? 'no' : $isti;
+		if ( $isti !== (string) $settings->get( 'isti_cjenik', 'no' ) && ! isset( $_POST['sidrena_cijena_file_oblik'] ) ) {
+			$settings->save( array( 'isti_cjenik' => $isti ) );
+		}
 		if ( isset( $_POST['sidrena_cijena_file_oblik'] ) ) {
 			// The shop address is on the main Settings form (spec §1.8): a field that is not posted keeps its value.
 			$file = array(
+				'isti_cjenik' => $isti,
 				'file_oblik'  => wp_unslash( $_POST['sidrena_cijena_file_oblik'] ),
 				'file_oznaka' => isset( $_POST['sidrena_cijena_file_oznaka'] ) ? wp_unslash( $_POST['sidrena_cijena_file_oznaka'] ) : '001',
 			);
@@ -112,6 +139,10 @@ class CX_Sidrena_Admin_Save {
 				$file['file_adresa'] = wp_unslash( $_POST['sidrena_cijena_file_adresa'] );
 			}
 			CX_Sidrena_Settings::instance()->save( $file );
+		}
+		// Switched on or off (also by deleting the last place): the files current now never become current again (Q4).
+		if ( $isti_was !== $settings->is_isti_cjenik() ) {
+			CX_Sidrena_Archive::instance()->mark_switch( ! $isti_was );
 		}
 
 		if ( class_exists( 'CX_Sidrena_Export' ) ) {
@@ -365,6 +396,24 @@ class CX_Sidrena_Admin_Save {
 	}
 
 	/**
+	 * The code of the first place a sent row is given to, or '' (CX-SID-113). A code no place has is not a place's.
+	 *
+	 * @param array<int, mixed> $rows Decoded list.
+	 * @param callable          $code The list's row_poslovnica().
+	 * @return string
+	 */
+	private static function place_code_in( $rows, $code ) {
+		foreach ( $rows as $row ) {
+			$oznaka = is_array( $row ) ? (string) call_user_func( $code, $row ) : '';
+			if ( '' !== $oznaka && is_array( CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka ) ) ) {
+				return $oznaka;
+			}
+		}
+
+		return '';
+	}
+
+	/**
 	 * Save standalone catalog repeater.
 	 */
 	public function handle_catalog_save() {
@@ -398,6 +447,16 @@ class CX_Sidrena_Admin_Save {
 			// Norman C3. What was sent is not shown again: it came from a page that did not load.
 			wp_safe_redirect( self::settings_url( 'cx-items', array( 'updated' => false, 'cx_items_error' => 'unloaded' ) ) );
 			exit;
+		}
+
+		// One price list for all places of sale (CX-SID-113, T77): no place gets rows of its own, nothing is saved.
+		if ( CX_Sidrena_Settings::instance()->is_isti_cjenik() ) {
+			$code = self::place_code_in( $sent_catalog, array( CX_Sidrena_Catalog::instance(), 'row_poslovnica' ) );
+			$code = '' !== $code ? $code : self::place_code_in( $sent_upit, array( CX_Sidrena_Upit::instance(), 'row_poslovnica' ) );
+			if ( '' !== $code ) {
+				wp_safe_redirect( self::settings_url( 'cx-items', array( 'updated' => false, 'cx_items_error' => rawurlencode( 'isti:' . $code ) ) ) );
+				exit;
+			}
 		}
 
 		CX_Sidrena_Catalog::instance()->save( $sent_catalog, true );

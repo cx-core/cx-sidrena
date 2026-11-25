@@ -683,7 +683,9 @@ class CX_Sidrena_Feed_Files {
 	 *
 	 * @param array<int, array<string, string>> $rows   Rows.
 	 * @param string                            $oznaka Outlet code, empty for the single shop feed.
-	 * @param array<string, mixed>|null         $outlet The outlet of that code, or null for the webshop.
+	 * @param array<string, mixed>|string|null  $outlet The outlet of that code, null for the webshop, or
+	 *                                                  CX_Sidrena_Archive::ALL_PLACES (with an empty code: the price list
+	 *                                                  of all places of sale at the webshop's addresses, CX-SID-113).
 	 * @return array<string, mixed>|WP_Error
 	 */
 	public function write_feed_file( $rows, $oznaka = '', $outlet = null ) {
@@ -710,7 +712,7 @@ class CX_Sidrena_Feed_Files {
 		$this->ensure_dir_index( $dir );
 
 		if ( '' === (string) $oznaka ) {
-			$outlet = null;
+			$outlet = CX_Sidrena_Archive::ALL_PLACES === $outlet ? $outlet : null;
 		} elseif ( ! is_array( $outlet ) ) {
 			$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );
 			if ( ! is_array( $outlet ) ) {
@@ -1441,7 +1443,7 @@ JS;
 			return '';
 		}
 
-		$oznaka = CX_Sidrena_Settings::instance()->normalize_oznaka( $oznaka );
+		$oznaka = CX_Sidrena_Feed_Routes::instance()->served_oznaka( CX_Sidrena_Settings::instance()->normalize_oznaka( $oznaka ) ); // CX-SID-113
 		if ( '' !== $oznaka ) {
 			$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );
 			if ( ! is_array( $outlet ) ) {

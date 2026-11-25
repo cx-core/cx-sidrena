@@ -23,6 +23,7 @@ require_once CX_SIDRENA_PATH . 'includes/class-admin-save.php';
 require_once CX_SIDRENA_PATH . 'includes/class-admin.php';
 require_once CX_SIDRENA_PATH . 'includes/class-export.php';
 require_once CX_SIDRENA_PATH . 'includes/class-import-parse.php';
+require_once CX_SIDRENA_PATH . 'includes/class-import-excel.php';
 require_once CX_SIDRENA_PATH . 'includes/class-bulk-import.php';
 
 /**

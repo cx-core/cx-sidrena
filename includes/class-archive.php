@@ -49,6 +49,21 @@ class CX_Sidrena_Archive {
 	const POHRANA_ROW = 'cx_sidrena_pohrana';
 
 	/**
+	 * The price list of all places of sale (CX-SID-113; NN 132/2026-1584 art. 6(4)): the part of its file name instead
+	 * of oblik, adresa and oznaka, and the scope that the functions taking an outlet (array) or the webshop (null) take
+	 * for it. Never an object code: a code has no underscore (Settings::normalize_oznaka()). It shares the webshop's
+	 * storage counter and live address.
+	 */
+	const ALL_PLACES = 'ZA_SVA_PRODAJNA_MJESTA';
+
+	/**
+	 * When the price list of all places was last switched on or off (CX-SID-113), and the newest archive file of each
+	 * name at that moment (switch_names()). None of those files becomes the current one again: switching on, off or on
+	 * again always leaves a new file with a higher number, also with nothing changed (Rook 4030, Q4).
+	 */
+	const SWITCH_OPTION = 'cx_sidrena_isti_switch';
+
+	/**
 	 * Singleton.
 	 *
 	 * @var self|null
@@ -130,10 +145,13 @@ class CX_Sidrena_Archive {
 	 * they are. Spaces, hyphens and the typed case stay. Date and time on the
 	 * legal clock (legal_timezone), with no separator, so no disk needs another name.
 	 *
+	 * The price list of all places of sale (ALL_PLACES, art. 6(4)): OIB_ZA_SVA_PRODAJNA_MJESTA_ROBA|USLUGA_pohrana_
+	 * GGGGMMDD_SSMM, with no oblik, adresa or oznaka, and the webshop's storage number.
+	 *
 	 * @param string              $format    xml|csv.
 	 * @param int                 $timestamp Unix time of publication, 0 = now.
 	 * @param int                 $pohrana   Storage sequence, 0 = next unused number (does not consume).
-	 * @param array<string,mixed>|null $outlet Outlet row, or null for the single shop.
+	 * @param array<string,mixed>|string|null $outlet Outlet row, null for the single shop, or ALL_PLACES.
 	 * @param string              $vrsta     proizvod (ROBA) or usluga (USLUGA).
 	 * @return string
 	 */
@@ -143,6 +161,17 @@ class CX_Sidrena_Archive {
 		$tz       = self::legal_timezone();
 		$dt       = $timestamp > 0 ? new DateTime( '@' . (int) $timestamp ) : new DateTime( 'now', $tz );
 		$dt->setTimezone( $tz );
+
+		if ( self::ALL_PLACES === $outlet ) {
+			$seq   = $pohrana > 0 ? (int) $pohrana : $this->next_pohrana( self::ALL_PLACES, $outlet );
+			$parts = array( self::ALL_PLACES, self::vrsta_token( $vrsta ), (string) $seq, $dt->format( 'Ymd' ), $dt->format( 'Hi' ) );
+			$oib   = $settings->legal_id();
+			if ( '' !== $oib ) {
+				array_unshift( $parts, $oib );
+			}
+
+			return implode( '_', $parts ) . '.' . $format;
+		}
 
 		if ( is_array( $outlet ) ) {
 			// A place's own kind and address, never the webshop's (CX-SID-74, Kai D2 and N5; art. 6(3) of
@@ -188,6 +217,8 @@ class CX_Sidrena_Archive {
 	/**
 	 * The parts of an archive file name, read from the end (Argus, CX-SID-110 note 1):
 	 * - since CX-SID-110: [OIB_]oblik_adresa_oznaka_ROBA|USLUGA_pohrana_GGGGMMDD_SSMM (7 or 8 parts);
+	 * - the price list of all places of sale (CX-SID-113, art. 6(4)): OIB_ZA_SVA_PRODAJNA_MJESTA_ROBA|USLUGA_pohrana_
+	 *   GGGGMMDD_SSMM (9 parts): oblik and adresa empty, oznaka ALL_PLACES;
 	 * - before it: oblik_adresa_oznaka_pohrana_DD.MM.YYYY_HH:MM (or HH-MM on Windows), and the earlier
 	 *   oblik_adresa_oznaka_pohrana_YYYYMMDD_HHMM (6 parts), both a file of goods.
 	 * Other names (sidrena-cijena_DD-MM-YYYY) have no parts: null.
@@ -212,6 +243,20 @@ class CX_Sidrena_Archive {
 				'oznaka'  => $parts[ $o + 2 ],
 				'vrsta'   => 'USLUGA' === $parts[ $n - 4 ] ? 'usluga' : 'proizvod',
 				'pohrana' => absint( $parts[ $n - 3 ] ),
+				'legal'   => true,
+			);
+		}
+
+		if ( 9 === $n && preg_match( '/^\d+$/D', $parts[0] ) && 'ZA' === $parts[1] && 'SVA' === $parts[2] && 'PRODAJNA' === $parts[3]
+			&& 'MJESTA' === $parts[4] && in_array( $parts[5], array( 'ROBA', 'USLUGA' ), true ) && preg_match( '/^\d+$/D', $parts[6] )
+			&& preg_match( '/^\d{8}$/D', $parts[7] ) && preg_match( '/^\d{4}$/D', $parts[8] ) ) {
+			return array(
+				'oib'     => $parts[0],
+				'oblik'   => '',
+				'adresa'  => '',
+				'oznaka'  => self::ALL_PLACES,
+				'vrsta'   => 'USLUGA' === $parts[5] ? 'usluga' : 'proizvod',
+				'pohrana' => absint( $parts[6] ),
 				'legal'   => true,
 			);
 		}
@@ -326,6 +371,9 @@ class CX_Sidrena_Archive {
 			$live = $ff->get_public_path( $format, is_array( $outlet ) && isset( $outlet['oznaka'] ) ? $outlet['oznaka'] : '', $vrsta );
 		}
 		$newest = $this->newest_of_list( $outlet, $vrsta, $timestamp );
+		if ( null !== $newest && $this->switched_from( $newest['name'] ) ) {
+			$newest = null; // it was current when the price list of all places was switched (CX-SID-113, Q4): a new file
+		}
 
 		if ( null !== $newest && $this->is_current( $newest, $body, $format, $outlet, $timestamp, $vrsta ) ) {
 			if ( ! file_exists( $live ) || hash_file( 'sha256', $live ) !== hash_file( 'sha256', $newest['path'] ) ) {
@@ -461,6 +509,9 @@ class CX_Sidrena_Archive {
 	 * @return string
 	 */
 	private function scope_oznaka( $outlet ) {
+		if ( self::ALL_PLACES === $outlet ) {
+			return self::ALL_PLACES; // never an object code (no underscore in one), so its files are its own (CX-SID-113)
+		}
 		$settings = CX_Sidrena_Settings::instance();
 		$oznaka   = is_array( $outlet )
 			? $settings->normalize_oznaka( isset( $outlet['oznaka'] ) ? $outlet['oznaka'] : '' )
@@ -499,6 +550,9 @@ class CX_Sidrena_Archive {
 	 * @return array<string, mixed>|null
 	 */
 	private function newest_of_list( $outlet, $vrsta, $timestamp ) {
+		if ( self::ALL_PLACES === $outlet ) {
+			return $this->newest_file( self::ALL_PLACES, $vrsta ); // only its own files, never the webshop's or a place's (Q4)
+		}
 		$oznaka = $this->scope_oznaka( $outlet );
 		$other  = false;
 		if ( is_array( $outlet ) ) {
@@ -565,15 +619,23 @@ class CX_Sidrena_Archive {
 	 * that code, whichever is higher. So a shop whose settings were lost (uninstalled and installed again) goes on
 	 * from its files, and an owner who typed a higher number keeps it.
 	 *
-	 * @param string                    $oznaka Object code.
-	 * @param array<string, mixed>|null $outlet Outlet, or null for the webshop.
+	 * The webshop and the price list of all places of sale are one sequence (CX-SID-113, Q5): they share the counter,
+	 * and each counts the other's files too, so a lost counter never gives either a number the other has used.
+	 *
+	 * @param string                           $oznaka Object code (ALL_PLACES for the price list of all places).
+	 * @param array<string, mixed>|string|null $outlet Outlet, null for the webshop, or ALL_PLACES.
 	 * @return int
 	 */
 	public function next_pohrana( $oznaka, $outlet = null ) {
 		$stored  = $this->stored_pohrana( $outlet );
 		$highest = 0;
+		$codes   = array( $oznaka => true );
+		if ( ! is_array( $outlet ) ) {
+			$codes[ self::ALL_PLACES ]             = true;
+			$codes[ $this->scope_oznaka( null ) ] = true;
+		}
 		foreach ( $this->all_archive_names() as $name ) {
-			if ( $this->archive_oznaka_from_name( $name ) === $oznaka ) {
+			if ( isset( $codes[ $this->archive_oznaka_from_name( $name ) ] ) ) {
 				$highest = max( $highest, $this->archive_pohrana_from_name( $name ) );
 			}
 		}
@@ -767,7 +829,7 @@ class CX_Sidrena_Archive {
 	 *
 	 * @param string     $name Basename.
 	 * @param array|null $ctx  owner_context(), null = now.
-	 * @return string webshop[:usluge] | place:<code>[:usluge] | oznaka:<code>[:usluge] | legacy
+	 * @return string webshop[:usluge] | place:<code>[:usluge] | oznaka:<code>[:usluge] | all[:usluge] | legacy
 	 */
 	public function archive_group_key( $name, $ctx = null ) {
 		return $this->owner_group_key( $this->file_owner( $name, $ctx ) );
@@ -781,7 +843,11 @@ class CX_Sidrena_Archive {
 		if ( 'legacy' === $o['owner'] ) {
 			return 'legacy';
 		}
-		$key = 'webshop' === $o['owner'] ? 'webshop' : ( 'place' === $o['owner'] ? 'place:' : 'oznaka:' ) . $o['code'];
+		if ( 'all' === $o['owner'] ) {
+			$key = 'all'; // the price list of all places of sale (CX-SID-113)
+		} else {
+			$key = 'webshop' === $o['owner'] ? 'webshop' : ( 'place' === $o['owner'] ? 'place:' : 'oznaka:' ) . $o['code'];
+		}
 
 		return $key . ( 'usluga' === $o['vrsta'] ? ':usluge' : '' );
 	}
@@ -841,10 +907,14 @@ class CX_Sidrena_Archive {
 	 *
 	 * @param string     $name Basename.
 	 * @param array|null $ctx  owner_context(), null = now.
-	 * @return array{owner: string, code: string, vrsta: string} owner webshop|place|oznaka (only the code's)|legacy.
+	 * @return array{owner: string, code: string, vrsta: string} owner webshop|place|oznaka (only the code's)|all (the price
+	 *         list of all places of sale, CX-SID-113)|legacy.
 	 */
 	public function file_owner( $name, $ctx = null ) {
 		$p    = $this->parse_name( $name );
+		if ( null !== $p && self::ALL_PLACES === $p['oznaka'] ) {
+			return array( 'owner' => 'all', 'code' => self::ALL_PLACES, 'vrsta' => $p['vrsta'] ); // CX-SID-113
+		}
 		$code = null === $p ? '' : CX_Sidrena_Settings::instance()->normalize_oznaka( (string) $p['oznaka'] );
 		if ( '' === $code ) {
 			return array( 'owner' => 'legacy', 'code' => '', 'vrsta' => 'proizvod' );
@@ -1055,16 +1125,35 @@ class CX_Sidrena_Archive {
 			}
 		);
 
+		// The price list of all places of sale (CX-SID-113) replaces the webshop's and every place's of its kind.
+		$owners = array();
+		$all    = array( 'proizvod' => array(), 'usluga' => array() );
+		foreach ( $files as $i => $file ) {
+			$owners[ $i ] = $this->file_owner( $file['name'], $ctx );
+			if ( 'all' === $owners[ $i ]['owner'] ) {
+				$all[ $owners[ $i ]['vrsta'] ][] = $file;
+			}
+		}
+
 		// Newest to oldest: per price list, the file seen just before is the next newer one, the one that replaced this one.
 		$next = array();
 		$keep = array();
 		foreach ( $order as $i ) {
 			$file    = $files[ $i ];
-			$o       = $this->file_owner( $file['name'], $ctx );
+			$o       = $owners[ $i ];
 			$key     = $this->owner_group_key( $o );
 			$by_code = 'legacy' === $key ? $key : $this->owner_group_key( array( 'owner' => 'oznaka' ) + $o );
 			$list    = 'legacy' === $key ? '*' : ( 'oznaka' === $o['owner'] ? $by_code : $key );
-			if ( ! isset( $next[ $list ] ) || $now < $this->public_until( $next[ $list ] ) ) {
+			$by      = isset( $next[ $list ] ) ? $next[ $list ] : null;
+			if ( 'all' === $o['owner'] ) {
+				// Also the webshop's next file replaces it: one storage counter, so their order is right within a minute.
+				$web = 'usluga' === $o['vrsta'] ? 'webshop:usluge' : 'webshop';
+				$by  = isset( $next[ $web ] ) && ( null === $by || $next[ $web ] < $by ) ? $next[ $web ] : $by;
+			} elseif ( 'legacy' !== $key ) {
+				$za = $this->all_places_after( $file, $all[ $o['vrsta'] ] );
+				$by = null !== $za && ( null === $by || $za < $by ) ? $za : $by;
+			}
+			if ( null === $by || $now < $this->public_until( $by ) ) {
 				$keep[ $i ] = true;
 			}
 			foreach ( array_unique( array( $key, $by_code, '*' ) ) as $k ) {
@@ -1080,6 +1169,62 @@ class CX_Sidrena_Archive {
 		}
 
 		return $out;
+	}
+
+	/**
+	 * When the price list of all places of sale first replaced a file of the webshop or a place (CX-SID-113): the oldest
+	 * of its files of that kind that came after it, or null. Within one minute the names cannot tell (a place's numbers
+	 * are its own), so the files' own times decide, and a tie is not "after": a file stays public rather than go early.
+	 *
+	 * @param array<string, mixed>             $file The file.
+	 * @param array<int, array<string, mixed>> $all  The files of all places of the same kind.
+	 * @return int|null Unix time.
+	 */
+	private function all_places_after( $file, $all ) {
+		$first = null;
+		foreach ( $all as $za ) {
+			$after = (int) $za['stamp'] > (int) $file['stamp'];
+			if ( ! $after && (int) $za['stamp'] === (int) $file['stamp'] && isset( $za['path'], $file['path'] ) && is_file( $za['path'] ) && is_file( $file['path'] ) ) {
+				$after = filemtime( $za['path'] ) > filemtime( $file['path'] );
+			}
+			if ( $after && ( null === $first || (int) $za['stamp'] < $first ) ) {
+				$first = (int) $za['stamp'];
+			}
+		}
+
+		return $first;
+	}
+
+	/**
+	 * Record a switch of the price list of all places of sale, on or off (CX-SID-113): the newest archive file of each
+	 * name now. None of them becomes current again (publish()), so the switch always leaves new files with higher
+	 * numbers, also when nothing in the price list changed (Rook 4030, Q4): the old name is never live again.
+	 *
+	 * @param bool $on Switched on.
+	 */
+	public function mark_switch( $on ) {
+		$seen  = array();
+		$names = array();
+		foreach ( $this->get_archive_files() as $file ) {
+			$key = $this->name_key( $file['name'] );
+			if ( ! isset( $seen[ $key ] ) ) {
+				$seen[ $key ] = true;
+				$names[]      = $file['name'];
+			}
+		}
+		update_option( self::SWITCH_OPTION, array( 'at' => time(), 'on' => (bool) $on, 'names' => $names ), false );
+	}
+
+	/**
+	 * Whether a file was the newest of its name at the last switch (mark_switch()).
+	 *
+	 * @param string $name Basename.
+	 * @return bool
+	 */
+	private function switched_from( $name ) {
+		$switch = get_option( self::SWITCH_OPTION, array() );
+
+		return is_array( $switch ) && isset( $switch['names'] ) && in_array( $name, (array) $switch['names'], true );
 	}
 
 	/**
@@ -1449,7 +1594,8 @@ class CX_Sidrena_Archive {
 				if ( 'legacy' === $o['owner'] ) {
 					continue;
 				}
-				if ( $both ? $o['code'] === $oznaka : ( $o['owner'] === $want && ( 'webshop' === $want || $o['code'] === $oznaka ) ) ) {
+				// The price list of all places of sale is every place's and the webshop's (CX-SID-113).
+				if ( 'all' === $o['owner'] || ( $both ? $o['code'] === $oznaka : ( $o['owner'] === $want && ( 'webshop' === $want || $o['code'] === $oznaka ) ) ) ) {
 					$matched[] = $file;
 				}
 			}

@@ -140,7 +140,7 @@ class CX_Sidrena_Feed_Routes {
 
 		$oznaka = '';
 		if ( CX_Sidrena_Settings::instance()->is_multi_poslovnica() ) {
-			$oznaka = $this->requested_oznaka();
+			$oznaka = $this->served_oznaka( $this->requested_oznaka() );
 		}
 
 		if ( file_exists( CX_Sidrena_Feed_Files::instance()->get_public_path( $ext, $oznaka, $this->requested_vrsta() ) ) ) {
@@ -269,7 +269,7 @@ class CX_Sidrena_Feed_Routes {
 		}
 
 		$ext    = $this->requested_live_ext();
-		$oznaka = $this->requested_oznaka();
+		$oznaka = $this->served_oznaka( $this->requested_oznaka() );
 		$vrsta  = $this->requested_vrsta();
 		$multi  = CX_Sidrena_Settings::instance()->is_multi_poslovnica();
 
@@ -305,6 +305,22 @@ class CX_Sidrena_Feed_Routes {
 		}
 
 		$this->serve_live_file( $path, '', $vrsta, $ext );
+	}
+
+	/**
+	 * The scope whose file and page an address gives (CX-SID-113): while one price list is published for all places of
+	 * sale (art. 6(4) of NN 132/2026-1584), every place's address gives it, the webshop's file under its own name, so a
+	 * sign or a QR code in a shop goes on working. A code no place has stays as it is (its 404).
+	 *
+	 * @param string $oznaka Requested code, empty for the webshop.
+	 * @return string
+	 */
+	public function served_oznaka( $oznaka ) {
+		if ( '' !== $oznaka && CX_Sidrena_Settings::instance()->is_isti_cjenik() && is_array( CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka ) ) ) {
+			return '';
+		}
+
+		return $oznaka;
 	}
 
 	/**
@@ -944,7 +960,7 @@ class CX_Sidrena_Feed_Routes {
 		echo '</head><body><main>';
 		echo '<h1>' . esc_html( $title ) . '</h1>';
 		echo '<p>' . esc_html( $shop ) . ' - ' . esc_html(
-			CX_Sidrena_Settings::instance()->is_multi_poslovnica()
+			CX_Sidrena_Settings::instance()->is_multi_poslovnica() && ! CX_Sidrena_Settings::instance()->is_isti_cjenik()
 				? __( 'Current price lists, and those a newer one replaced in the last 15 days. A new file is made at each price change and every morning, for each outlet separately.', 'cx-sidrena' )
 				: __( 'Current price lists, and those a newer one replaced in the last 15 days. A new file is made at each price change and every morning.', 'cx-sidrena' )
 		) . '</p>';
@@ -1050,7 +1066,8 @@ class CX_Sidrena_Feed_Routes {
 			$buckets[ $key ][] = $file;
 		}
 
-		$order = array( 'webshop' );
+		// The price list of all places of sale first (CX-SID-113): while it is on, it is the current one.
+		$order = array( 'all:' . CX_Sidrena_Archive::ALL_PLACES, 'webshop' );
 		foreach ( CX_Sidrena_Poslovnice::instance()->all() as $outlet ) {
 			$order[] = 'place:' . $outlet['oznaka'];
 		}
@@ -1135,6 +1152,9 @@ class CX_Sidrena_Feed_Routes {
 		if ( 'legacy' === $owner ) {
 			return __( 'Older files', 'cx-sidrena' );
 		}
+		if ( 0 === strpos( $owner, 'all:' ) ) {
+			return __( 'The same price list for all places of sale', 'cx-sidrena' ); // T73 (CX-SID-113)
+		}
 		$web = $this->webshop_oznaka();
 		if ( 'webshop' === $owner && $seen['collision'] ) {
 			/* translators: %s: object code. */
@@ -1171,8 +1191,9 @@ class CX_Sidrena_Feed_Routes {
 	 */
 	public function serve_cjenik_page() {
 		$settings = CX_Sidrena_Settings::instance();
-		$oznaka   = $this->cjenik_requested_oznaka();
+		$oznaka   = $this->served_oznaka( $this->cjenik_requested_oznaka() );
 		$outlet   = null;
+		$isti     = $settings->is_isti_cjenik(); // one price list for all places (CX-SID-113): no place's own buttons
 
 		if ( '' !== $oznaka ) {
 			$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );
@@ -1200,7 +1221,7 @@ class CX_Sidrena_Feed_Routes {
 		$count     = (int) $snapshot['count'];
 		$shop      = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
 		$title     = __( 'Price list', 'cx-sidrena' );
-		$scope     = is_array( $outlet ) ? $this->outlet_label( $outlet ) : ( $settings->is_multi_poslovnica() ? $this->webshop_oznaka() : '' );
+		$scope     = is_array( $outlet ) ? $this->outlet_label( $outlet ) : ( $settings->is_multi_poslovnica() && ! $isti ? $this->webshop_oznaka() : '' );
 		$format    = CX_Sidrena_Feed_Files::instance()->export_format();
 		$feed_lbl  = 'csv' === $format ? __( 'Download CSV', 'cx-sidrena' ) : __( 'Download XML', 'cx-sidrena' );
 		$generated = CX_Sidrena_Export::instance()->get_public_meta();
@@ -1300,7 +1321,7 @@ class CX_Sidrena_Feed_Routes {
 	private function render_cjenik_downloads( $oznaka, $feed_lbl ) {
 		$settings = CX_Sidrena_Settings::instance();
 
-		if ( ! $settings->is_multi_poslovnica() ) {
+		if ( ! $settings->is_multi_poslovnica() || $settings->is_isti_cjenik() ) {
 			$this->render_scope_downloads( '', $feed_lbl, '' );
 			return;
 		}
@@ -1363,7 +1384,7 @@ class CX_Sidrena_Feed_Routes {
 	 */
 	private function render_cjenik_scope_links( $current ) {
 		$settings = CX_Sidrena_Settings::instance();
-		if ( ! $settings->is_multi_poslovnica() ) {
+		if ( ! $settings->is_multi_poslovnica() || $settings->is_isti_cjenik() ) {
 			return;
 		}
 

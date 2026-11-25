@@ -167,7 +167,7 @@ class CX_Sidrena_Export {
 		$format       = ( isset( $_POST['sidrena_cijena_export_format'] ) && 'xml' === $_POST['sidrena_cijena_export_format'] ) ? 'xml' : 'csv';
 		$missing_only = ( 'export_missing' === $action );
 		$public       = ! $missing_only;
-		$rows         = $this->collect_rows( $missing_only, $public );
+		$rows         = $this->admin_codes( $this->collect_rows( $missing_only, $public ), $public ? 'id' : 'woo_id' );
 		$stamp        = gmdate( 'Y-m-d' );
 		$basename     = $missing_only ? 'sidrena-nedostaje-' . $stamp : 'sidrena-cjenik-' . $stamp;
 
@@ -176,6 +176,38 @@ class CX_Sidrena_Export {
 		} else {
 			CX_Sidrena_Feed_Files::instance()->send_csv( $basename . '.csv', $rows, $public );
 		}
+	}
+
+	/**
+	 * The šifra of the admin's downloads (CX-SID-153): a WooCommerce variation without a SKU of its own gets
+	 * CX_Sidrena_Feed_Rows::admin_sifra(), ID-<its id>, so the file comes back on Import to that variation. Each row is
+	 * known by its WooCommerce id (the price list's id column; the file without bazna cijena has none, its rows carry
+	 * woo_id). A manual row's id has its "d" with WooCommerce on, and it has no woo_id: never rewritten. The public files
+	 * are built elsewhere and keep the parent's SKU (U13).
+	 *
+	 * @param array<int, array<string, string>> $rows Rows.
+	 * @param string                            $key  The row's key that holds the WooCommerce id.
+	 * @return array<int, array<string, string>>
+	 */
+	private function admin_codes( $rows, $key ) {
+		if ( ! CX_Sidrena_Plugin::woocommerce_active() ) {
+			return $rows; // manual rows only, with plain numbers for ids
+		}
+
+		$feed = CX_Sidrena_Feed_Rows::instance();
+		foreach ( $rows as $i => $row ) {
+			$id = isset( $row[ $key ] ) ? (string) $row[ $key ] : '';
+			// Only a variation without a SKU of its own; every other row keeps its šifra as built (the meta is cached).
+			if ( '' === $id || ! ctype_digit( $id ) || 'product_variation' !== get_post_type( (int) $id ) || '' !== (string) get_post_meta( (int) $id, '_sku', true ) ) {
+				continue;
+			}
+			$product = wc_get_product( (int) $id );
+			if ( $product ) {
+				$rows[ $i ]['sku'] = $feed->admin_sifra( $product );
+			}
+		}
+
+		return $rows;
 	}
 
 	/**
@@ -636,7 +668,8 @@ class CX_Sidrena_Export {
 			return true;
 		}
 
-		if ( CX_Sidrena_Settings::instance()->is_multi_poslovnica() ) {
+		// One price list for all places (CX-SID-113): a place's address is the webshop's file.
+		if ( CX_Sidrena_Settings::instance()->is_multi_poslovnica() && ! CX_Sidrena_Settings::instance()->is_isti_cjenik() ) {
 			$oznaka = CX_Sidrena_Feed_Routes::instance()->requested_oznaka();
 			if ( '' === $oznaka ) {
 				return true;
@@ -761,6 +794,9 @@ class CX_Sidrena_Export {
 	 * @return array<string, mixed>|WP_Error
 	 */
 	private function build_public_feeds() {
+		if ( CX_Sidrena_Settings::instance()->is_isti_cjenik() ) {
+			return $this->build_all_places();
+		}
 		if ( CX_Sidrena_Settings::instance()->is_multi_poslovnica() ) {
 			return $this->regenerate_poslovnice_feeds();
 		}
@@ -783,6 +819,45 @@ class CX_Sidrena_Export {
 			CX_Sidrena_Feed_Files::instance()->remove_other_places_live( array() ); // the last place was deleted (CX-SID-74, N6)
 
 			update_option( self::PUBLIC_OPTION, $result + array( 'layout' => self::FEED_LAYOUT ) );
+			delete_option( self::AWAIT_BAZNA );
+
+			return $result;
+		} catch ( Throwable $e ) {
+			return $this->feed_failure( $e );
+		}
+	}
+
+	/**
+	 * One price list for every place of sale (CX-SID-113; NN 132/2026-1584 art. 6(4)): the webshop's rows (WooCommerce
+	 * and its own manual rows, also those picked for a place without WooCommerce: T76, the whole list) in one pair of
+	 * files named OIB_ZA_SVA_PRODAJNA_MJESTA_ROBA|USLUGA_..., at the webshop's addresses, with the webshop's storage
+	 * numbers. The places' own live files and pages go: their addresses give this price list (CX_Sidrena_Feed_Routes);
+	 * their archive stays, 15 days from the replacement (CX_Sidrena_Archive::public_files()).
+	 *
+	 * @return array<string, mixed>|WP_Error
+	 */
+	private function build_all_places() {
+		if ( CX_Sidrena_Plugin::woocommerce_active() && ! function_exists( 'wc_get_products' ) ) {
+			return new WP_Error( 'sidrena_xml_wc', __( 'WooCommerce is not ready to generate the price list.', 'cx-sidrena' ) );
+		}
+
+		try {
+			$feed = CX_Sidrena_Feed_Rows::instance();
+			$rows = CX_Sidrena_Plugin::woocommerce_active()
+				? $this->collect_rows( false, true, null, '' )
+				: $feed->finish_public_rows( CX_Sidrena_Catalog::instance()->to_export_rows_for( false, true, '', array() ) );
+			$waiting = $this->wait_for_first_bazna( array( $rows ) );
+			if ( null !== $waiting ) {
+				return $waiting;
+			}
+
+			$result = CX_Sidrena_Feed_Files::instance()->write_feed_file( $rows, '', CX_Sidrena_Archive::ALL_PLACES );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			CX_Sidrena_Feed_Files::instance()->remove_other_places_live( array() );
+
+			update_option( self::PUBLIC_OPTION, $result + array( 'layout' => self::FEED_LAYOUT, 'za_sva' => true ) );
 			delete_option( self::AWAIT_BAZNA );
 
 			return $result;

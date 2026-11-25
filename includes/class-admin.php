@@ -564,6 +564,11 @@ class CX_Sidrena_Admin {
 		if ( ! isset( $_GET['cx_items_error'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			return null;
 		}
+		// One price list for all places of sale is on, and a row was given to a place (CX-SID-113, T77).
+		$error = (string) wp_unslash( $_GET['cx_items_error'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		if ( 0 === strpos( $error, 'isti:' ) ) {
+			return CX_Sidrena_Settings::isti_cjenik_refusal( CX_Sidrena_Settings::instance()->normalize_oznaka( substr( $error, 5 ) ) );
+		}
 
 		return __( 'Nothing was saved, because the page did not confirm that it had loaded all items, and saving could have deleted the ones it did not show. Your saved items and your price list have not changed. Refresh the page and make your changes again.', 'cx-sidrena' );
 	}
@@ -889,6 +894,8 @@ class CX_Sidrena_Admin {
 					'codeKept'     => __( '%1$s: %2$s from WooCommerce stays', 'cx-sidrena' ),
 					'noChange'     => __( 'no change', 'cx-sidrena' ),
 					'lost'         => __( 'The connection to the shop was lost. The import goes on without this page. Press Continue to show its progress again, or reload the page later.', 'cx-sidrena' ),
+					// CX-SID-177 (T78, Norman): above the preview when the amounts are the price list's (with VAT).
+					'shownNote'    => __( 'The amounts come from your price list, with VAT, and the table shows them that way. Your shop enters prices without VAT, so the bazna cijena is saved without VAT, and the product page shows it as in this table.', 'cx-sidrena' ),
 				),
 				'statusUrl'   => CX_Sidrena_Admin_Status::url(),
 				'priceFormat' => html_entity_decode( sprintf( get_woocommerce_price_format(), get_woocommerce_currency_symbol(), '%s' ), ENT_QUOTES, 'UTF-8' ),
@@ -979,8 +986,13 @@ class CX_Sidrena_Admin {
 				array(
 					'ajaxUrl'            => admin_url( 'admin-ajax.php' ),
 					'importNonce'        => wp_create_nonce( 'sidrena_cijena_import' ),
+					// T71 (CX-SID-185): a place's price list is imported on the Import tab; the script adds &za=<label>.
+					'importUrl'          => $this->get_settings_tab_url( 'import', array( 'uvoz' => 'cjenik' ) ),
 					'productSearchNonce' => wp_create_nonce( 'search-products' ),
 					'standalone'         => ! CX_Sidrena_Plugin::woocommerce_active(),
+					// CX-SID-185 with 113 (Norman 22.11.): the same price list for all places, as saved; the outlets then say
+					// nothing about a place's own price list.
+					'istiCjenik'         => CX_Sidrena_Settings::instance()->is_isti_cjenik(),
 					// The table shows id="dN" in both modes (CX-SID-100): it works with and without WooCommerce, and a page
 					// keeps showing this row if WooCommerce is added later (id="N" would then name the product N).
 					'catalogIdPrefix'    => 'd',
@@ -1070,6 +1082,15 @@ class CX_Sidrena_Admin {
 						'outletProductsHelp' => __( 'Checked products move from the webshop\'s price list to this outlet\'s.', 'cx-sidrena' ),
 						// Kai (CX-SID-74 3005): a place's price list has the webshop's prices.
 						'outletPrices'   => __( 'This outlet\'s price list uses the webshop\'s prices. If prices at this outlet are different, the price list does not show them correctly.', 'cx-sidrena' ),
+						// CX-SID-185 (SPEC-UVOZ §4.0, §6), with WooCommerce: the third choice and the sentence about the prices.
+						'outletNone'       => __( 'No webshop products', 'cx-sidrena' ),
+						'outletNoneHelp'   => __( 'Its price list is only its own items: imported from a file or entered under Additional items.', 'cx-sidrena' ),
+						'outletNoneLocked' => __( 'Available once this place has its own price list. Import it first: after the import the place shows only its own items.', 'cx-sidrena' ),
+						'outletNoneNew'    => __( 'Available once this place has its own price list. Save the place, then import its price list on the Import tab.', 'cx-sidrena' ),
+						'outletPricesWeb'  => __( 'This place\'s price list uses the webshop\'s prices. If prices here are different, import this place\'s price list from a file.', 'cx-sidrena' ),
+						/* translators: 1: date of the import, 2: items */
+						'outletPricesImported' => __( 'This place\'s price list was imported from a file on %1$s (items: %2$d). The webshop\'s prices are not used for it.', 'cx-sidrena' ),
+						'outletImportLink' => __( 'Import this place\'s price list', 'cx-sidrena' ),
 						'outletNoAddress' => __( 'Enter the address. It goes into the official name of this outlet\'s price list file.', 'cx-sidrena' ),
 						'outletNoOblik'  => __( 'Enter the type, e.g. prodavaonica. It goes into the official name of this outlet\'s price list file.', 'cx-sidrena' ),
 						'outletCodeWebshop' => /* translators: %s: the label as it would be saved */ __( 'The webshop already has the label %s. Enter another one, or leave the field empty for the next free number.', 'cx-sidrena' ),
@@ -1091,6 +1112,9 @@ class CX_Sidrena_Admin {
 						'outletsWhyWebCode' => __( 'The label you entered for the webshop is already the label of an outlet.', 'cx-sidrena' ),
 						// cx_outlet_error=nepotvrdeno (Tux, CX-SID-142): the page did not confirm it loaded (Norman C3, 3240).
 						'outletsUnconfirmed' => __( 'The outlets are not saved, because the page did not confirm that it had loaded all outlets, and saving could have deleted the ones it did not show. Your saved outlets have not changed. Refresh the page and make your changes again.', 'cx-sidrena' ),
+						// CX-SID-113 (Norman T75): cx_outlet_error=isti:<code>, the box refused while that place has its own prices.
+						/* translators: %s: name of the place of sale */
+						'istiRefused'    => __( 'Not saved: %s has its own price list, so the same price list for all places of sale can\'t be turned on. Turn it off and save again.', 'cx-sidrena' ),
 						'outletsBusy'    => __( 'The outlets are not saved, because they were also being saved somewhere else at the same moment, for example in another browser tab. Your changes are still here. Click Save outlets again.', 'cx-sidrena' ),
 						'searchProducts' => __( 'Search product…', 'cx-sidrena' ),
 						'noCatalog'      => __( 'First add products on the Products tab.', 'cx-sidrena' ),
@@ -1126,8 +1150,277 @@ class CX_Sidrena_Admin {
 			);
 			if ( CX_Sidrena_Plugin::woocommerce_active() ) {
 				$this->enqueue_bazna_screens();
+				if ( 'import' === $this->get_settings_tab() ) {
+					$this->enqueue_import_screen();
+				}
 			}
 		}
+	}
+
+	/**
+	 * targets() for the screens (CX-SID-185): the date of a place's imported price list written as the plugin writes
+	 * dates (shop's time zone), next to the timestamp the bulk import keeps.
+	 *
+	 * @param array<string, mixed> $targets CX_Sidrena_Bulk_Import::targets().
+	 * @return array<string, mixed>
+	 */
+	public static function targets_for_screen( $targets ) {
+		if ( ! is_array( $targets ) || ! isset( $targets['places'] ) || ! is_array( $targets['places'] ) ) {
+			return $targets;
+		}
+		foreach ( $targets['places'] as $i => $place ) {
+			if ( isset( $place['imported']['at'] ) && is_numeric( $place['imported']['at'] ) ) {
+				$targets['places'][ $i ]['imported']['on'] = wp_date( 'j.n.Y.', (int) $place['imported']['at'] );
+			}
+		}
+		return $targets;
+	}
+
+	/**
+	 * The Import tab's new look and its "Price list from a file" (CX-SID-185, SPEC-UVOZ 1d320dd3): only on that tab and
+	 * only with WooCommerce, so Status and Settings load neither (the CSS is scoped to #cx-import.cx-ui as well). The
+	 * screen gets the targets from the bulk import (CX-SID-181 targets()); every save is checked there again.
+	 */
+	private function enqueue_import_screen() {
+		wp_enqueue_style( 'cx-sidrena-admin-import', CX_SIDRENA_URL . 'assets/css/admin-import.css', array( 'sidrena-cijena-admin' ), CX_SIDRENA_VERSION );
+		wp_enqueue_script( 'cx-sidrena-admin-uvoz', CX_SIDRENA_URL . 'assets/js/admin-uvoz-cjenika.js', array(), CX_SIDRENA_VERSION, true );
+
+		$bulk        = class_exists( 'CX_Sidrena_Bulk_Import' ) ? CX_Sidrena_Bulk_Import::instance() : null;
+		$has_targets = $bulk && method_exists( $bulk, 'targets' );
+		// ?za= picks the target (SPEC §5): webshop or a place's label. An unknown one opens the default, without an error.
+		$za = isset( $_GET['za'] ) ? preg_replace( '/[^A-Za-z0-9-]/', '', (string) wp_unslash( $_GET['za'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput
+
+		wp_localize_script(
+			'cx-sidrena-admin-uvoz',
+			'cxUvoz',
+			array(
+				'ajaxUrl'     => admin_url( 'admin-ajax.php' ),
+				'nonce'       => wp_create_nonce( 'sidrena_cijena_import' ),
+				'hasTargets'  => $has_targets,
+				'targets'     => $has_targets ? self::targets_for_screen( $bulk->targets() ) : null,
+				'za'          => $za,
+				'today'       => wp_date( 'Y-m-d' ),
+				'outletsUrl'  => $this->get_settings_tab_url( 'settings' ) . '#cx-outlets',
+				'templateUrl' => add_query_arg(
+					array(
+						'action' => 'sidrena_cijena_import_template',
+						'nonce'  => wp_create_nonce( 'sidrena_cijena_import' ),
+					),
+					admin_url( 'admin-ajax.php' )
+				),
+				'priceFormat' => html_entity_decode( sprintf( get_woocommerce_price_format(), get_woocommerce_currency_symbol(), '%s' ), ENT_QUOTES, 'UTF-8' ),
+				'decimal'     => wc_get_price_decimal_separator(),
+				// Keys are the numbers of SPEC-UVOZ §T (Norman), the others are texts the plugin already has.
+				't'           => array(
+					'error'       => __( 'An error occurred. Please try again.', 'cx-sidrena' ),
+					'retry'       => __( 'Connection lost. Trying again…', 'cx-sidrena' ),
+					'noFile'      => __( 'Choose a file.', 'cx-sidrena' ),
+					'noName'      => __( 'Enter the name of who confirmed.', 'cx-sidrena' ),
+					'noConsent'   => __( 'Tick the confirmation.', 'cx-sidrena' ),
+					'noDate'      => __( 'Enter the date of the confirmation.', 'cx-sidrena' ),
+					'selectFile'  => __( 'Select CSV or XML', 'cx-sidrena' ),
+					'orDrop'      => __( 'or drop the file here', 'cx-sidrena' ),
+					'upload'      => __( 'Upload', 'cx-sidrena' ),
+					'template'    => __( 'Download template', 'cx-sidrena' ),
+					'reading'     => __( 'Reading the file…', 'cx-sidrena' ),
+					'cancel'      => __( 'Cancel', 'cx-sidrena' ),
+					'importing'   => __( 'Importing…', 'cx-sidrena' ),
+					/* translators: %d: rows of the file that will be imported */
+					'importN'     => __( 'Import (%d)', 'cx-sidrena' ),
+					/* translators: %d: rows */
+					'notImported' => __( 'Not imported: %d.', 'cx-sidrena' ),
+					'openList'    => __( 'Open price list', 'cx-sidrena' ),
+					'again'       => __( 'Import another file', 'cx-sidrena' ),
+					'whoConfirmed' => __( 'Who confirmed this file for the shop. Kept with the import as proof.', 'cx-sidrena' ),
+					'confirmedBy' => __( 'Confirmed by', 'cx-sidrena' ),
+					'noHistory'   => __( 'No imports yet.', 'cx-sidrena' ),
+					'inProgress'  => __( 'In progress', 'cx-sidrena' ),
+					/* translators: 1: page, 2: pages */
+					'page'        => __( 'Page %1$d of %2$d', 'cx-sidrena' ),
+					'prev'        => __( 'Previous', 'cx-sidrena' ),
+					'next'        => __( 'Next', 'cx-sidrena' ),
+					'fName'       => __( 'Name', 'cx-sidrena' ),
+					'fRegular'    => __( 'Regular price', 'cx-sidrena' ),
+					'fSku'        => __( 'SKU', 'cx-sidrena' ),
+					'fType'       => __( 'Type', 'cx-sidrena' ),
+					'fSale'       => __( 'Sale price', 'cx-sidrena' ),
+					'fBazna'      => __( 'Bazna cijena', 'cx-sidrena' ),
+					'fBaznaDate'  => __( 'Bazna cijena date', 'cx-sidrena' ),
+					'fBrand'      => __( 'Brand', 'cx-sidrena' ),
+					'fUnit'       => __( 'Unit of measure', 'cx-sidrena' ),
+					'fUnitPrice'  => __( 'Price per unit', 'cx-sidrena' ),
+					'fSpecial'    => __( 'Special form', 'cx-sidrena' ),
+					'cLine'       => __( 'Line', 'cx-sidrena' ),
+					'cName'       => __( 'Name', 'cx-sidrena' ),
+					'cSku'        => __( 'SKU', 'cx-sidrena' ),
+					'cType'       => __( 'Type', 'cx-sidrena' ),
+					'cBazna'      => __( 'Bazna cijena', 'cx-sidrena' ),
+					'cDate'       => __( 'Date', 'cx-sidrena' ),
+					'cWhy'        => __( 'Why', 'cx-sidrena' ),
+					/* translators: %d: line in the file */
+					'lineN'       => __( 'Row %d', 'cx-sidrena' ),
+					'tNew'        => __( 'New', 'cx-sidrena' ),
+					'tSame'       => __( 'Unchanged', 'cx-sidrena' ),
+					'T7'          => __( 'The webshop\'s price list of services that are not products in WooCommerce, for example fitting or engraving.', 'cx-sidrena' ),
+					/* translators: 1: place name, 2: place label */
+					'T8'          => __( '%1$s (%2$s)', 'cx-sidrena' ),
+					'T9'          => __( 'This place has no imported price list yet.', 'cx-sidrena' ),
+					/* translators: 1: date of the import, 2: items */
+					'T10'         => __( 'This place\'s price list was imported on %1$s (items: %2$d). A new import replaces it.', 'cx-sidrena' ),
+					/* translators: %d: services */
+					'T10w'        => __( 'The webshop\'s price list has services: %d. A new import replaces them.', 'cx-sidrena' ),
+					'T11'         => __( 'Price list for', 'cx-sidrena' ),
+					'T11a'        => __( 'Webshop (services only)', 'cx-sidrena' ),
+					'T12'         => __( 'Leave this import? Nothing has been written yet.', 'cx-sidrena' ),
+					'T13'         => __( 'File', 'cx-sidrena' ),
+					'T14'         => __( 'Columns', 'cx-sidrena' ),
+					'T15'         => __( 'Preview', 'cx-sidrena' ),
+					'T16'         => __( 'Confirm', 'cx-sidrena' ),
+					'T17'         => __( 'You have no place of sale yet. For a shop\'s price list, add one in Settings, under Places of sale.', 'cx-sidrena' ),
+					'T18'         => __( 'Open Places of sale', 'cx-sidrena' ),
+					'T19'         => __( 'The same price list for all places of sale is turned on, so no place has its own price list. If this place has its own prices, turn it off in Settings, under Places of sale.', 'cx-sidrena' ),
+					// Its own msgid: "The file has no rows." is the bazna import's (Datoteka nema redaka.), no gettext context.
+					'T22'         => __( 'There are no rows in the file.', 'cx-sidrena' ),
+					'T23'         => __( 'Letters such as č, ć and ž can\'t be read in this file. Save it as CSV UTF-8 and upload it again.', 'cx-sidrena' ),
+					'T24'         => __( 'Which column is which?', 'cx-sidrena' ),
+					'T25'         => __( 'We picked them from the column names. Check them, then go on.', 'cx-sidrena' ),
+					'T26'         => __( '— not imported —', 'cx-sidrena' ),
+					/* translators: %s: the value in the file's first row */
+					'T27'         => __( 'e.g. %s', 'cx-sidrena' ),
+					'T28'         => __( 'required', 'cx-sidrena' ),
+					'T28b'        => __( 'SKU or row ID required', 'cx-sidrena' ),
+					'T29'         => __( 'More columns', 'cx-sidrena' ),
+					'T29b'        => __( 'Row ID (d1, d2 …)', 'cx-sidrena' ),
+					/* translators: 1: goods, 2: services */
+					'T30'         => __( 'Goods: %1$d · Services: %2$d', 'cx-sidrena' ),
+					'T31'         => __( 'Without a Type column every row is goods.', 'cx-sidrena' ),
+					'T32'         => __( 'Every row is imported as a service, except those marked as goods in the Type column.', 'cx-sidrena' ),
+					// "Next" is the pagers' (Sljedeća); the tools have no gettext context (tools/i18n/lib.ts:15).
+					'T33'         => __( 'Next step', 'cx-sidrena' ),
+					'T34'         => __( 'Choose a column for Name, for Regular price, and for SKU or Row ID.', 'cx-sidrena' ),
+					'T35'         => __( 'Back', 'cx-sidrena' ),
+					/* translators: 1: file name, 2: rows */
+					'T36'         => __( '%1$s · rows: %2$d', 'cx-sidrena' ),
+					'T38'         => __( 'Changed', 'cx-sidrena' ),
+					'T39'         => __( 'Waits', 'cx-sidrena' ),
+					'T40'         => __( 'Won\'t be imported', 'cx-sidrena' ),
+					'T40b'        => __( 'Price', 'cx-sidrena' ),
+					'T41'         => __( "Only the webshop's services are imported here. Goods from WooCommerce have their own import (Bazna cijene of products); goods in Additional items are edited there.", 'cx-sidrena' ),
+					'T42a'        => __( 'No name.', 'cx-sidrena' ),
+					'T42b'        => __( 'No price.', 'cx-sidrena' ),
+					/* translators: %s: the amount as written in the file */
+					'T43'         => __( 'The amount is not clear: %s', 'cx-sidrena' ),
+					'T44'         => __( 'goods', 'cx-sidrena' ),
+					'T45'         => __( 'service', 'cx-sidrena' ),
+					/* translators: %s: date */
+					'T46'         => __( '%s (default)', 'cx-sidrena' ),
+					'T47'         => __( 'A service without a date or bazna cijena: saved, but not in the price list until it has both.', 'cx-sidrena' ),
+					/* translators: %s: name of the other place of sale */
+					'T47b'        => __( 'Belongs to another place of sale (%s).', 'cx-sidrena' ),
+					'T47c'        => __( 'No SKU or row ID: without it, every new import would add this row again.', 'cx-sidrena' ),
+					/* translators: %d: the line in the file of the first row with that SKU or row ID */
+					'T47d'        => __( 'The same SKU or row ID as row %d. Only that row is imported.', 'cx-sidrena' ),
+					'T47s'        => __( 'The price is a special form of sale (DA), but the row has no name of that form, so it is not known which price it is. If the file has a column with that name, choose it under More columns.', 'cx-sidrena' ),
+					'T47n'        => __( 'Goods without a bazna cijena are not imported. Add the bazna cijena and its date to the file.', 'cx-sidrena' ),
+					'T48'         => __( 'Will be removed', 'cx-sidrena' ),
+					/* translators: %d: items */
+					'T48b'        => __( 'Items removed from the price list: %d. The list is in the preview, under Will be removed.', 'cx-sidrena' ),
+					'T48c'        => __( 'Not in this file.', 'cx-sidrena' ),
+					'T49'         => __( 'No row in this file can be imported. The reasons are in the table.', 'cx-sidrena' ),
+					'T52'         => __( 'The price list changed after the preview, so nothing was written. Upload the file again.', 'cx-sidrena' ),
+					'T52b'        => __( 'The places of sale changed after the preview, so nothing was written. Upload the file again.', 'cx-sidrena' ),
+					'T52c'        => __( 'The import could not be saved, so nothing was written. Upload the file again. If it happens again, tell us.', 'cx-sidrena' ),
+					/* translators: 1: place name, 2: items, 3: goods, 4: services */
+					'T53'         => __( 'Imported into the price list of %1$s: %2$d (goods %3$d, services %4$d).', 'cx-sidrena' ),
+					/* translators: %d: items */
+					'T53b'        => __( 'Removed from the price list: %d.', 'cx-sidrena' ),
+					/* translators: %s: place name */
+					'T53c'        => __( '%s now shows only the items from the file. You can give it the webshop\'s products back in Settings, under Places of sale.', 'cx-sidrena' ),
+					/* translators: %d: services */
+					'T54'         => __( 'Imported into the webshop\'s price list of services: %d.', 'cx-sidrena' ),
+					/* translators: %d: services */
+					'T55'         => __( 'Services waiting for a date or bazna cijena: %d. They are not in the price list until they have both: import a file with them, or enter them in Settings, under Additional items.', 'cx-sidrena' ),
+					'T56'         => __( 'The price list is published within a few minutes.', 'cx-sidrena' ),
+					/* translators: 1: rows read, 2: rows */
+					'T57'         => __( '%1$d of %2$d rows', 'cx-sidrena' ),
+					'T59'         => __( 'Keep this page open while the file is read. Nothing has been written yet.', 'cx-sidrena' ),
+					'T61'         => __( 'Bazna cijene (webshop)', 'cx-sidrena' ),
+					/* translators: %s: place name and label */
+					'T62a'        => __( 'Price list: %s', 'cx-sidrena' ),
+					'T62b'        => __( 'Services (webshop)', 'cx-sidrena' ),
+					/* translators: 1: place name, 2: webshop products */
+					'T80'         => __( '%1$s shows the webshop\'s products (%2$d).', 'cx-sidrena' ),
+					/* translators: %d: webshop products */
+					'T80p'        => __( 'This place shows %d webshop products today. After the import it will show only the items from this file. You can give it the webshop\'s products back in Settings, under Places of sale.', 'cx-sidrena' ),
+					/* translators: 1: place name, 2: webshop products */
+					'T80c'        => __( 'When you confirm, %1$s stops showing the webshop\'s products (%2$d) and shows only the items from this file.', 'cx-sidrena' ),
+					// web_rows null (the place has no file yet): the same without a number (Norman, TEXTS-dodaci).
+					/* translators: %s: place name */
+					'T80n'        => __( '%s is set to show the webshop\'s products.', 'cx-sidrena' ),
+					'T80pn'       => __( 'This place is set to show the webshop\'s products. After the import it will show only the items from this file. You can give it the webshop\'s products back in Settings, under Places of sale.', 'cx-sidrena' ),
+					/* translators: %s: place name */
+					'T80cn'       => __( 'When you confirm, %s stops showing the webshop\'s products and shows only the items from this file.', 'cx-sidrena' ),
+					// CX-SID-197 (SPEC-DUCAN cb32799b §T, Norman): the till's file as it is (195, 196, 198).
+					'T20a'        => __( 'Select Excel, CSV or XML', 'cx-sidrena' ),
+					'T20n'        => __( 'Upload the export from your till as it is: Excel, CSV or XML. You choose the columns in the next step.', 'cx-sidrena' ),
+					'T21n'        => __( 'This Excel file can\'t be read. Open it in Excel, save it as CSV UTF-8 and upload that file.', 'cx-sidrena' ),
+					'T21o'        => __( 'This is an OpenDocument (.ods) file, which can\'t be read here. Save it as Excel (.xlsx) or CSV and upload that file.', 'cx-sidrena' ),
+					'T21x'        => __( 'Upload an Excel, CSV or XML file.', 'cx-sidrena' ),
+					'T25o'        => __( 'We couldn\'t tell the columns from their names. Choose each one by the examples in its list.', 'cx-sidrena' ),
+					'T25z'        => __( 'The columns are set as in the last import of this price list. Check them, then go on.', 'cx-sidrena' ),
+					'T25r'        => __( 'This file doesn\'t have the same columns as the last import of this price list, so we picked them again. Check them, then go on.', 'cx-sidrena' ),
+					'T90'         => __( 'Column names', 'cx-sidrena' ),
+					/* translators: 1: row number in the file, 2: the first cells of that row */
+					'T90a'        => __( 'in row %1$d: %2$s', 'cx-sidrena' ),
+					'T90b'        => __( 'the file has none', 'cx-sidrena' ),
+					'T91'         => __( 'The rows above the names are skipped and not saved.', 'cx-sidrena' ),
+					/* translators: %d: column number in the file */
+					'T92'         => __( 'Column %d', 'cx-sidrena' ),
+					/* translators: 1: column name, 2: a value from that column */
+					'T27b'        => __( '%1$s · e.g. %2$s', 'cx-sidrena' ),
+					'T98'         => __( 'Start of the file', 'cx-sidrena' ),
+					// Its own msgid: "skipped" is already "preskočeno" elsewhere, and the tools have no gettext context.
+					'T98a'        => __( 'is skipped', 'cx-sidrena' ),
+					'T98b'        => __( 'column names', 'cx-sidrena' ),
+					'T98c'        => __( 'group heading', 'cx-sidrena' ),
+					/* translators: %s: name of the first sheet */
+					'T99'         => __( 'Only the first sheet is read: %s.', 'cx-sidrena' ),
+					/* translators: %s: the heading in the file */
+					'T94'         => __( 'Without a Type column, the items under the heading “%s” are services and the others are goods.', 'cx-sidrena' ),
+					/* translators: %s: the heading in the file */
+					'T94w'        => __( 'Without a Type column, the items under the heading “%s” are services. The others are goods and are not imported here.', 'cx-sidrena' ),
+					'T96'         => __( 'Without a bazna cijena, goods are not imported. If the bazna cijena is the same as the price, choose the same column as for Regular price.', 'cx-sidrena' ),
+					'T96b'        => __( 'Without a bazna cijena, new items take their price as the bazna cijena.', 'cx-sidrena' ),
+					// Under Bazna on a later import when the Datum column is chosen (Norman TEXTS-dodaci 2aedf0c9 D1, Rook 4304).
+					'T96c'        => __( 'Without a bazna cijena, new goods with a date in the file are not imported. New items without a date take their price as the bazna cijena and today\'s date.', 'cx-sidrena' ),
+					/* translators: %s: date */
+					'T97'         => __( 'Without a date column, services wait for their date, and goods take the default date from Settings: %s.', 'cx-sidrena' ),
+					'T97b'        => __( 'Without a date column, new items are dated today.', 'cx-sidrena' ),
+					/* translators: 1: group headings, 2: their names */
+					'T93'         => __( 'Group headings (%1$d) are not items and are not imported: %2$s.', 'cx-sidrena' ),
+					'T88'         => __( 'New, dated today', 'cx-sidrena' ),
+					/* translators: %s: date */
+					'T88a'        => __( 'This place has never had these items, and the file has no date for their bazna cijena. Their date is today, %s, and their bazna cijena is the one in the file or, if it has none, the price.', 'cx-sidrena' ),
+					/* translators: %s: date */
+					'T89'         => __( '%s (from before)', 'cx-sidrena' ),
+					/* translators: %s: date */
+					'T89d'        => __( '%s (today)', 'cx-sidrena' ),
+					/* translators: %d: items */
+					'T89a'        => __( 'Back in the price list: %d. They keep their earlier bazna cijena and its date.', 'cx-sidrena' ),
+					'T95'         => __( 'Like an existing SKU', 'cx-sidrena' ),
+					/* translators: %s: SKU */
+					'T95a'        => __( 'The same as the existing SKU %s, apart from a dot, leading zeros, spaces or letter case. To import it as an item of its own, add its bazna cijena and date to the file.', 'cx-sidrena' ),
+					/* translators: %d: rows */
+					'T95b'        => __( 'SKUs that match existing ones apart from a dot, leading zeros or spaces: %d. These are not imported. If they are the same items, their SKUs were probably changed when the file was saved again in Excel (12.050 → 12050, 0345 → 345): upload the file as your till gave it. If they are different items, add their bazna cijena and date to the file.', 'cx-sidrena' ),
+					/* translators: 1: items, 2: date */
+					'T88b'        => __( 'New items dated today: %1$d. Their bazna cijena is dated %2$s, the day they were first offered. If any of them was offered before, add its bazna cijena and date to the file and upload it again.', 'cx-sidrena' ),
+					/* translators: %d: items */
+					'T88c'        => __( 'New, dated today: %d.', 'cx-sidrena' ),
+					/* translators: %d: rows */
+					'T95c'        => __( 'SKUs like existing ones are not imported: %d. If they are the same items under a changed SKU, their old SKUs are under Will be removed, and confirming removes them from the price list.', 'cx-sidrena' ),
+				),
+			)
+		);
 	}
 
 	/**

@@ -1,0 +1,801 @@
+/*
+ * The Import tab in the look of the new admin (CX-SID-185, SPEC-UVOZ 1d320dd3, prototype CX-SID-182 c703a001).
+ * Every rule here starts with #cx-import.cx-ui, so nothing reaches Status or Settings (SPEC §0). The file is loaded only
+ * on tab=import with WooCommerce. Inside the screen WordPress's own looks (.button, .notice, .widefat) are restyled, not
+ * removed: the tests and admin-bazna.js read those classes.
+ * Text colours are 4.5:1 or more against their background (CX-SID-107): --muted 6.0, --ok 5.7, --warn 5.6, --bad 5.0.
+ */
+
+#cx-import.cx-ui {
+	--cx-card: #fff;
+	--cx-ink: #1d2433;
+	--cx-muted: #5b6475;
+	--cx-line: #e2e5e9;
+	--cx-line2: #eef0f3;
+	--cx-accent: #0b7499;
+	--cx-accent-soft: #e7f3f8;
+	--cx-ok: #146c34;
+	--cx-ok-soft: #e8f5ec;
+	--cx-warn: #8a5a00;
+	--cx-warn-soft: #fff6dc;
+	--cx-bad: #c4291c;
+	--cx-bad-soft: #fdecea;
+	--cx-r: 14px;
+	--cx-shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 2px 6px rgba(16, 24, 40, .06);
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+	max-width: 1040px;
+	color: var(--cx-ink);
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+	font-size: 14px;
+	line-height: 1.45;
+}
+
+#cx-import.cx-ui *,
+#cx-import.cx-ui *::before,
+#cx-import.cx-ui *::after {
+	box-sizing: border-box;
+}
+
+#cx-import.cx-ui [hidden] {
+	display: none !important;
+}
+
+/* ---------- cards (the old .sidrena-cijena-card too) ---------- */
+#cx-import.cx-ui .cx-ui__card,
+#cx-import.cx-ui .sidrena-cijena-card {
+	background: var(--cx-card);
+	border: 0;
+	border-radius: var(--cx-r);
+	box-shadow: var(--cx-shadow);
+	padding: 24px 28px;
+	margin: 0;
+}
+
+#cx-import.cx-ui .sidrena-cijena-card__head {
+	border: 0;
+	margin: 0 0 14px;
+	padding: 0;
+}
+
+#cx-import.cx-ui h2,
+#cx-import.cx-ui .sidrena-cijena-card__head h2 {
+	margin: 0 0 6px;
+	font-size: 18px;
+	font-weight: 650;
+	letter-spacing: -.01em;
+	color: var(--cx-ink);
+}
+
+#cx-import.cx-ui .cx-ui__intro h2 {
+	font-size: 22px;
+}
+
+#cx-import.cx-ui h3 {
+	margin: 0 0 8px;
+	font-size: 16px;
+	font-weight: 650;
+	color: var(--cx-ink);
+}
+
+#cx-import.cx-ui p,
+#cx-import.cx-ui .sidrena-cijena-card__head p,
+#cx-import.cx-ui .sidrena-cijena-card > p {
+	margin: 0 0 12px;
+	font-size: 14px;
+	line-height: 1.5;
+	color: var(--cx-ink);
+}
+
+#cx-import.cx-ui .cx-ui__lead,
+#cx-import.cx-ui .sidrena-cijena-card__head p,
+#cx-import.cx-ui .description,
+#cx-import.cx-ui .cx-ui__hint {
+	color: var(--cx-muted);
+}
+
+#cx-import.cx-ui .cx-ui__lead {
+	font-size: 15px;
+	max-width: 720px;
+}
+
+#cx-import.cx-ui .cx-ui__hint {
+	font-size: 13px;
+	margin: 8px 0 0;
+}
+
+#cx-import.cx-ui h2:focus,
+#cx-import.cx-ui h3:focus {
+	outline: none;
+}
+
+#cx-import.cx-ui a {
+	color: var(--cx-accent);
+}
+
+/* ---------- segmented choice: a radio group (arrow keys move it, SPEC §1.2) ---------- */
+#cx-import.cx-ui .cx-ui__seg {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 2px;
+	padding: 3px;
+	margin: 6px 0 0;
+	border: 0;
+	border-radius: 10px;
+	background: #e4e7eb;
+}
+
+#cx-import.cx-ui .cx-ui__seg label {
+	position: relative;
+	display: inline-flex;
+	margin: 0;
+	cursor: pointer;
+}
+
+#cx-import.cx-ui .cx-ui__seg input {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	opacity: 0;
+	cursor: pointer;
+}
+
+#cx-import.cx-ui .cx-ui__seg span {
+	padding: 7px 22px;
+	border-radius: 8px;
+	color: var(--cx-muted);
+	font-weight: 550;
+	font-size: 14px;
+	white-space: nowrap;
+}
+
+#cx-import.cx-ui .cx-ui__seg input:checked + span {
+	background: #fff;
+	color: var(--cx-ink);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 1px 1px rgba(0, 0, 0, .04);
+}
+
+#cx-import.cx-ui .cx-ui__seg input:focus-visible + span {
+	box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--cx-accent);
+}
+
+#cx-import.cx-ui .cx-ui__seg input:disabled,
+#cx-import.cx-ui .cx-ui__seg input:disabled + span {
+	cursor: default;
+}
+
+#cx-import.cx-ui .cx-ui__seg input:disabled:not(:checked) + span {
+	opacity: .55;
+}
+
+/* ---------- steps (Datoteka · Stupci · Pregled · Potvrda) ---------- */
+#cx-import.cx-ui .cx-ui__steps {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px 12px;
+	margin: 0 0 22px;
+	padding: 0;
+	list-style: none;
+}
+
+#cx-import.cx-ui .cx-ui__steps li {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	margin: 0;
+	color: var(--cx-muted);
+	font-weight: 550;
+}
+
+#cx-import.cx-ui .cx-ui__steps li + li::before {
+	content: "";
+	width: 40px;
+	height: 1.5px;
+	margin-right: 3px;
+	background: #d6dade;
+}
+
+#cx-import.cx-ui .cx-ui__steps .n {
+	display: grid;
+	place-items: center;
+	width: 26px;
+	height: 26px;
+	border: 1.5px solid #c9ced5;
+	border-radius: 50%;
+	font-size: 13px;
+}
+
+#cx-import.cx-ui .cx-ui__steps .is-on {
+	color: var(--cx-ink);
+}
+
+#cx-import.cx-ui .cx-ui__steps .is-on .n {
+	background: var(--cx-accent);
+	border-color: var(--cx-accent);
+	color: #fff;
+}
+
+#cx-import.cx-ui .cx-ui__steps .is-done {
+	color: var(--cx-ok);
+}
+
+#cx-import.cx-ui .cx-ui__steps .is-done .n {
+	background: var(--cx-ok-soft);
+	border-color: var(--cx-ok-soft);
+	color: var(--cx-ok);
+}
+
+/* ---------- buttons: WordPress's .button in the new look ---------- */
+#cx-import.cx-ui .button,
+#cx-import.cx-ui .button:hover,
+#cx-import.cx-ui .button:focus,
+#cx-import.cx-ui .button:active {
+	display: inline-flex !important;
+	align-items: center;
+	gap: 6px;
+	min-height: 34px;
+	padding: 6px 14px !important;
+	border: 1px solid #d5d9df !important;
+	border-radius: 8px !important;
+	background: #fff !important;
+	color: var(--cx-ink) !important;
+	font-size: 13.5px;
+	font-weight: 550;
+	line-height: 1.4;
+	text-shadow: none !important;
+	box-shadow: none !important;
+	transform: none !important;
+	vertical-align: middle;
+}
+
+#cx-import.cx-ui .button-primary,
+#cx-import.cx-ui .button-primary:hover,
+#cx-import.cx-ui .button-primary:focus,
+#cx-import.cx-ui .button-primary:active {
+	background: var(--cx-accent) !important;
+	border-color: var(--cx-accent) !important;
+	color: #fff !important;
+}
+
+#cx-import.cx-ui .button:hover {
+	filter: brightness(.97);
+}
+
+#cx-import.cx-ui .button-primary:hover {
+	filter: brightness(1.08);
+}
+
+#cx-import.cx-ui .button:focus-visible {
+	outline: 2px solid var(--cx-accent) !important;
+	outline-offset: 2px;
+}
+
+#cx-import.cx-ui .button:disabled,
+#cx-import.cx-ui .button:disabled:hover {
+	background: #e5e7eb !important;
+	border-color: #e5e7eb !important;
+	color: #5f646b !important;
+	filter: none;
+	cursor: not-allowed;
+}
+
+#cx-import.cx-ui .cx-ui__link {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--cx-accent);
+	font: inherit;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+/* ---------- fields ---------- */
+#cx-import.cx-ui input[type="text"],
+#cx-import.cx-ui input[type="date"],
+#cx-import.cx-ui select {
+	min-height: 34px;
+	max-width: 100%;
+	padding: 6px 10px;
+	border: 1px solid #cfd4db;
+	border-radius: 8px;
+	background-color: #fff;
+	color: var(--cx-ink);
+	font: inherit;
+	box-shadow: none;
+}
+
+#cx-import.cx-ui select {
+	padding-right: 30px;
+}
+
+#cx-import.cx-ui input[type="text"]:focus,
+#cx-import.cx-ui input[type="date"]:focus,
+#cx-import.cx-ui select:focus {
+	border-color: var(--cx-accent);
+	outline: none;
+	box-shadow: 0 0 0 3px rgba(11, 116, 153, .15);
+}
+
+#cx-import.cx-ui label {
+	font-weight: 550;
+}
+
+#cx-import.cx-ui .cx-dialog__consent,
+#cx-import.cx-ui .cx-uvoz__consent {
+	display: flex;
+	gap: 10px;
+	align-items: flex-start;
+	font-weight: 400;
+	max-width: 760px;
+}
+
+#cx-import.cx-ui .cx-dialog__consent input,
+#cx-import.cx-ui .cx-uvoz__consent input {
+	margin-top: 3px;
+}
+
+/* ---------- drop zone ---------- */
+#cx-import.cx-ui .cx-ui__drop {
+	position: relative;
+	padding: 26px;
+	border: 2px dashed #cfd4db;
+	border-radius: var(--cx-r);
+	text-align: center;
+	color: var(--cx-muted);
+}
+
+#cx-import.cx-ui .cx-ui__drop.is-over {
+	border-color: var(--cx-accent);
+	background: var(--cx-accent-soft);
+}
+
+#cx-import.cx-ui .cx-ui__drop .cx-ui__dropicon {
+	display: block;
+	font-size: 28px;
+	line-height: 1;
+	margin-bottom: 8px;
+}
+
+/* ---------- state rows (target state, notices) ---------- */
+#cx-import.cx-ui .cx-ui__row {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	margin: 12px 0 0;
+	padding: 12px 16px;
+	border-radius: 10px;
+	background: #f6f7f9;
+	color: var(--cx-ink);
+}
+
+#cx-import.cx-ui .cx-ui__row .cx-ui__st {
+	display: grid;
+	flex: none;
+	place-items: center;
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	background: #e4e7eb;
+	color: var(--cx-muted);
+	font-size: 12px;
+	font-weight: 700;
+}
+
+#cx-import.cx-ui .cx-ui__row p {
+	margin: 0;
+}
+
+#cx-import.cx-ui .cx-ui__row .button {
+	margin-top: 8px;
+}
+
+/* Yellow: something to know before going on. Red: it went wrong, nothing was written. */
+#cx-import.cx-ui .cx-ui__warn,
+#cx-import.cx-ui .notice-warning {
+	background: var(--cx-warn-soft);
+	color: var(--cx-warn);
+}
+
+#cx-import.cx-ui .cx-ui__warn .cx-ui__st {
+	background: #f5dfa3;
+	color: var(--cx-warn);
+}
+
+#cx-import.cx-ui .cx-ui__err,
+#cx-import.cx-ui .notice-error {
+	background: var(--cx-bad-soft);
+	color: var(--cx-bad);
+}
+
+#cx-import.cx-ui .notice-success {
+	background: var(--cx-ok-soft);
+	color: var(--cx-ok);
+}
+
+#cx-import.cx-ui .notice-info {
+	background: #f6f7f9;
+	color: var(--cx-ink);
+}
+
+/* WordPress's notices inside the screen: no left bar, no shadow, the look of a row (SPEC §2, no .notice look). */
+#cx-import.cx-ui .notice {
+	margin: 10px 0;
+	padding: 10px 14px;
+	border: 0;
+	border-radius: 10px;
+	box-shadow: none;
+}
+
+#cx-import.cx-ui .notice p {
+	margin: 0;
+	color: inherit;
+}
+
+#cx-import.cx-ui .cx-ui__err,
+#cx-import.cx-ui .cx-ui__warn {
+	margin: 12px 0;
+	padding: 10px 14px;
+	border-radius: 10px;
+}
+
+/* ---------- column map (two columns, one under the other below 1180 px) ---------- */
+#cx-import.cx-ui .cx-uvoz__map {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 14px 28px;
+	margin: 16px 0 0;
+}
+
+#cx-import.cx-ui .cx-uvoz__field {
+	display: grid;
+	grid-template-columns: minmax(120px, 170px) minmax(0, 1fr);
+	gap: 4px 12px;
+	align-items: center;
+}
+
+#cx-import.cx-ui .cx-uvoz__field select {
+	width: 100%;
+}
+
+#cx-import.cx-ui .cx-uvoz__field .cx-uvoz__eg,
+#cx-import.cx-ui .cx-uvoz__field .cx-uvoz__under {
+	grid-column: 2;
+	color: var(--cx-muted);
+	font-size: 12.5px;
+	overflow-wrap: anywhere;
+}
+
+#cx-import.cx-ui .cx-uvoz__req {
+	color: var(--cx-muted);
+	font-weight: 400;
+	font-size: 12.5px;
+}
+
+#cx-import.cx-ui details.cx-uvoz__more {
+	margin: 16px 0 0;
+}
+
+#cx-import.cx-ui details.cx-uvoz__more summary {
+	color: var(--cx-accent);
+	font-weight: 550;
+	cursor: pointer;
+}
+
+/* ---------- start of the file and its header row (CX-SID-197, SPEC-DUCAN §2.2) ---------- */
+#cx-import.cx-ui .cx-uvoz__file {
+	margin: 14px 0 0;
+}
+
+#cx-import.cx-ui .cx-uvoz__hdr {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 10px;
+	margin: 0 0 6px;
+}
+
+#cx-import.cx-ui .cx-uvoz__hdr label {
+	font-weight: 550;
+}
+
+#cx-import.cx-ui .cx-uvoz__hdr select {
+	max-width: 100%;
+}
+
+/* A file with many columns scrolls inside its frame, never the page (SPEC-DUCAN §0, §2.2). */
+#cx-import.cx-ui .cx-uvoz__frame {
+	max-width: 100%;
+	overflow-x: auto;
+	border: 1px solid var(--cx-line);
+	border-radius: 10px;
+}
+
+#cx-import.cx-ui table.cx-uvoz__start {
+	border-collapse: collapse;
+	font-size: 12.5px;
+}
+
+#cx-import.cx-ui table.cx-uvoz__start caption {
+	padding: 8px 12px 6px;
+	color: var(--cx-muted);
+	font-size: 12.5px;
+	font-weight: 550;
+	text-align: left;
+}
+
+#cx-import.cx-ui table.cx-uvoz__start th,
+#cx-import.cx-ui table.cx-uvoz__start td {
+	padding: 5px 10px;
+	border-top: 1px solid var(--cx-line2);
+	text-align: left;
+	vertical-align: top;
+	white-space: nowrap;
+}
+
+/* One line per cell, cut with "…"; the whole text is in its title. */
+#cx-import.cx-ui table.cx-uvoz__start td {
+	max-width: 220px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--cx-ink);
+}
+
+#cx-import.cx-ui table.cx-uvoz__start thead th {
+	color: var(--cx-muted);
+	font-weight: 550;
+}
+
+#cx-import.cx-ui table.cx-uvoz__start .cx-uvoz__cn,
+#cx-import.cx-ui table.cx-uvoz__start .cx-uvoz__mapped {
+	display: block;
+}
+
+#cx-import.cx-ui table.cx-uvoz__start .cx-uvoz__mapped {
+	color: var(--cx-accent);
+	font-weight: 550;
+}
+
+#cx-import.cx-ui table.cx-uvoz__start .cx-uvoz__rn {
+	color: var(--cx-muted);
+	font-weight: 400;
+	text-align: right;
+}
+
+/* A row's state is said in words (last column); the look only repeats it (SPEC-DUCAN §2.2). The row number and the
+   state stay in view while a wide file scrolls in its frame, so every row keeps its number and its state. */
+#cx-import.cx-ui table.cx-uvoz__start td.cx-uvoz__st {
+	color: var(--cx-muted);
+}
+
+#cx-import.cx-ui table.cx-uvoz__start .cx-uvoz__rn,
+#cx-import.cx-ui table.cx-uvoz__start .cx-uvoz__st {
+	position: sticky;
+	z-index: 1;
+	background: var(--cx-card);
+}
+
+#cx-import.cx-ui table.cx-uvoz__start .cx-uvoz__rn {
+	left: 0;
+}
+
+#cx-import.cx-ui table.cx-uvoz__start .cx-uvoz__st {
+	right: 0;
+	box-shadow: -1px 0 0 var(--cx-line2);
+}
+
+#cx-import.cx-ui table.cx-uvoz__start tr.cx-uvoz__r-above td {
+	color: var(--cx-muted);
+}
+
+#cx-import.cx-ui table.cx-uvoz__start tr.cx-uvoz__r-names td {
+	font-weight: 650;
+}
+
+#cx-import.cx-ui table.cx-uvoz__start tr.cx-uvoz__r-section td {
+	font-style: italic;
+}
+
+/* ---------- foot of a step ---------- */
+#cx-import.cx-ui .cx-ui__foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	margin: 24px 0 0;
+	padding: 18px 0 0;
+	border-top: 1px solid var(--cx-line2);
+}
+
+#cx-import.cx-ui .cx-ui__foot .cx-ui__sp {
+	flex: 1;
+}
+
+/* ---------- progress ---------- */
+#cx-import.cx-ui .cx-ui__progress,
+#cx-import.cx-ui progress {
+	display: block;
+	width: 100%;
+	height: 10px;
+	overflow: hidden;
+	border: 0;
+	border-radius: 99px;
+	background: #eef0f3;
+	appearance: none;
+}
+
+#cx-import.cx-ui .cx-ui__progress i {
+	display: block;
+	width: 0;
+	height: 100%;
+	border-radius: 99px;
+	background: var(--cx-accent);
+	transition: width .35s;
+}
+
+#cx-import.cx-ui progress::-webkit-progress-bar {
+	background: #eef0f3;
+	border-radius: 99px;
+}
+
+#cx-import.cx-ui progress::-webkit-progress-value {
+	background: var(--cx-accent);
+	border-radius: 99px;
+}
+
+#cx-import.cx-ui progress::-moz-progress-bar {
+	background: var(--cx-accent);
+	border-radius: 99px;
+}
+
+#cx-import.cx-ui .cx-fill-progress {
+	max-width: none;
+	margin: 8px 0 16px;
+	padding: 0;
+	border: 0;
+	background: none;
+}
+
+/* ---------- tiles (filter the table) ---------- */
+#cx-import.cx-ui .cx-status__tiles {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+	gap: 10px;
+	margin: 12px 0 16px;
+}
+
+#cx-import.cx-ui .cx-status__tile {
+	padding: 12px 14px;
+	border: 1.5px solid var(--cx-line);
+	border-radius: 12px;
+	background: #fff;
+	color: var(--cx-ink);
+	box-shadow: none;
+}
+
+#cx-import.cx-ui button.cx-status__tile:hover,
+#cx-import.cx-ui button.cx-status__tile:focus-visible {
+	border-color: var(--cx-accent);
+}
+
+#cx-import.cx-ui button.cx-status__tile[aria-pressed="true"],
+#cx-import.cx-ui button.cx-status__tile.is-active {
+	border-color: var(--cx-accent);
+	background: #f6fbfd;
+	box-shadow: none;
+}
+
+#cx-import.cx-ui .cx-status__num {
+	font-size: 22px;
+	font-weight: 650;
+}
+
+#cx-import.cx-ui .cx-status__desc {
+	color: var(--cx-muted);
+	font-size: 13px;
+}
+
+/* ---------- tables (preview, history): no horizontal scroll at 1280 (SPEC §0) ---------- */
+#cx-import.cx-ui table.widefat,
+#cx-import.cx-ui table.cx-ui__table {
+	width: 100%;
+	border: 1px solid var(--cx-line);
+	border-collapse: separate;
+	border-spacing: 0;
+	border-radius: 12px;
+	overflow: hidden;
+	box-shadow: none;
+	background: #fff;
+	table-layout: auto;
+}
+
+#cx-import.cx-ui table.widefat th,
+#cx-import.cx-ui table.cx-ui__table th {
+	padding: 9px 12px;
+	border-bottom: 1px solid var(--cx-line);
+	color: var(--cx-muted);
+	font-size: 12.5px;
+	font-weight: 550;
+	text-align: left;
+}
+
+#cx-import.cx-ui table.widefat td,
+#cx-import.cx-ui table.cx-ui__table td {
+	padding: 9px 12px;
+	border-bottom: 1px solid var(--cx-line2);
+	color: var(--cx-ink);
+	font-size: 13.5px;
+	vertical-align: top;
+	overflow-wrap: break-word;
+}
+
+/* SKU, Type, prices and Date of the price list's preview stay on one line: next to a long Why the auto table would
+   otherwise squeeze them, and a code like "W-G1" may break after its hyphen (Norman, CX-SID-185). */
+#cx-import.cx-ui .cx-uvoz__table td.cx-uvoz__nw {
+	white-space: nowrap;
+}
+
+#cx-import.cx-ui table.widefat tr:last-child td,
+#cx-import.cx-ui table.cx-ui__table tr:last-child td {
+	border-bottom: 0;
+}
+
+#cx-import.cx-ui table.striped > tbody > :nth-child(odd) {
+	background: #fafbfc;
+}
+
+#cx-import.cx-ui .cx-ui__mono,
+#cx-import.cx-ui code {
+	font-family: ui-monospace, "SF Mono", Menlo, monospace;
+	font-size: 12.5px;
+	background: none;
+}
+
+#cx-import.cx-ui .cx-ui__muted {
+	color: var(--cx-muted);
+}
+
+/* ---------- done ---------- */
+#cx-import.cx-ui .cx-ui__done {
+	display: flex;
+	gap: 14px;
+	align-items: center;
+	padding: 14px 16px;
+	border-radius: 12px;
+	background: var(--cx-ok-soft);
+	color: var(--cx-ok);
+}
+
+#cx-import.cx-ui .cx-ui__done .cx-ui__st {
+	display: grid;
+	flex: none;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	border-radius: 50%;
+	background: #fff;
+	color: var(--cx-ok);
+	font-size: 17px;
+	font-weight: 700;
+}
+
+#cx-import.cx-ui .cx-ui__done p {
+	margin: 0;
+	color: inherit;
+	font-weight: 550;
+}
+
+/* ---------- below 1180 px: one column, no horizontal scroll (SPEC §0) ---------- */
+@media (max-width: 1180px) {
+	#cx-import.cx-ui .cx-uvoz__map {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	#cx-import.cx-ui .cx-ui__card,
+	#cx-import.cx-ui .sidrena-cijena-card {
+		padding: 20px;
+	}
+}

@@ -85,8 +85,11 @@ final class CX_Sidrena_History {
 	/** Context types that never change the source of the bazna. */
 	const KEEP_IZVOR = array( 'take_over', 'dates' );
 
-	/** Kinds of confirmed bulk writes. */
-	const CONFIRMATION_KINDS = array( 'import', 'status', 'cli' );
+	/**
+	 * Kinds of confirmed bulk writes. mjesto and usluge: a place's price list, or the webshop's services, imported from a
+	 * file (CX-SID-181); they write manual rows of the price list, never a product, so no product's source names them.
+	 */
+	const CONFIRMATION_KINDS = array( 'import', 'status', 'cli', 'mjesto', 'usluge' );
 
 	/**
 	 * Stack of contexts from with().
@@ -1151,6 +1154,23 @@ KEY started_at (started_at)
 		}
 
 		return (int) $wpdb->insert_id;
+	}
+
+	/**
+	 * Remove a confirmation record that was started and not finished, because what it confirmed was not written (CX-SID-181:
+	 * the price list or the place changed meanwhile, or the write failed). A finished record is never removed.
+	 *
+	 * @param int $id Record.
+	 * @return bool Whether it is gone.
+	 */
+	public static function drop_unfinished_confirmation( $id ) {
+		global $wpdb;
+
+		$suppress = $wpdb->suppress_errors( true );
+		$n        = $wpdb->query( $wpdb->prepare( 'DELETE FROM ' . self::confirmations_table() . ' WHERE id = %d AND finished_at IS NULL', (int) $id ) ); // phpcs:ignore WordPress.DB
+		$wpdb->suppress_errors( $suppress );
+
+		return 1 === (int) $n;
 	}
 
 	/**

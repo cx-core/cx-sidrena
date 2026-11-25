@@ -343,20 +343,33 @@
 			i.textContent = text || '';
 			i.hidden = !text;
 		};
+		// The step bar above the sections (CX-SID-185): File, Preview, Confirm. Preview and Confirm open together, so both
+		// are current then; once an import runs or is done, every step is done. While one runs, the choice at the top is
+		// locked (SPEC-UVOZ §1): admin-uvoz-cjenika.js reads the root's is-running.
+		var steps = $$('[data-steps="bazne"] li', root);
 		var show = function (names) {
 			$$('.cx-import__step', root).forEach(function (s) {
 				s.hidden = names.indexOf(s.dataset.step) < 0;
 			});
+			var at = names.indexOf('running') >= 0 || names.indexOf('done') >= 0 ? 3 : (names.indexOf('preview') >= 0 ? 1 : 0);
+			steps.forEach(function (li, i) {
+				li.classList.toggle('is-done', i < at);
+				li.classList.toggle('is-on', i >= at && (at === 1 ? i <= 2 : i === at));
+			});
+			root.classList.toggle('is-running', names.indexOf('running') >= 0);
 		};
 		var waits = function (row) {
 			return !S.datesSaved && row.new && (row.new.date_from === 'category' || row.new.date_from === 'day_added');
 		};
-		var dateCell = function (v) {
+		// shown (CX-SID-177): the amount as the price list writes it (with VAT), when the file is our price list and that
+		// differs from the stored amount. now/new stay the stored ones; the screen shows the price list's (SPEC 4032).
+		var dateCell = function (v, shown) {
 			if (!v) {
 				return T.none;
 			}
 			var suffix = v.date_from === 'category' ? ' ' + T.fromCategory : (v.date_from === 'day_added' ? ' ' + T.dayAdded : '');
-			return fmtPrice(v.bazna) + ' · ' + fmtDate(v.date) + suffix;
+			var amount = shown !== undefined && shown !== null && shown !== '' ? (typeof shown === 'object' ? shown.bazna : shown) : v.bazna;
+			return fmtPrice(amount) + ' · ' + fmtDate(v.date) + suffix;
 		};
 		// CX-SID-122, Norman T4: one line per brand, EAN or barcode the price list then shows differently.
 		var codeLines = function (list, fmt) {
@@ -443,13 +456,13 @@
 				};
 				if (list === 'update') {
 					// A row that changes only codes: its bazna stays ("no change").
-					var newCell = el('td', {}, [r.bazna_same ? T.noChange : dateCell(r.new)]);
+					var newCell = el('td', {}, [r.bazna_same ? T.noChange : dateCell(r.new, r.shown && r.shown.new)]);
 					if (waits(r)) {
 						newCell.appendChild(el('span', { class: 'cx-import__waits', text: ' ' + T.waits }));
 					}
 					cells = [product()];
 					if (S.hasBazna) {
-						cells.push(el('td', { text: dateCell(r.now) }), newCell);
+						cells.push(el('td', { text: dateCell(r.now, r.shown && r.shown.now) }), newCell);
 					}
 					if (S.hasLowest) {
 						cells.push(el('td', { class: 'cx-import__lowest', text: lowestCell(r.lowest) }));
@@ -458,7 +471,7 @@
 						cells.push(codeLines(r.codes, 'change'));
 					}
 				} else if (list === 'unchanged') {
-					cells = [product(), el('td', { text: dateCell(r.now) })];
+					cells = [product(), el('td', { text: dateCell(r.now, r.shown && r.shown.now) })];
 					if (S.hasCodes) {
 						// Rook 3348 (1): a code that loses to WooCommerce's says so.
 						cells.push(codeLines(r.codes_kept, 'kept'));
@@ -477,34 +490,22 @@
 			pager($('.cx-import__pages', step('preview')), res.data.page, res.data.pages, function (p) {
 				loadList(list, p);
 			});
+			// One sentence above the table when the amounts are the price list's (with VAT), not the stored ones (177).
+			var note = $('.cx-import__shown-note', root);
+			if (note) {
+				var anyShown = res.data.rows.some(function (r) {
+					return !!r.shown;
+				});
+				note.textContent = anyShown ? T.shownNote || '' : '';
+				note.hidden = !anyShown || !T.shownNote;
+			}
 			table.dataset.shown = list + ':' + res.data.page;
 		};
 
-		var loadHistory = async function (page) {
-			var res = await post('cx_sidrena_import_history', { page: page || 1 }, C.importNonce).catch(function () {
-				return { ok: false, data: {} };
-			});
-			var body = $('.cx-import__history-table tbody', root);
-			body.textContent = '';
-			if (!res.ok) {
-				return;
-			}
-			if (!res.data.rows.length) {
-				body.appendChild(el('tr', {}, [el('td', { colspan: '6', text: T.noHistory })]));
-			}
-			res.data.rows.forEach(function (r) {
-				body.appendChild(el('tr', {}, [
-					el('td', { text: r.at }),
-					el('td', { text: r.user }),
-					el('td', { text: r.confirmed_by + ', ' + fmtDate(r.confirmed_on) }),
-					// An import still running has no final count yet.
-					el('td', { text: r.finished === false ? T.inProgress : String(r.updated) }),
-					el('td', { text: r.file }),
-					el('td', {}, [el('code', { title: r.sha256, text: r.short })])
-				]));
-			});
-			pager($('.cx-import__history-pages', root), page || 1, res.data.pages, loadHistory);
-			body.dataset.loaded = String(parseInt(body.dataset.loaded || '0', 10) + 1);
+		// One History for every kind of import (CX-SID-185): admin-uvoz-cjenika.js draws it from the bulk import's
+		// sidrena_cijena_import_history, which lists these imports too. Here only the moments to redraw it are said.
+		var loadHistory = function (page) {
+			document.dispatchEvent(new CustomEvent('cx-import:history', { detail: { page: page || 1 } }));
 		};
 
 		// The previous file's table goes as soon as another file is started, not when the new preview answers (Argus O4).

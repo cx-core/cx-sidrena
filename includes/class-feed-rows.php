@@ -456,6 +456,10 @@ class CX_Sidrena_Feed_Rows {
 			$row['maloprodajna_cijena']    = $this->format_feed_amount( $meta->get_price_to_display( $product, $this->active_raw_price( $product ) ) );
 			$row['naziv_posebnog_oblika']  = $meta->public_oblik_name( $product );
 			$row['sidrena_cijena']         = $this->format_feed_amount( $meta->get_price_to_display( $product, $sidrena ) );
+		} else {
+			// The file without bazna cijena has no id column: the admin's download names its variations by this
+			// (CX_Sidrena_Export::handle_download(), CX-SID-153). Not written to the file.
+			$row['woo_id'] = (string) $product->get_id();
 		}
 
 		$rows[] = $row;
@@ -507,6 +511,26 @@ class CX_Sidrena_Feed_Rows {
 		$sku = (string) $product->get_sku();
 		if ( '' !== $sku ) {
 			return $sku;
+		}
+
+		$code  = 'ID-' . (int) $product->get_id();
+		$taken = $this->id_codes_taken();
+
+		return isset( $taken[ strtolower( $code ) ] ) ? '' : $code;
+	}
+
+	/**
+	 * A product's šifra in the files the owner downloads from the admin (CX-SID-153): sifra(), except for a variation
+	 * without a SKU of its own, which gets ID-<its id> (none when some product's SKU is that text, as in sifra()). In the
+	 * public price list such a variation shows its parent's SKU (WooCommerce's rule, kept: U13), which Import matches to
+	 * the variable parent; the admin's file is the one the owner brings back on Import, so it names the variation.
+	 *
+	 * @param WC_Product $product Product or variation.
+	 * @return string
+	 */
+	public function admin_sifra( $product ) {
+		if ( ! $product instanceof WC_Product_Variation || '' !== (string) $product->get_sku( 'edit' ) ) {
+			return $this->sifra( $product );
 		}
 
 		$code  = 'ID-' . (int) $product->get_id();

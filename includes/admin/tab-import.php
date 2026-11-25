@@ -1,9 +1,14 @@
 <?php
 /**
- * Import tab markup (spec §1.5, CX-SID-42): Upload → Preview → Confirm → progress → Done, and History. The screen only
- * calls the import's endpoints (CX_Sidrena_Import, CX-SID-22) from assets/js/admin-bazna.js; it never writes. Nothing
- * changes before Confirm, and the file confirmed is the file previewed (its sha256 is sent back). An import keeps
- * running without this page (WP-cron): on load the tab asks for one and follows it, and it can be stopped.
+ * Import tab markup (spec §1.5, CX-SID-42; new look CX-SID-185, SPEC-UVOZ 1d320dd3). At the top the owner picks what
+ * the file holds:
+ * - Bazna cijene of products: Upload → Preview → Confirm → progress → Done. The screen only calls the import's
+ *   endpoints (CX_Sidrena_Import, CX-SID-22) from assets/js/admin-bazna.js; it never writes. Nothing changes before
+ *   Confirm, and the file confirmed is the file previewed (its sha256 is sent back). An import keeps running without
+ *   this page (WP-cron): on load the tab asks for one and follows it, and it can be stopped.
+ * - Price list from a file (CX-SID-181): a place of sale's whole price list, or the webshop's services. Its steps are
+ *   drawn by assets/js/admin-uvoz-cjenika.js from the bulk import's endpoints; nothing is written before Confirm.
+ * One History lists both kinds. The look is assets/css/admin-import.css, every rule under #cx-import.cx-ui.
  *
  * @package CX_Sidrena
  */
@@ -13,8 +18,29 @@ defined( 'ABSPATH' ) || exit;
 $dates_saved  = class_exists( 'CX_Sidrena_Dates' ) && CX_Sidrena_Dates::dates_saved();
 $settings_url = add_query_arg( array( 'page' => 'sidrena-cijena', 'tab' => 'settings' ), admin_url( 'admin.php' ) );
 $template_url = wp_nonce_url( admin_url( 'admin-post.php?action=cx_sidrena_import_template' ), 'cx_sidrena_import_template' );
+// Which choice opens (SPEC §5): ?uvoz=cjenik opens Price list from a file, anything else Bazna cijene, as before.
+$uvoz_choice = isset( $_GET['uvoz'] ) && 'cjenik' === sanitize_key( wp_unslash( $_GET['uvoz'] ) ) ? 'cjenik' : 'bazne'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 ?>
-<div class="cx-import" id="cx-import">
+<div class="cx-import cx-ui" id="cx-import" data-choice="<?php echo esc_attr( $uvoz_choice ); ?>">
+
+	<section class="cx-ui__card cx-ui__intro">
+		<h2><?php echo esc_html__( 'Import from a file', 'cx-sidrena' ); ?></h2>
+		<p class="cx-ui__lead"><?php echo esc_html__( 'You see every change first, and nothing is written until someone confirms it by name. WooCommerce products\' prices and stock never change here.', 'cx-sidrena' ); ?></p>
+		<div class="cx-ui__seg" role="radiogroup" aria-label="<?php echo esc_attr__( 'What the file holds', 'cx-sidrena' ); ?>">
+			<label><input type="radio" name="cx-uvoz-choice" value="bazne" <?php checked( 'bazne', $uvoz_choice ); ?> /><span><?php echo esc_html__( 'Bazna cijene of products', 'cx-sidrena' ); ?></span></label>
+			<label><input type="radio" name="cx-uvoz-choice" value="cjenik" <?php checked( 'cjenik', $uvoz_choice ); ?> /><span><?php echo esc_html__( 'Price list from a file', 'cx-sidrena' ); ?></span></label>
+		</div>
+		<p class="cx-ui__hint" data-hint="bazne"<?php echo 'bazne' === $uvoz_choice ? '' : ' hidden'; ?>><?php echo esc_html__( 'The bazna cijena and its date for products in WooCommerce, matched by SKU.', 'cx-sidrena' ); ?></p>
+		<p class="cx-ui__hint" data-hint="cjenik"<?php echo 'cjenik' === $uvoz_choice ? '' : ' hidden'; ?>><?php echo esc_html__( 'The price list of a shop or other place of sale from your till, or the webshop\'s price list of services: goods and services, with their prices.', 'cx-sidrena' ); ?></p>
+	</section>
+
+	<div class="cx-ui__panel" data-panel="bazne"<?php echo 'bazne' === $uvoz_choice ? '' : ' hidden'; ?>>
+
+	<ol class="cx-ui__steps" data-steps="bazne" aria-hidden="true">
+		<li class="is-on" data-step-of="upload"><span class="n">1</span><?php echo esc_html__( 'File', 'cx-sidrena' ); ?></li>
+		<li data-step-of="preview"><span class="n">2</span><?php echo esc_html__( 'Preview', 'cx-sidrena' ); ?></li>
+		<li data-step-of="confirm"><span class="n">3</span><?php echo esc_html__( 'Confirm', 'cx-sidrena' ); ?></li>
+	</ol>
 
 	<section class="sidrena-cijena-card cx-import__step" data-step="upload">
 		<div class="sidrena-cijena-card__head">
@@ -28,10 +54,10 @@ $template_url = wp_nonce_url( admin_url( 'admin-post.php?action=cx_sidrena_impor
 			</p>
 		<?php endif; ?>
 		<form class="cx-import__upload" id="cx-import-upload" enctype="multipart/form-data">
-			<p>
+			<div class="cx-ui__drop">
 				<label for="cx-import-file"><?php echo esc_html__( 'File (CSV)', 'cx-sidrena' ); ?></label><br />
 				<input type="file" id="cx-import-file" name="file" accept=".csv,text/csv" />
-			</p>
+			</div>
 			<p>
 				<button type="submit" class="button button-primary"><?php echo esc_html__( 'Upload', 'cx-sidrena' ); ?></button>
 				<a class="button" href="<?php echo esc_url( $template_url ); ?>"><?php echo esc_html__( 'Download template', 'cx-sidrena' ); ?></a>
@@ -64,6 +90,8 @@ $template_url = wp_nonce_url( admin_url( 'admin-post.php?action=cx_sidrena_impor
 			<h2 class="cx-import__preview-head" tabindex="-1"><?php echo esc_html__( 'Preview', 'cx-sidrena' ); ?></h2>
 			<p class="cx-import__file"></p>
 		</div>
+		<?php // CX-SID-177: the file is our price list and the shop enters prices without VAT (T78, above the tiles). ?>
+		<p class="cx-ui__hint cx-import__shown-note" hidden></p>
 		<div class="cx-status__tiles cx-import__counts" role="group" aria-label="<?php echo esc_attr__( 'Show rows', 'cx-sidrena' ); ?>">
 			<?php
 			$lists = array(
@@ -146,6 +174,12 @@ $template_url = wp_nonce_url( admin_url( 'admin-post.php?action=cx_sidrena_impor
 		</p>
 	</section>
 
+	</div>
+
+	<?php // Price list from a file (CX-SID-181): drawn by admin-uvoz-cjenika.js from cxUvoz (targets, texts). ?>
+	<div class="cx-ui__panel cx-uvoz" data-panel="cjenik" id="cx-uvoz"<?php echo 'cjenik' === $uvoz_choice ? '' : ' hidden'; ?>></div>
+
+	<?php // One History for every kind of import (CX-SID-185), drawn by admin-uvoz-cjenika.js from sidrena_cijena_import_history. ?>
 	<section class="sidrena-cijena-card cx-import__history" id="cx-import-history">
 		<div class="sidrena-cijena-card__head">
 			<h2><?php echo esc_html__( 'History', 'cx-sidrena' ); ?></h2>
@@ -154,6 +188,7 @@ $template_url = wp_nonce_url( admin_url( 'admin-post.php?action=cx_sidrena_impor
 		<table class="widefat striped cx-import__history-table">
 			<thead><tr>
 				<th scope="col"><?php echo esc_html__( 'Date', 'cx-sidrena' ); ?></th>
+				<th scope="col"><?php echo esc_html__( 'What', 'cx-sidrena' ); ?></th>
 				<th scope="col"><?php echo esc_html__( 'Imported by', 'cx-sidrena' ); ?></th>
 				<th scope="col"><?php echo esc_html__( 'Confirmed by', 'cx-sidrena' ); ?></th>
 				<th scope="col"><?php echo esc_html__( 'Imported', 'cx-sidrena' ); ?></th>

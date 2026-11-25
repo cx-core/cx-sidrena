@@ -225,7 +225,14 @@ $fmt_time  = function ( $ts ) {
 		</p>
 	<?php endif; ?>
 
-	<?php foreach ( CX_Sidrena_Poslovnice::instance()->problems() as $place ) : ?>
+	<?php if ( CX_Sidrena_Settings::instance()->is_isti_cjenik() ) : ?>
+		<?php // CX-SID-113: one price list for all places of sale; the places' own lines do not apply. Norman's T86: what is on and what it means, a state, not a task (blue edge). ?>
+		<p class="cx-status__line cx-status__line--info" id="cx-isti-status">
+			<?php echo esc_html__( 'The same price list for all places of sale is on: the webshop and every place of sale publish one price list.', 'cx-sidrena' ); ?>
+			<a href="<?php echo esc_url( $settings_url . '#cx-isti-cjenik' ); ?>"><?php echo esc_html__( 'Open Settings', 'cx-sidrena' ); ?></a>
+		</p>
+	<?php endif; ?>
+	<?php foreach ( CX_Sidrena_Settings::instance()->is_isti_cjenik() ? array() : CX_Sidrena_Poslovnice::instance()->problems() as $place ) : ?>
 		<?php
 		// CX-SID-74: what a place of sale lacks for its price list (texts Norman 3178, 3182; Kai 3191). A code shared with
 		// the webshop or another place is red: their price lists share one archive and one storage number.

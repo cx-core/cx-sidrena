@@ -721,6 +721,123 @@ class CX_Sidrena_Poslovnice {
 	}
 
 	/**
+	 * The first place (in the stored order) with rows of its own: manual rows with its code (imported, CX-SID-181, or
+	 * typed in Additional items) or rows by agreement (CX-SID-76). Such a place has its own prices, so the price list of
+	 * all places of sale cannot be switched on (CX-SID-113, T75). Rows of the webshop never count.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	public function first_with_own_rows() {
+		$codes   = array();
+		$catalog = CX_Sidrena_Catalog::instance();
+		foreach ( $catalog->all() as $row ) {
+			$codes[ $catalog->row_poslovnica( $row ) ] = true;
+		}
+		$upit = CX_Sidrena_Upit::instance();
+		foreach ( $upit->all() as $row ) {
+			$codes[ $upit->row_poslovnica( $row ) ] = true;
+		}
+		foreach ( $this->read_fresh()['rows'] as $row ) {
+			if ( '' !== (string) $row['oznaka'] && isset( $codes[ (string) $row['oznaka'] ] ) ) {
+				return $row;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Whether a place shows the webshop's products: all of them (dodjela svi), or picked ones (CX-SID-181, U8). A place
+	 * "odabrani" with none picked shows only rows of its own.
+	 *
+	 * @param array<string, mixed> $row Outlet.
+	 * @return bool
+	 */
+	public function carries_web_products( $row ) {
+		return 'svi' === $this->dodjela( $row ) || ! empty( $row['products'] );
+	}
+
+	/**
+	 * What a confirmation compares a place by (CX-SID-181): its id, code, dodjela and picked products as stored now, past
+	 * every cache, and the raw value of the whole list they were read from. null fingerprint: no such place.
+	 *
+	 * @param string $oznaka Place code (letter case does not count, code_key()).
+	 * @return array{fingerprint: string|null, raw: string|null, row: array<string, mixed>|null}
+	 */
+	public function import_fingerprint( $oznaka ) {
+		$fresh = $this->read_fresh();
+		foreach ( $fresh['rows'] as $row ) {
+			if ( self::code_key( $row['oznaka'] ) === self::code_key( $oznaka ) ) {
+				$products = array_map( 'strval', (array) $row['products'] );
+				sort( $products );
+				return array(
+					'fingerprint' => hash( 'sha256', (string) wp_json_encode( array( (string) $row['id'], (string) $row['oznaka'], $this->dodjela( $row ), $products ) ) ),
+					'raw'         => $fresh['raw'],
+					'row'         => $row,
+				);
+			}
+		}
+
+		return array(
+			'fingerprint' => null,
+			'raw'         => $fresh['raw'],
+			'row'         => null,
+		);
+	}
+
+	/**
+	 * An imported price list makes a place show only its own rows (CX-SID-181, U8 v2): dodjela odabrani and no product
+	 * picked, also picks kept hidden under "svi" (0.3.0 keeps them for a way back, :635). Its stock and everything else
+	 * stay. One write, of the list as read in $raw and only if the table still holds $raw (write_if_unchanged), never a
+	 * list read at the start of a longer job (CX-SID-129).
+	 *
+	 * @param string $oznaka Place code.
+	 * @param string $raw    The list's raw value the caller checked.
+	 * @return string|false The raw value written, or false when the list changed meanwhile or the place is gone.
+	 */
+	public function switch_to_own_rows( $oznaka, $raw ) {
+		$fresh = $this->read_fresh();
+		if ( null === $raw || $fresh['raw'] !== $raw ) {
+			return false;
+		}
+		$rows  = $fresh['rows'];
+		$found = false;
+		foreach ( $rows as $i => $row ) {
+			if ( self::code_key( $row['oznaka'] ) === self::code_key( $oznaka ) ) {
+				$rows[ $i ]['dodjela']  = 'odabrani';
+				$rows[ $i ]['products'] = array();
+				$found                  = true;
+			}
+		}
+		if ( ! $found || ! $this->write_if_unchanged( $rows, $raw ) ) {
+			return false;
+		}
+		$this->cached_all = null;
+
+		return maybe_serialize( $rows );
+	}
+
+	/**
+	 * Undo switch_to_own_rows() when the price list it went with could not be written: the list back to the exact value
+	 * it had, only if the table still holds what the switch wrote.
+	 *
+	 * @param string $before The raw value before the switch.
+	 * @param string $after  The raw value the switch wrote.
+	 * @return bool
+	 */
+	public function undo_switch( $before, $after ) {
+		global $wpdb;
+
+		$done = $wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s", $before, self::OPTION_KEY, $after ) ); // phpcs:ignore WordPress.DB
+		wp_cache_delete( self::OPTION_KEY, 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
+		$this->cached_all = null;
+
+		return 1 === (int) $done;
+	}
+
+	/**
 	 * The places as stored in the table now, past every cache, and the raw value they were read from.
 	 *
 	 * @return array{rows: array<int, array<string, mixed>>, raw: string|null}

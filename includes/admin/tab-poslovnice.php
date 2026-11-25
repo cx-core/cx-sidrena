@@ -18,7 +18,22 @@ defined( 'ABSPATH' ) || exit;
 		$places = CX_Sidrena_Poslovnice::instance();
 		$rows   = $places->form_rows();
 		$loaded = array();
+		// When and how many items a place's price list was imported from a file (CX-SID-181 targets(), for T72 on the
+		// form, CX-SID-185). Only shown: the form never sends it back.
+		$imported = null;
+		if ( CX_Sidrena_Plugin::woocommerce_active() && class_exists( 'CX_Sidrena_Bulk_Import' ) && method_exists( CX_Sidrena_Bulk_Import::instance(), 'targets' ) ) {
+			$imported = array();
+			$targets = CX_Sidrena_Admin::targets_for_screen( CX_Sidrena_Bulk_Import::instance()->targets() );
+			foreach ( isset( $targets['places'] ) && is_array( $targets['places'] ) ? $targets['places'] : array() as $target ) {
+				if ( isset( $target['oznaka'] ) ) {
+					$imported[ strtoupper( (string) $target['oznaka'] ) ] = isset( $target['imported'] ) ? $target['imported'] : null;
+				}
+			}
+		}
 		foreach ( $rows as $i => $row ) {
+			if ( null !== $imported ) {
+				$rows[ $i ]['imported'] = isset( $imported[ strtoupper( (string) $row['oznaka'] ) ] ) ? $imported[ strtoupper( (string) $row['oznaka'] ) ] : null;
+			}
 			$rows[ $i ]['pohrana'] = $archive->next_pohrana( $row['oznaka'], $row );
 			// Manual rows of its own (services, rows by agreement): such a place has a price list with no product, so
 			// "Selected" with nothing picked is not an error for it (Norman, M4 on S10). Rows by agreement alone count
@@ -86,6 +101,21 @@ defined( 'ABSPATH' ) || exit;
 			<input type="hidden" name="sidrena_cijena_poslovnice_ok" id="sidrena-poslovnice-ok" value="" />
 			<input type="hidden" name="sidrena_cijena_poslovnice_cleared" id="sidrena-poslovnice-cleared" value="" />
 
+			<?php if ( array() !== $rows ) : ?>
+				<?php // CX-SID-113 (Norman, SPEC-UVOZ §6, T73, T74, T76): only with a place; _shown says this page has the box. ?>
+				<section class="sidrena-cijena-card sidrena-isti-cjenik" id="cx-isti-cjenik">
+					<input type="hidden" name="sidrena_cijena_isti_cjenik_shown" value="1" />
+					<p>
+						<label for="sidrena_cijena_isti_cjenik">
+							<input type="checkbox" id="sidrena_cijena_isti_cjenik" name="sidrena_cijena_isti_cjenik" value="yes"<?php checked( $settings->is_isti_cjenik() ); ?> />
+							<?php echo esc_html__( 'The same price list for all places of sale', 'cx-sidrena' ); ?>
+						</label>
+					</p>
+					<p class="description"><?php echo esc_html__( 'Turn this on only if every place of sale has the same prices as the webshop. Then one price list is published for all of them, with ZA_SVA_PRODAJNA_MJESTA in its name. The plugin does not check the prices in your shops.', 'cx-sidrena' ); ?></p>
+					<p class="description"><?php echo esc_html__( "While this is on, every place of sale publishes the webshop's whole price list, whatever products were selected for it.", 'cx-sidrena' ); ?></p>
+				</section>
+			<?php endif; ?>
+
 			<section class="sidrena-cijena-card">
 				<div class="sidrena-cijena-card__head">
 					<h2><?php echo esc_html__( 'Webshop', 'cx-sidrena' ); ?></h2>
@@ -117,7 +147,8 @@ defined( 'ABSPATH' ) || exit;
 							sprintf(
 								/* translators: %s: the name of the next price list file */
 								__( 'Next official name: %s', 'cx-sidrena' ),
-								$export->legal_filename()
+								// One price list for all places (CX-SID-113): its name, with the webshop's number.
+								$settings->is_isti_cjenik() ? $export->legal_filename( '', 0, 0, CX_Sidrena_Archive::ALL_PLACES ) : $export->legal_filename()
 							)
 						);
 						?>

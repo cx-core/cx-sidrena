@@ -196,6 +196,13 @@
 			var products = idList(row.products);
 			var locked = !!row.objavljeno;
 			var dodjela = "svi" === row.dodjela ? "svi" : "odabrani";
+			// CX-SID-185 (T81): with WooCommerce a saved place on "odabrani" with no product and rows of its own is "No
+			// webshop products". It is stored as it was (odabrani, 0 products); only the form shows it as the third choice
+			// (SPEC-UVOZ §4.0). Without rows of its own it publishes nothing, so it stays on Odabrani with an empty list
+			// and Save says M4, as before 185 (Rook U16, Argus/Norman 22.11.).
+			if (woo && ("bez" === row.dodjela || ("odabrani" === dodjela && !products.length && !!row.id && !!row.vlastiti))) {
+				dodjela = "bez";
+			}
 			var $card = $("<article>", { class: "sidrena-poslovnica" });
 			$card.data("row", {
 				id: row.id || "",
@@ -203,6 +210,7 @@
 				objavljeno: locked,
 				oznaka: row.stored_oznaka !== undefined ? row.stored_oznaka : row.oznaka || "",
 				vlastiti: !!row.vlastiti,
+				imported: row.imported || null,
 			});
 			$("<input>", { type: "hidden", class: "js-id", value: row.id || "" }).appendTo($card);
 			var $grid = $("<div>", { class: "sidrena-poslovnica__grid" }).appendTo($card);
@@ -228,10 +236,14 @@
 			var group = "sidrena-p" + n + "-dodjela";
 			var $set = $("<fieldset>", { class: "sidrena-poslovnica__products" }).appendTo($grid);
 			$("<legend>").text(i18n.outletProducts || "").appendTo($set);
-			[
+			var opts = [
 				["svi", i18n.outletAll],
 				["odabrani", i18n.outletPicked],
-			].forEach(function (opt) {
+			];
+			if (woo) {
+				opts.push(["bez", i18n.outletNone]);
+			}
+			opts.forEach(function (opt) {
 				var $label = $("<label>", { class: "sidrena-poslovnica__choice" });
 				$("<input>", {
 					type: "radio",
@@ -240,17 +252,27 @@
 					id: group + "-" + opt[0],
 					value: opt[0],
 					checked: opt[0] === dodjela,
+					// Only a place with its own rows may have no webshop product: else it would publish a price list
+					// with nothing in it (404). A place shown on it keeps it (SPEC-UVOZ §4.0, Argus/Rook t21).
+					disabled: "bez" === opt[0] && "bez" !== dodjela && !row.vlastiti,
 				}).appendTo($label);
 				$label.append(document.createTextNode(" " + (opt[1] || "")));
 				$set.append($label);
 			});
+			if (woo) {
+				// Under the third choice: why it is off (T85, T85n), or what it means (T82), with the way to Import (T71).
+				$("<p>", { class: "description sidrena-poslovnica__none js-none-note", id: group + "-none" }).appendTo($set);
+			}
 			var $picker = $("<div>", { class: "sidrena-poslovnica__picker js-picker", hidden: "odabrani" !== dodjela }).appendTo($set);
 			productControl(products, n).appendTo($picker);
 			$("<span>", { class: "cx-field__msg js-msg", id: group + "-msg", hidden: true }).appendTo($picker);
 			$("<span>", { class: "description", id: group + "-help" })
 				.text(woo ? i18n.outletSearchHelp || "" : i18n.outletProductsHelp || "")
 				.appendTo($picker);
-			$("<p>", { class: "description sidrena-poslovnica__prices" }).text(i18n.outletPrices || "").appendTo($set);
+			$("<p>", { class: "description sidrena-poslovnica__prices js-prices" }).text(i18n.outletPrices || "").appendTo($set);
+			if (woo) {
+				noteTexts($card);
+			}
 
 			$("<p>", { class: "sidrena-poslovnica__actions" })
 				.append(
@@ -280,8 +302,62 @@
 			});
 		}
 
+		// The choice on the form: svi, odabrani, or (with WooCommerce) bez, sent as odabrani with no product.
 		function dodjelaOf($card) {
-			return "svi" === $card.find(".js-dodjela:checked").val() ? "svi" : "odabrani";
+			var v = $card.find(".js-dodjela:checked").val();
+			return "svi" === v || "bez" === v ? v : "odabrani";
+		}
+
+		function fmtCount(text, args) {
+			var next = 0;
+			return String(text || "").replace(/%(\d+\$)?[sd]/g, function (m, pos) {
+				var k = pos ? parseInt(pos, 10) - 1 : next++;
+				return args[k] == null ? "" : String(args[k]);
+			});
+		}
+
+		function importLink(row) {
+			if (!row.id || !row.oznaka || !sidrenaCijenaAdmin.importUrl) {
+				return null;
+			}
+			return $("<a>", { href: sidrenaCijenaAdmin.importUrl + "&za=" + encodeURIComponent(row.oznaka) }).text(i18n.outletImportLink || "");
+		}
+
+		// CX-SID-185 (SPEC-UVOZ §4.0, §6): the sentence under the third choice and the one about the place's prices, by
+		// the choice on the form: the webshop's products (T70), its own items only (T82), or imported from a file (T72).
+		function noteTexts($card) {
+			var row = $card.data("row") || {};
+			var choice = dodjelaOf($card);
+			var $none = $card.find(".js-none-note");
+			var $prices = $card.find(".js-prices");
+			if (sidrenaCijenaAdmin.istiCjenik) {
+				// The same price list for all places is saved on (CX-SID-113): every place publishes the webshop's whole
+				// list (T76 above says so), and a place's own price list is refused (T77). Nothing about one here (Norman).
+				$none.empty().prop("hidden", true);
+				$prices.empty().prop("hidden", true);
+				return;
+			}
+			var off = $card.find(".js-dodjela[value=bez]").prop("disabled");
+			$none.empty().prop("hidden", !off);
+			if (off) {
+				$none.text(row.id ? (i18n.outletNoneLocked || "") + " " : i18n.outletNoneNew || "");
+				if (row.id) {
+					$none.append(importLink(row));
+				}
+			}
+			var text;
+			if ("bez" === choice) {
+				text = row.imported && row.imported.on
+					? fmtCount(i18n.outletPricesImported, [row.imported.on, row.imported.items || 0])
+					: i18n.outletNoneHelp || "";
+			} else {
+				text = i18n.outletPricesWeb || "";
+			}
+			$prices.text(text + " ");
+			var link = importLink(row);
+			if (link) {
+				$prices.append(link);
+			}
 		}
 
 		// What the picker holds now (also while "svi" is chosen: going back to "odabrani" keeps it).
@@ -315,7 +391,8 @@
 		// difference to its fresh list; for "svi" products: [] and the server keeps the stored picks.
 		function collectCard($card) {
 			var row = $card.data("row") || {};
-			var dodjela = dodjelaOf($card);
+			var choice = dodjelaOf($card);
+			var dodjela = "svi" === choice ? "svi" : "odabrani";
 			var out = {
 				id: $card.find(".js-id").val() || "",
 				naziv: $card.find(".js-naziv").val() || "",
@@ -326,8 +403,12 @@
 				dodjela: dodjela,
 				products: [],
 			};
-			if ("odabrani" === dodjela) {
+			if ("odabrani" === choice) {
 				out.products = pickedProducts($card);
+				out.products_loaded = row.loaded || [];
+			} else if ("bez" === choice) {
+				// No webshop product: none sent, and every saved pick as shown, so the server's difference
+				// (class-poslovnice.php, keep − (loaded − products)) leaves 0, also the picks hidden under "svi" (Rook t13).
 				out.products_loaded = row.loaded || [];
 			}
 			return out;
@@ -496,6 +577,7 @@
 					$card: $card,
 					row: row,
 					sent: sent,
+					choice: dodjelaOf($card),
 					id: sent.id,
 					key: key,
 					naziv: sent.naziv.trim(),
@@ -552,7 +634,7 @@
 					wrong.push($code);
 				}
 				// A place with manual rows of its own has a price list without any product (Norman, M4).
-				if ("odabrani" === c.sent.dodjela && !c.sent.products.length && !c.row.vlastiti) {
+				if ("odabrani" === c.choice && !c.sent.products.length && !c.row.vlastiti) {
 					var $target = productsTarget(c.$card);
 					setMsg($target, c.$card.find(".js-picker > .js-msg"), i18n.outletNoProducts || "");
 					c.$card.find(".js-picker > .js-msg").prop("hidden", false);
@@ -601,7 +683,7 @@
 					adresa: sent.adresa,
 					oznaka: sent.oznaka,
 					pohrana: sent.pohrana,
-					dodjela: sent.dodjela,
+					dodjela: dodjelaOf($card),
 					products: pickedProducts($card),
 					products_loaded: row.loaded || [],
 					labels: pickedLabels($card),
@@ -675,14 +757,18 @@
 			}
 		}
 
-		// cx_outlet_error=adresa:N|vrsta:N|oznaka:N|zauzeto (N = the card's place in the sent list).
+		// cx_outlet_error=adresa:N|vrsta:N|oznaka:N|zauzeto (N = the card's place in the sent list), or isti:CODE (CX-SID-113:
+		// the same price list for all places refused while the place CODE has its own prices).
 		function parseRefusal(text) {
 			var out = [];
 			String(text || "")
 				.split("|")
 				.forEach(function (part) {
 					var m = /^(adresa|vrsta|oznaka):(\d+)$/.exec(part.trim());
-					if (m) {
+					var isti = /^isti:([A-Za-z0-9-]+)$/.exec(part.trim());
+					if (isti) {
+						out.push({ reason: "isti", code: isti[1] });
+					} else if (m) {
 						out.push({ reason: m[1], n: parseInt(m[2], 10) });
 					} else if ("oznaka:webshop" === part.trim()) {
 						out.push({ reason: "webshop" });
@@ -699,6 +785,26 @@
 			if ($refused.length && text) {
 				$refused.text(text).prop("hidden", false);
 			}
+		}
+
+		// T75 (Norman, CX-SID-113) with the place's name as stored (its code when it has none, or when it is not shown).
+		function istiText(reasons, rows) {
+			var hit = null;
+			reasons.forEach(function (r) {
+				if (!hit && "isti" === r.reason) {
+					hit = r;
+				}
+			});
+			if (!hit) {
+				return "";
+			}
+			var name = hit.code;
+			(rows || []).forEach(function (row) {
+				if (row && String(row.oznaka) === hit.code && row.naziv) {
+					name = String(row.naziv);
+				}
+			});
+			return fmt(i18n.istiRefused || "", [name]);
 		}
 
 		// The page after a refused save: what was sent comes back, each reason next to its place (S1), or, when only
@@ -722,6 +828,7 @@
 					// What the page knows now: published since (D1), the real next storage number.
 					row.objavljeno = !!cur.objavljeno;
 					row.vlastiti = !!cur.vlastiti;
+					row.imported = cur.imported || null;
 					row.stored_oznaka = cur.oznaka;
 					row.pohrana_min = cur.pohrana;
 					row.pohrana = Math.max(parseInt(c.pohrana, 10) || 1, parseInt(cur.pohrana, 10) || 1);
@@ -748,8 +855,9 @@
 			var state = cardsState();
 			var codes = codeProblems(state);
 			var other = false;
+			var isti = istiText(reasons, rows);
 			reasons.forEach(function (r) {
-				if ("zauzeto" === r.reason) {
+				if ("zauzeto" === r.reason || "isti" === r.reason) {
 					return;
 				}
 				other = true;
@@ -794,7 +902,7 @@
 			var webToo = reasons.some(function (r) {
 				return "webshop" === r.reason;
 			});
-			showRefused(webToo ? i18n.outletsRefusedFields : other || !reasons.length ? i18n.outletsRefused : i18n.outletsBusy);
+			showRefused(isti || (webToo ? i18n.outletsRefusedFields : other || !reasons.length ? i18n.outletsRefused : i18n.outletsBusy));
 		}
 
 		// S2 (Norman 3132): each kind of reason once, in the order address, type, label, joined by a space. "zauzeto"
@@ -871,7 +979,17 @@
 			render(initial);
 			if (null !== refusal) {
 				storedOnly(reasons);
+				showRefused(istiText(reasons, initial));
 			}
+		}
+		// T75 (CX-SID-113): the save that turned the same price list for all places on was refused. The page draws the
+		// stored value (off), but the box was sent ticked and T75 says to turn it off: show it as sent (Norman SHOULD 1).
+		if (
+			reasons.some(function (r) {
+				return "isti" === r.reason;
+			})
+		) {
+			$("#sidrena_cijena_isti_cjenik").prop("checked", true);
 		}
 
 		$("#sidrena-poslovnica-add").on("click", function () {
@@ -890,6 +1008,9 @@
 			$card.find(".js-picker .select2-search__field, .js-products input[type=checkbox], .js-dodjela").each(function () {
 				clearMsg($(this), $pmsg);
 			});
+			if (woo) {
+				noteTexts($card);
+			}
 		});
 
 		// A field the owner changes loses its message; the next Save checks everything again.

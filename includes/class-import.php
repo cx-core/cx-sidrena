@@ -153,6 +153,13 @@ final class CX_Sidrena_Import {
 			return new WP_Error( 'missing_column', __( 'Column missing: SKU.', 'cx-sidrena' ) );
 		}
 		$has_codes = (bool) array_intersect_key( $cols, self::CODE_FIELDS );
+		// CX-SID-177: our own price list (public or admin download) has a maloprodajna cijena column, and its amounts
+		// include tax (get_price_to_display(), since CX-SID-160), the bazna cijena too. The bulk import's rule for the
+		// same file (file_has_display_retail()); any other file (our Import template, Export bazna) is stored amounts.
+		$listed = false;
+		foreach ( $records[0] as $h ) {
+			$listed = $listed || self::is_retail_column( $h );
+		}
 		if ( ! isset( $cols['bazna'] ) && ! $has_codes ) {
 			return new WP_Error( 'missing_column', __( 'Column missing: Bazna cijena (or Brand, EAN or Barcode).', 'cx-sidrena' ) );
 		}
@@ -185,7 +192,7 @@ final class CX_Sidrena_Import {
 			return new WP_Error( 'too_many_rows', sprintf( __( 'The file has more than %d rows. Split it into smaller files.', 'cx-sidrena' ), self::MAX_ROWS ) );
 		}
 
-		$lists = self::match( $data );
+		$lists = self::match( $data, $listed );
 
 		return array(
 			'v'          => 1,
@@ -197,6 +204,7 @@ final class CX_Sidrena_Import {
 			'has_lowest' => isset( $cols['lowest'] ),
 			'has_bazna'  => isset( $cols['bazna'] ),
 			'has_codes'  => $has_codes,
+			'amounts'    => $listed ? 'display' : 'stored', // CX-SID-177: the file's bazna as the price list shows it, or stored
 			'counts'     => self::counts( $lists ),
 			'lists'      => $lists,
 		);
@@ -348,6 +356,113 @@ final class CX_Sidrena_Import {
 	}
 
 	/**
+	 * Two stored amounts, exactly: a bazna converted from our price list keeps every decimal (12,47 at 25 % is 9.976), and
+	 * the next cent (12,48: 9.984) is another amount, though both round to 9.98 at the shop's decimals (CX-SID-177, Q2).
+	 *
+	 * @param string $a Amount.
+	 * @param string $b Amount.
+	 * @return bool
+	 */
+	private static function same_stored( $a, $b ) {
+		$a = trim( (string) $a );
+		$b = trim( (string) $b );
+		if ( '' === $a || '' === $b || ! is_numeric( $a ) || ! is_numeric( $b ) ) {
+			return $a === $b;
+		}
+
+		return abs( (float) $a - (float) $b ) < 1e-9;
+	}
+
+	/**
+	 * A header cell that is the retail price of our price list: the bulk import's rule (is_display_retail_column() after
+	 * unique_fields()'s trim), so both imports read the same file the same way (CX-SID-177; trimmed: Argus SHOULD 1).
+	 *
+	 * @param string $h Header cell.
+	 * @return bool
+	 */
+	private static function is_retail_column( $h ) {
+		$h = str_replace( array( ' ', '-', '.' ), '_', strtolower( remove_accents( trim( (string) $h ) ) ) );
+
+		return in_array( $h, array( 'maloprodajna_cijena', 'maloprodajna' ), true );
+	}
+
+	/**
+	 * The bazna of a row of our price list (with tax) against the product's (CX-SID-177). Compared as the price list
+	 * shows them, so a list read back changes nothing and one cent more is a change (Q2); a change is stored as the shop
+	 * enters prices (display_price_to_stored(): without tax when it enters them without), and only when that stored
+	 * amount shows exactly the file's amount again.
+	 *
+	 * @param WC_Product $product Product or variation.
+	 * @param string     $file    Amount of the file (amount()).
+	 * @param string     $cur     Stored bazna, or ''.
+	 * @return array{changes:bool,store:string}|WP_Error
+	 */
+	private static function listed_bazna( $product, $file, $cur ) {
+		$meta = CX_Sidrena_Product_Meta::instance();
+		$now  = '' !== $cur ? $meta->get_price_to_display( $product, $cur ) : null;
+		if ( null !== $now && self::same_amount( $file, (string) $now ) ) {
+			return array( 'changes' => false, 'store' => $cur );
+		}
+		$store = (string) $meta->display_price_to_stored( $product, $file, $cur );
+		$back  = '' !== $store ? $meta->get_price_to_display( $product, $store ) : null;
+		if ( null === $back || ! self::same_amount( (string) $back, $file ) ) {
+			$money = static function ( $a ) {
+				return html_entity_decode( wp_strip_all_tags( wc_price( (float) $a ) ), ENT_QUOTES, 'UTF-8' );
+			};
+			return new WP_Error(
+				'bad_tax',
+				/* translators: 1: the amount in the file, 2: the amount the price list would show (both as the price list writes them, e.g. 12,50 €) */
+				sprintf( __( 'The bazna cijena is not imported: the file has %1$s, but the price list would show %2$s, because your webshop\'s theme or another plugin changes the amounts it shows. If you don\'t know what changes them, tell us.', 'cx-sidrena' ), $money( $file ), $money( null === $back ? 0 : $back ) )
+			);
+		}
+		// Nothing to convert (no tax added to this product): the amount as the file has it, as before.
+		if ( self::same_stored( $store, $file ) ) {
+			$store = $file;
+		}
+
+		return array( 'changes' => true, 'store' => $store );
+	}
+
+	/**
+	 * Whether the price list adds the shop's tax to this product's stored amounts: taxes on, the product taxable, prices
+	 * entered without tax (CX_Sidrena_Product_Meta::adds_base_tax(), which is private there).
+	 *
+	 * @param WC_Product $product Product or variation.
+	 * @return bool
+	 */
+	private static function adds_tax( $product ) {
+		return class_exists( 'WC_Tax' ) && function_exists( 'wc_prices_include_tax' ) && $product->is_taxable() && ! wc_prices_include_tax();
+	}
+
+	/**
+	 * What the price list shows for a row of our price list, when it is not the stored amount: the shop adds its tax to
+	 * this product (prices entered without tax). Null otherwise; the screen then shows now and new (CX-SID-177, 185).
+	 *
+	 * @param WC_Product           $product Product or variation.
+	 * @param array<string,mixed>|null $now Stored now.
+	 * @param array<string,mixed>|null $new Stored new.
+	 * @return array{now:?string,new:?string}|null
+	 */
+	private static function shown( $product, $now, $new ) {
+		if ( ! self::adds_tax( $product ) ) {
+			return null;
+		}
+		$meta     = CX_Sidrena_Product_Meta::instance();
+		$decimals = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
+		$show     = static function ( $v ) use ( $meta, $product, $decimals ) {
+			$a = is_array( $v ) && isset( $v['bazna'] ) && '' !== (string) $v['bazna'] ? $meta->get_price_to_display( $product, (string) $v['bazna'] ) : null;
+
+			return null === $a ? null : number_format( (float) $a, $decimals, '.', '' );
+		};
+		$out = array(
+			'now' => $show( $now ),
+			'new' => $show( $new ),
+		);
+
+		return null === $out['now'] && null === $out['new'] ? null : $out;
+	}
+
+	/**
 	 * A product or variation a row may match and be written to: what the preview matches by SKU or ID, and what the
 	 * step checks again (a product moved to the trash or deleted since the preview is skipped; a draft or private one
 	 * that was in the preview is written, as the preview said).
@@ -361,9 +476,9 @@ final class CX_Sidrena_Import {
 	}
 
 	/**
-	 * The product whose šifra in the price list is this ID-<n> (CX-SID-122): the cell names product n only if n has no
-	 * SKU of its own, as the price list said (CX_Sidrena_Feed_Rows::sifra(), one rule for both). The caller has checked
-	 * that no SKU is this text.
+	 * The product whose šifra in the admin's download is this ID-<n> (CX-SID-122, CX-SID-153): the cell names product n
+	 * only if n has no SKU of its own, as the file said (CX_Sidrena_Feed_Rows::admin_sifra(), one rule for both): a
+	 * product without any SKU, or a variation without its own. The caller has checked that no SKU is this text.
 	 *
 	 * @param string $code Cell of the SKU column.
 	 * @return int Product, or 0.
@@ -374,7 +489,7 @@ final class CX_Sidrena_Import {
 		}
 		$product = function_exists( 'wc_get_product' ) ? wc_get_product( (int) $m[1] ) : null;
 
-		return $product && 'ID-' . (int) $m[1] === CX_Sidrena_Feed_Rows::instance()->sifra( $product ) ? (int) $m[1] : 0;
+		return $product && 'ID-' . (int) $m[1] === CX_Sidrena_Feed_Rows::instance()->admin_sifra( $product ) ? (int) $m[1] : 0;
 	}
 
 	/**
@@ -514,10 +629,11 @@ final class CX_Sidrena_Import {
 	/**
 	 * Match the rows to products and sort them into the four lists.
 	 *
-	 * @param array<int,array<string,mixed>> $data Rows.
+	 * @param array<int,array<string,mixed>> $data   Rows.
+	 * @param bool                           $listed Our price list: the bazna with tax, as it shows it (CX-SID-177).
 	 * @return array<string,array>
 	 */
-	private static function match( array $data ) {
+	private static function match( array $data, $listed = false ) {
 		global $wpdb;
 		$lists = array_fill_keys( self::LISTS, array() );
 
@@ -663,7 +779,18 @@ final class CX_Sidrena_Import {
 			$name = $post->post_title;
 			$edit = (string) get_edit_post_link( 'product_variation' === $post->post_type && $post->post_parent ? $post->post_parent : $pid, 'raw' );
 
-			$bazna_changes = '' !== $bazna && ( '' === $cur || ! self::same_amount( $bazna, $cur ) );
+			$lprod = $listed && '' !== $bazna ? wc_get_product( $pid ) : null;
+			if ( $lprod ) {
+				$lb = self::listed_bazna( $lprod, $bazna, $cur );
+				if ( is_wp_error( $lb ) ) {
+					$lists['invalid'][] = self::bad( $r, $lb->get_error_code(), $lb->get_error_message() );
+					continue;
+				}
+				$bazna_changes = $lb['changes'];
+				$bazna         = $lb['store']; // the stored form from here on: the write, the history, now and new
+			} else {
+				$bazna_changes = '' !== $bazna && ( '' === $cur || ! self::same_amount( $bazna, $cur ) );
+			}
 			// A file date that is the date the product shows already changes nothing.
 			$date_changes = '' !== $fdate && ( null === $now || $fdate !== $now['date'] );
 			$low_changes  = '' !== $lowest && ! self::same_amount( $lowest, (string) $low_on );
@@ -688,9 +815,16 @@ final class CX_Sidrena_Import {
 			if ( $codes['shown'] ) {
 				$row['codes'] = $codes['shown']; // what the price list shows now and after, per field that changes
 			}
+			if ( $lprod && self::adds_tax( $lprod ) ) {
+				$row['_listed'] = true; // a converted bazna: the write compares it exactly (same_stored())
+			}
 			$price_changes = $bazna_changes || $date_changes || $low_changes;
 			if ( ! $price_changes && ! $codes['write'] ) {
 				$row['new'] = $now;
+				$shown = $lprod ? self::shown( $lprod, $now, $now ) : null;
+				if ( $shown ) {
+					$row['shown'] = $shown; // what the price list shows (CX-SID-177), for the screen (185)
+				}
 				if ( $codes['kept'] ) {
 					$row['codes_kept'] = $codes['kept']; // Norman T4 SHOULD, Rook 3348 (1): why a code changes nothing
 				}
@@ -704,6 +838,10 @@ final class CX_Sidrena_Import {
 				// Only codes change: the bazna and its date stay ('no change' on the screen, Norman T4).
 				$row['new']        = $now;
 				$row['bazna_same'] = true;
+				$shown = $lprod ? self::shown( $lprod, $now, $now ) : null;
+				if ( $shown ) {
+					$row['shown'] = $shown; // what the price list shows (CX-SID-177), for the screen (185)
+				}
 				$row['_date']      = null;
 				$row['_date_from'] = '';
 				$row['_bazna']     = '';
@@ -732,6 +870,10 @@ final class CX_Sidrena_Import {
 				$row['_date_from'] = $d['rule_from'];
 			}
 			$row['new']    = $new;
+			$shown = $lprod ? self::shown( $lprod, $now, $new ) : null;
+			if ( $shown ) {
+				$row['shown'] = $shown; // what the price list shows now and after (CX-SID-177), for the screen (185)
+			}
 			$row['_bazna'] = $bazna_changes || $date_changes ? $new_bazna : '';
 			$row['_lowest'] = $low_changes ? $lowest : '';
 			$lists['update'][] = $row;
@@ -1153,7 +1295,9 @@ final class CX_Sidrena_Import {
 			$want_bazna = '' !== $row['_bazna'] ? $row['_bazna'] : $row['_cur'];
 			$want_own   = null !== $date ? $date : $row['_own'];
 			$want_low   = '' !== $row['_lowest'] ? $row['_lowest'] : $row['_low'];
-			$price_done = self::same_amount( $cur, $want_bazna ) && $own === $want_own && self::same_amount( $low, $want_low );
+			// A row of our price list: the bazna exactly, one cent of the list is less than one of the stored (CX-SID-177).
+			$same_bazna = ! empty( $row['_listed'] ) ? self::same_stored( $cur, $want_bazna ) : self::same_amount( $cur, $want_bazna );
+			$price_done = $same_bazna && $own === $want_own && self::same_amount( $low, $want_low );
 			if ( $price_done ) {
 				$izvor = CX_Sidrena_History::izvor( $pid );
 				$mine  = (int) $izvor['ref'] === (int) $job['conf'] || ( '' === $row['_bazna'] && self::low_is_mine( $pid, $job ) );
@@ -1174,7 +1318,8 @@ final class CX_Sidrena_Import {
 		}
 
 		if ( ! $price_done ) {
-			$as_seen = self::same_amount( $cur, $row['_cur'] ) && $own === $row['_own'] && self::same_amount( $low, $row['_low'] );
+			$as_seen = ( ! empty( $row['_listed'] ) ? self::same_stored( $cur, $row['_cur'] ) : self::same_amount( $cur, $row['_cur'] ) )
+				&& $own === $row['_own'] && self::same_amount( $low, $row['_low'] );
 			if ( ! $as_seen ) {
 				return array( 'result' => 'skipped', 'label' => $label, 'message' => __( 'Changed since the preview.', 'cx-sidrena' ) );
 			}
