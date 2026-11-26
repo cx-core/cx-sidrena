@@ -768,6 +768,7 @@ class CX_Sidrena_Frontend {
 		);
 
 		$this->enqueue_cjenik_embed_style();
+		self::enqueue_cjenik_search_script();
 		self::enqueue_cjenik_fit_script();
 
 		return CX_Sidrena_Export::instance()->get_cjenik_embed_html( (string) $atts['oznaka'] );
@@ -789,6 +790,7 @@ class CX_Sidrena_Frontend {
 		);
 
 		$this->enqueue_archive_embed_style();
+		CX_Sidrena_Page_Cache::shortcode_shown( false ); // cleared with the page after each build (CX-SID-141)
 
 		return CX_Sidrena_Export::instance()->get_archive_embed_html( (string) $atts['oznaka'] );
 	}
@@ -826,6 +828,30 @@ class CX_Sidrena_Frontend {
 		if ( did_action( 'wp_head' ) && ! wp_style_is( $handle, 'done' ) ) {
 			wp_print_styles( $handle );
 		}
+	}
+
+	/**
+	 * The price list's search and pages (CX-SID-111, assets/js/cjenik-search.js), at the end of the page, before
+	 * cjenik-fit.js. A file and not a script inside the price list's HTML: a block theme (and Elementor's Text Editor)
+	 * runs wptexturize() over the page after the shortcode, and that broke the script ("&&" became "&#038;&#038;").
+	 * The end of the page because the shortcode runs inside the content, after wp_head, so a script it queues can only
+	 * come out in wp_footer. Without it the first page of rows shows, without search.
+	 */
+	public static function enqueue_cjenik_search_script() {
+		$handle = 'sidrena-cijena-cjenik-search';
+		if ( ! wp_script_is( $handle, 'registered' ) ) {
+			wp_register_script( $handle, CX_SIDRENA_URL . 'assets/js/cjenik-search.js', array(), CX_SIDRENA_VERSION, true );
+		}
+
+		wp_enqueue_script( $handle );
+	}
+
+	/**
+	 * The same search script printed at once, for the public price list page (it prints its own HTML, without wp_footer).
+	 */
+	public static function print_cjenik_search_script() {
+		self::enqueue_cjenik_search_script();
+		wp_print_scripts( 'sidrena-cijena-cjenik-search' );
 	}
 
 	/**

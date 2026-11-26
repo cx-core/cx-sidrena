@@ -492,7 +492,23 @@ class CX_Sidrena_Feed_Rows {
 			? trim( wp_strip_all_tags( wc_get_formatted_variation( $product, true, false ) ) )
 			: '';
 
-		if ( '' === $suffix || false !== strpos( $base, $suffix ) ) {
+		if ( '' === $suffix ) {
+			return $base;
+		}
+
+		// A value already written in the title is not repeated ('Vino 0,75 l' with '0,75 l'), but only as a whole word:
+		// no letter or digit right next to it, and no decimal comma or dot with a digit ('5' in '0,5', '1' in '1.5').
+		// As a bare substring, 'M' in 'Montaza Woo' or 'XL' in 'Majica XXL' took the size off the row (CX-SID-173).
+		// Letter case counts, as before. A value that is not valid UTF-8 never goes into the pattern (it would warn);
+		// it and a title that is not valid UTF-8 (preg_match() false) keep the old substring test.
+		$found = 1 === preg_match( '//u', $suffix )
+			? preg_match( '/(?<![\p{L}\p{N}])(?<!\p{N}[.,])' . preg_quote( $suffix, '/' ) . '(?![\p{L}\p{N}])(?![.,]\p{N})/u', $base )
+			: false;
+		if ( false === $found ) {
+			$found = false !== strpos( $base, $suffix );
+		}
+
+		if ( $found ) {
 			return $base;
 		}
 

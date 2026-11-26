@@ -125,6 +125,14 @@ h1 {
 	display: none !important;
 }
 
+/* A table the search finds nothing in hides its frame and its heading (CX-SID-208): no theme's display brings them back. */
+.cjenik-table-wrap[hidden],
+.cjenik-usluge-title[hidden],
+.cjenik-upit-title[hidden],
+.cjenik-upit-note[hidden] {
+	display: none !important;
+}
+
 .cjenik-table-wrap {
 	overflow-x: auto;
 	background: #fff;

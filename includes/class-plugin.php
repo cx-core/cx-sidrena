@@ -18,6 +18,7 @@ require_once CX_SIDRENA_PATH . 'includes/class-feed-rows.php';
 require_once CX_SIDRENA_PATH . 'includes/class-feed-files.php';
 require_once CX_SIDRENA_PATH . 'includes/class-archive.php';
 require_once CX_SIDRENA_PATH . 'includes/class-feed-routes.php';
+require_once CX_SIDRENA_PATH . 'includes/class-page-cache.php';
 require_once CX_SIDRENA_PATH . 'includes/class-product-fields.php';
 require_once CX_SIDRENA_PATH . 'includes/class-admin-save.php';
 require_once CX_SIDRENA_PATH . 'includes/class-admin.php';

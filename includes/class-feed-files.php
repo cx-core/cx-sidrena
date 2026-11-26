@@ -18,6 +18,13 @@ class CX_Sidrena_Feed_Files {
 	const CJENIK_PAGE_SIZE = 200;
 
 	/**
+	 * How the search script began that 0.3.2 and every earlier version wrote into the price list's HTML file after the
+	 * table (cjenik_filter_script(), same start since the first commit; the id is CX_Sidrena_Export::CJENIK_DOM_TOKEN).
+	 * Since CX-SID-111 the search is assets/js/cjenik-search.js, and a file written before is read without that block.
+	 */
+	const LEGACY_SEARCH_SCRIPT = "<script>(function(){\nvar root=document.getElementById(\"sidrena-cjenik-dom-7f3a9c\");";
+
+	/**
 	 * Columns of a public price list file for goods, in the order of the items of art. 3(2) of the Pravilnik o cjeniku
 	 * (NN 132/2026-1584): naziv, šifra, marka, neto količina, jedinica mjere, maloprodajna cijena and whether it is
 	 * one of a special form of sale, cijena za jedinicu mjere, barkod, EAN barkod, bazna cijena. Art. 3(4): this order.
@@ -1052,47 +1059,59 @@ class CX_Sidrena_Feed_Files {
 			$html .= $this->build_upit_section( $upit );
 			$html .= '<p class="cjenik-empty-filter" hidden>' . esc_html__( 'No products match the search.', 'cx-sidrena' ) . '</p>';
 			$html .= '</div>';
-			$html .= $this->cjenik_filter_script( $dom_id );
 			return $html;
 		}
 
 		// Goods and services in their own tables, as in their own files (CX-SID-75; art. 6(3)-(4) of NN 132/2026-1584):
 		// the services' table has the services' columns, after the goods. A place of services only has only theirs (Kai).
-		$kinds     = $this->rows_by_vrsta( $rows );
-		$row_index = 0;
+		// Each table has its own pages, under it (CX-SID-205): one pager over both showed the services only on the last
+		// page, so a place with 2513 goods showed "Usluge" over an empty table on pages 1 to 12.
+		$kinds = $this->rows_by_vrsta( $rows );
+		$both  = array() !== $kinds['proizvod'] && array() !== $kinds['usluga'];
 		if ( array() !== $kinds['proizvod'] ) {
-			$html .= $this->cjenik_table_html( $kinds['proizvod'], $this->cjenik_visible_columns( $kinds['proizvod'] ), $row_index, 'cjenik-table' );
+			$html .= $this->cjenik_table_html( $kinds['proizvod'], $this->cjenik_visible_columns( $kinds['proizvod'] ), 'cjenik-table' );
+			// The pages' label tells a screen reader which table they page (Norman T102/T101, CX-SID-205).
+			$html .= $this->cjenik_pager_html( $both ? __( 'Goods pages', 'cx-sidrena' ) : __( 'Price list pages', 'cx-sidrena' ) );
 		}
 		if ( array() !== $kinds['usluga'] ) {
-			if ( array() !== $kinds['proizvod'] ) {
+			if ( $both ) {
 				$html .= '<h2 class="cjenik-usluge-title">' . esc_html__( 'Services', 'cx-sidrena' ) . '</h2>';
 			}
-			$html .= $this->cjenik_table_html( $kinds['usluga'], $this->cjenik_service_columns( $kinds['usluga'] ), $row_index, 'cjenik-table cjenik-table--usluge' );
+			$html .= $this->cjenik_table_html( $kinds['usluga'], $this->cjenik_service_columns( $kinds['usluga'] ), 'cjenik-table cjenik-table--usluge' );
+			$html .= $this->cjenik_pager_html( $both ? __( 'Services pages', 'cx-sidrena' ) : __( 'Price list pages', 'cx-sidrena' ) );
 		}
-		$html .= '<nav class="cjenik-pager" data-page-size="' . (int) self::CJENIK_PAGE_SIZE . '" hidden aria-label="' . esc_attr__( 'Price list pages', 'cx-sidrena' ) . '"></nav>';
 		$html .= $this->build_upit_section( $upit );
 		$html .= '<p class="cjenik-empty-filter" hidden>' . esc_html__( 'No products match the search.', 'cx-sidrena' ) . '</p>';
 		$html .= '</div>';
-		$html .= $this->cjenik_filter_script( $dom_id );
 
 		return $html;
 	}
 
 	/**
-	 * One table of the price list page: the rows of one kind with its columns. Rows past the first page are hidden
-	 * ($row_index counts across both tables, as the page's script pages them).
+	 * The pages of one table, right after it (CX-SID-205). Hidden until the page's script finds more than one page.
 	 *
-	 * @param array<int, array<string, string>>   $rows      Rows of one kind.
-	 * @param array<string, array<string, string>> $columns   Columns (cjenik_visible_columns() or cjenik_service_columns()).
-	 * @param int                                 $row_index Rows already printed on the page.
-	 * @param string                              $class     Table classes.
+	 * @param string $label What a screen reader hears for it.
 	 * @return string
 	 */
-	private function cjenik_table_html( $rows, $columns, &$row_index, $class ) {
+	private function cjenik_pager_html( $label ) {
+		return '<nav class="cjenik-pager" data-page-size="' . (int) self::CJENIK_PAGE_SIZE . '" hidden aria-label="' . esc_attr( $label ) . '"></nav>';
+	}
+
+	/**
+	 * One table of the price list page: the rows of one kind with its columns. Rows past its first page are hidden, so
+	 * without the page's script each table still shows its first page (CX-SID-205: each table counts its own rows).
+	 *
+	 * @param array<int, array<string, string>>   $rows    Rows of one kind.
+	 * @param array<string, array<string, string>> $columns Columns (cjenik_visible_columns() or cjenik_service_columns()).
+	 * @param string                              $class   Table classes.
+	 * @return string
+	 */
+	private function cjenik_table_html( $rows, $columns, $class ) {
 		$catalog    = CX_Sidrena_Catalog::instance();
 		$with_stock = isset( $columns['dostupnost'] );
 		$html       = '<div class="cjenik-table-wrap"><table class="' . esc_attr( $class ) . '">';
 		$html      .= '<thead><tr>';
+		$row_index  = 0;
 		foreach ( $columns as $column ) {
 			$html .= '<th>' . esc_html( $column['label'] ) . '</th>';
 		}
@@ -1228,126 +1247,6 @@ class CX_Sidrena_Feed_Files {
 	}
 
 	/**
-	 * Filter the priced table and the upit table, and page the priced rows.
-	 *
-	 * @param string $dom_id Element id.
-	 * @return string
-	 */
-	private function cjenik_filter_script( $dom_id ) {
-		$script = <<<'JS'
-(function(){
-var root=document.getElementById(__DOM__);
-if(!root)return;
-var input=root.querySelector(".cjenik-filter");
-if(!input)return;
-var productRows=root.querySelectorAll(".cjenik-table tbody tr");
-var upitRows=root.querySelectorAll(".cjenik-upit tbody tr");
-var empty=root.querySelector(".cjenik-empty-filter");
-var pager=root.querySelector(".cjenik-pager");
-var table=root.querySelector(".cjenik-table");
-var wrap=table&&table.closest?table.closest(".cjenik-table-wrap"):null;
-var PAGE=200;
-if(pager){
-var size=parseInt(pager.getAttribute("data-page-size"),10);
-if(size>0)PAGE=size;
-}
-var page=1;
-function matches(row,q){
-return !q||(row.getAttribute("data-search")||"").indexOf(q)!==-1;
-}
-function pageList(total,current){
-var list=[];
-var n;
-if(total<=9){
-for(n=1;n<=total;n++)list.push(n);
-return list;
-}
-var keep={};
-keep[1]=true;
-keep[total]=true;
-for(n=current-2;n<=current+2;n++){
-if(n>=1&&n<=total)keep[n]=true;
-}
-var nums=[];
-for(n=1;n<=total;n++){
-if(keep[n])nums.push(n);
-}
-var prev=0;
-for(n=0;n<nums.length;n++){
-if(prev&&nums[n]-prev>1)list.push(0);
-list.push(nums[n]);
-prev=nums[n];
-}
-return list;
-}
-function addButton(num){
-var btn=document.createElement("button");
-btn.type="button";
-btn.className="cjenik-page"+(num===page?" is-current":"");
-btn.textContent=String(num);
-if(num===page)btn.setAttribute("aria-current","page");
-btn.addEventListener("click",function(){
-page=num;
-render(false);
-if(wrap&&wrap.scrollIntoView)wrap.scrollIntoView(true);
-});
-pager.appendChild(btn);
-}
-function render(resetPage){
-var q=(input.value||"").toLowerCase().trim();
-if(resetPage)page=1;
-var matched=[];
-var i;
-var upitShown=0;
-for(i=0;i<productRows.length;i++){
-if(matches(productRows[i],q))matched.push(productRows[i]);
-else productRows[i].hidden=true;
-}
-for(i=0;i<upitRows.length;i++){
-var showUpit=matches(upitRows[i],q);
-upitRows[i].hidden=!showUpit;
-if(showUpit)upitShown++;
-}
-var pages=Math.ceil(matched.length/PAGE);
-if(pages<1)pages=1;
-if(page>pages)page=pages;
-var start=(page-1)*PAGE;
-var end=start+PAGE;
-for(i=0;i<matched.length;i++){
-matched[i].hidden=i<start||i>=end;
-}
-if(empty)empty.hidden=(matched.length+upitShown)!==0;
-if(!pager)return;
-pager.innerHTML="";
-if(pages<=1){
-pager.hidden=true;
-return;
-}
-pager.hidden=false;
-var items=pageList(pages,page);
-for(i=0;i<items.length;i++){
-if(items[i]===0){
-var gap=document.createElement("span");
-gap.className="cjenik-page-gap";
-gap.textContent="\u2026";
-gap.setAttribute("aria-hidden","true");
-pager.appendChild(gap);
-}else{
-addButton(items[i]);
-}
-}
-}
-input.addEventListener("input",function(){render(true);});
-render(false);
-})();
-JS;
-
-		$script = str_replace( '__DOM__', wp_json_encode( $dom_id ), $script );
-
-		return '<script>' . $script . '</script>';
-	}
-
-	/**
 	 * HTML table columns that have at least one value. Name and prices stay. The order is the price list file's
 	 * (art. 3(4) of the Pravilnik o cjeniku), then the bazna date and availability, which only this page shows.
 	 *
@@ -1418,6 +1317,7 @@ JS;
 		if ( ! is_string( $html ) || '' === $html ) {
 			return null;
 		}
+		$html = self::without_legacy_search_script( $html );
 
 		$count = 0;
 		if ( preg_match( '/<!-- sidrena-count:(\d+) -->/', $html, $match ) ) {
@@ -1428,6 +1328,30 @@ JS;
 			'html'  => $html,
 			'count' => $count,
 		);
+	}
+
+	/**
+	 * A price list file as 0.3.2 or earlier wrote it, without the search script those versions put after the table
+	 * (CX-SID-111). The page now loads assets/js/cjenik-search.js; with the old script left in, a classic theme would run
+	 * both on one search box, and a block theme would still show the old one's error. Such a file stays until the next
+	 * build of its price list. Cuts exactly that block: from its first characters as it was written to its </script>
+	 * (a name in the table cannot hold either, it is escaped). Anything else in the file stays as it is.
+	 *
+	 * @param string $html The file's content.
+	 * @return string
+	 */
+	private static function without_legacy_search_script( $html ) {
+		$start = strpos( $html, self::LEGACY_SEARCH_SCRIPT );
+		while ( false !== $start ) {
+			$end = strpos( $html, '</script>', $start );
+			if ( false === $end ) {
+				break;
+			}
+			$html  = substr( $html, 0, $start ) . substr( $html, $end + strlen( '</script>' ) );
+			$start = strpos( $html, self::LEGACY_SEARCH_SCRIPT, $start );
+		}
+
+		return $html;
 	}
 
 	/**
@@ -1447,11 +1371,14 @@ JS;
 		if ( '' !== $oznaka ) {
 			$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );
 			if ( ! is_array( $outlet ) ) {
+				CX_Sidrena_Page_Cache::shortcode_shown( false ); // cleared with the page when the place's list comes (CX-SID-141)
 				return '<div class="sidrena-cjenik"><p class="empty">' . esc_html__( 'The price list is empty.', 'cx-sidrena' ) . '</p></div>';
 			}
 		}
 
 		$snapshot = $this->read_cjenik_snapshot( $oznaka );
+		// Not there yet: the page with it is not kept by a page cache; shown: it is cleared after each build (CX-SID-141).
+		CX_Sidrena_Page_Cache::shortcode_shown( null === $snapshot );
 		if ( null === $snapshot && ( CX_Sidrena_Export::instance()->awaiting_bazna() || CX_Sidrena_Export::instance()->waiting_for_legal_id() ) ) {
 			// Before the first bazna: not being prepared, not published yet, and no build queued (CX-SID-68). The same
 			// without an OIB or MBO (CX-SID-159).

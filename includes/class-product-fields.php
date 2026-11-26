@@ -223,7 +223,7 @@ class CX_Sidrena_Product_Fields {
 
 		$unit = $meta->unit_price( $product );
 		if ( null === $unit ) {
-			return esc_html__( 'The unit price is worked out once the product has a price.', 'cx-sidrena' );
+			return esc_html__( 'The unit price is worked out once the product has a price.', 'cx-sidrena' ) . $this->pack_sentence( $id, $product );
 		}
 
 		$amount = $meta->unit_price_html( $unit );
@@ -242,7 +242,44 @@ class CX_Sidrena_Product_Fields {
 			$text .= ' ' . esc_html__( 'During the sale it is worked out from the sale price.', 'cx-sidrena' );
 		}
 
-		return $text;
+		return $text . $this->pack_sentence( $id, $product );
+	}
+
+	/**
+	 * The last sentence of the status line when the name has "N+M gratis" (CX-SID-190, Norman SPEC bd7c1cc1): which
+	 * words of the name did it and the sum one piece × pieces = the pack, in the unit the owner entered (no conversion,
+	 * so 2 × 500 g = 1000 g reads straight), with no-break spaces before the units. A pack typed in as one piece shows
+	 * itself ("2 × 100 ml" where the label says 50 ml). Empty without the form.
+	 *
+	 * @param int        $id      Product or size.
+	 * @param WC_Product $product The same.
+	 * @return string HTML, with a space before it.
+	 */
+	private function pack_sentence( $id, $product ) {
+		$meta   = CX_Sidrena_Product_Meta::instance();
+		$pack   = $meta->pack_from_name( $product );
+		$stored = $meta->readable_neto( $id );
+		if ( null === $pack || null === $stored ) {
+			return '';
+		}
+
+		// The total exactly, from the canonical quantity (at most 4 decimals) in ten-thousandths.
+		$parts = explode( '.', $stored['neto'] );
+		$whole = (int) $parts[0] * 10000 + (int) str_pad( isset( $parts[1] ) ? $parts[1] : '', 4, '0' );
+		$sum   = $whole * $pack['pieces'];
+		$total = rtrim( rtrim( intdiv( $sum, 10000 ) . '.' . str_pad( (string) ( $sum % 10000 ), 4, '0', STR_PAD_LEFT ), '0' ), '.' );
+		$shown = static function ( $quantity ) use ( $stored ) {
+			return wc_format_localized_decimal( $quantity ) . "\xc2\xa0" . $stored['jm'];
+		};
+
+		return ' <span class="cx-neto-pack">' . sprintf(
+			/* translators: %1$s: the "N+M gratis" text as it is in the name, e.g. 1+1 Gratis. %2$s: number of pieces, e.g. 2. %3$s: net quantity of one piece, e.g. 50 ml. %4$s: the whole pack, e.g. 100 ml. */
+			esc_html__( 'The name has “%1$s”, so it is worked out for the whole pack: %2$s × %3$s = %4$s. Enter the net quantity of one piece, as on its label.', 'cx-sidrena' ),
+			esc_html( $pack['form'] ),
+			(int) $pack['pieces'],
+			esc_html( $shown( $stored['neto'] ) ),
+			esc_html( $shown( $total ) )
+		) . '</span>';
 	}
 
 	/**

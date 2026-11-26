@@ -638,8 +638,12 @@ class CX_Sidrena_Product_Meta {
 	 * `page` is whether the product page shows it: not for goods under 50 g or 50 ml (Pravilnik NN 105/2026 art. 8(2),
 	 * first indent) and not when it equals the retail price (ZZP art. 7(3)). The price list carries it either way.
 	 *
+	 * With "N+M gratis" in the name (CX-SID-190, pack_from_name()) the quantity is N+M pieces of the one entered: the unit
+	 * price, `neto` and `page` are for the whole pack, so neto × unit price is still the retail price; `pieces` says how
+	 * many (1 without the form).
+	 *
 	 * @param WC_Product $product Product or variation.
-	 * @return array{neto:string, jm:string, amount:float, page:bool}|null Null without a (readable) quantity or a price.
+	 * @return array{neto:string, jm:string, amount:float, page:bool, pieces:int}|null Null without a (readable) quantity or a price.
 	 */
 	public function unit_price( $product ) {
 		if ( ! $product instanceof WC_Product || $product->is_type( array( 'variable', 'variable-subscription', 'grouped' ) ) ) {
@@ -650,8 +654,10 @@ class CX_Sidrena_Product_Meta {
 		if ( null === $stored ) {
 			return null;
 		}
-		$jm    = $stored['jm'];
-		$units = self::tenth_grams( $stored['neto'], $jm );
+		$jm     = $stored['jm'];
+		$pack   = $this->pack_from_name( $product );
+		$pieces = null === $pack ? 1 : $pack['pieces'];
+		$units  = self::tenth_grams( $stored['neto'], $jm ) * $pieces; // CX-SID-190: the whole pack
 
 		$paid = $this->get_price_to_display( $product, CX_Sidrena_Feed_Rows::instance()->active_raw_price( $product ) );
 		if ( null === $paid || $paid < 0 ) {
@@ -670,6 +676,65 @@ class CX_Sidrena_Product_Meta {
 			'jm'     => ( 'g' === $jm || 'kg' === $jm ) ? 'kg' : 'l',
 			'amount' => (float) ( $amount / ( 10 ** $decimals ) ),
 			'page'   => $units >= 500 && $amount !== $shown,
+			'pieces' => $pieces,
+		);
+	}
+
+	/**
+	 * "N+M gratis" in a product's name (CX-SID-190): the goods are sold as one pack of N+M pieces for one price, so the
+	 * unit price, the net quantity in the price list and the 50 g / 50 ml rule of the page are for the whole pack, while
+	 * the owner enters the net quantity of one piece, as on its label. Taking the form out of the name puts everything
+	 * back to one piece. The name is the one the price list prints (CX_Sidrena_Feed_Rows::feed_naziv()): a size is its
+	 * parent's title and its attributes, also when WooCommerce stored only the parent's title for it (CX-SID-173), so a
+	 * form in the parent or only in a size's attribute counts, and the same form in both counts once.
+	 *
+	 * @param WC_Product $product Product or size.
+	 * @return array{pieces:int, form:string}|null Null without the form, or with two different ones.
+	 */
+	public function pack_from_name( $product ) {
+		if ( ! $product instanceof WC_Product || ! class_exists( 'CX_Sidrena_Feed_Rows' ) ) {
+			return null;
+		}
+
+		return self::pack_in_text( CX_Sidrena_Feed_Rows::instance()->feed_naziv( $product ) );
+	}
+
+	/**
+	 * The "N+M gratis" form in a text (CX-SID-190, Hrvoje 23.11.: any N+M with the word gratis or besplatno): N and M of
+	 * one or two digits, each at least 1, "+" with any spaces around it, then a space and the word in any letter case,
+	 * nothing but a non-letter after the word. Narrow on purpose, because a wrong hit changes the unit price on the page
+	 * and in the price list: not "Omega 3+6" or "1+1" alone (no word), not "gratis 1+1" (the word first), not "1+1+1
+	 * gratis" (a longer chain), not three digits. Every hit must give the same N and M; two different ones give none.
+	 *
+	 * @param string $text A name.
+	 * @return array{pieces:int, form:string}|null The pieces (N+M) and the first hit as written, spaces run together.
+	 */
+	public static function pack_in_text( $text ) {
+		$text = (string) $text;
+		if ( ! preg_match_all( '/(?<![\p{L}\p{N}.,])(\d{1,2})[\s\x{00A0}]*\+[\s\x{00A0}]*(\d{1,2})[\s\x{00A0}]+(gratis|besplatno)(?![\p{L}\p{N}])/iu', $text, $hits, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
+			return null;
+		}
+
+		$pair = null;
+		$form = '';
+		foreach ( $hits as $hit ) {
+			$before = (string) preg_replace( '/[\s\x{00A0}]+$/u', '', substr( $text, 0, $hit[0][1] ) );
+			$n      = (int) $hit[1][0];
+			$m      = (int) $hit[2][0];
+			if ( '+' === substr( $before, -1 ) || $n < 1 || $m < 1 ) {
+				return null; // "1+1+1 gratis", "1+0 gratis"
+			}
+			if ( null === $pair ) {
+				$pair = array( $n, $m );
+				$form = (string) preg_replace( '/[\s\x{00A0}]+/u', ' ', $hit[0][0] );
+			} elseif ( array( $n, $m ) !== $pair ) {
+				return null; // two different packs in one name
+			}
+		}
+
+		return array(
+			'pieces' => $pair[0] + $pair[1],
+			'form'   => $form,
 		);
 	}
 

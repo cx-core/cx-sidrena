@@ -63,12 +63,17 @@ class CX_Sidrena_Import_Parse {
 		$rows      = array();
 
 		for ( $i = 1, $max = count( $lines ); $i < $max; $i++ ) {
+			$cells = str_getcsv( $lines[ $i ], $delimiter, '"', '\\' );
 			if ( count( $rows ) >= CX_Sidrena_Bulk_Import::MAX_ROWS ) {
-				break;
+				// CX-SID-199: a row more is refused, never cut. A line with no cell of content (";;;;", rows a sheet once
+				// formatted) is still a row below the limit, as it always was, but is no reason to refuse.
+				if ( $this->filled( $cells ) ) {
+					return $this->too_many_rows();
+				}
+				continue;
 			}
 
-			$cells = str_getcsv( $lines[ $i ], $delimiter, '"', '\\' );
-			$row   = array();
+			$row = array();
 			foreach ( $headers as $index => $field ) {
 				$row[ $field ] = isset( $cells[ $index ] ) ? trim( (string) $cells[ $index ] ) : '';
 			}
@@ -397,7 +402,10 @@ class CX_Sidrena_Import_Parse {
 				continue; // a line of empty cells is no row, and keeps its number
 			}
 			if ( count( $rows ) >= CX_Sidrena_Bulk_Import::MAX_ROWS ) {
-				break;
+				// CX-SID-199: one row with content more than an import may have. Refused, never cut: a place's import
+				// replaces its price list, so the rows after the limit would be removed (U9).
+				$src = array();
+				return $this->too_many_rows();
 			}
 			$item = array();
 			foreach ( $fields as $index => $field ) {
@@ -554,6 +562,15 @@ class CX_Sidrena_Import_Parse {
 	}
 
 	/**
+	 * A file with more rows than an import may have (CX-SID-199): refused with T104, never cut.
+	 *
+	 * @return WP_Error
+	 */
+	private function too_many_rows() {
+		return new WP_Error( 'too_many_rows', CX_Sidrena_Bulk_Import::too_many_rows_message() );
+	}
+
+	/**
 	 * The cells with content, by their column.
 	 *
 	 * @param array<int, string> $cells Cells.
@@ -649,7 +666,13 @@ class CX_Sidrena_Import_Parse {
 
 		foreach ( $items as $item ) {
 			if ( count( $rows ) >= CX_Sidrena_Bulk_Import::MAX_ROWS ) {
-				break;
+				// CX-SID-199: as parse_csv(), an item with a value more is refused, an item with none is no reason to.
+				foreach ( $item->children() as $child ) {
+					if ( '' !== $child->getName() && '' !== trim( (string) $child ) ) {
+						return $this->too_many_rows();
+					}
+				}
+				continue;
 			}
 
 			$row = array();

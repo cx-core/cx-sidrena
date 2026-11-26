@@ -34,6 +34,11 @@ final class CX_Sidrena_Dates {
 	 * Words in a category's own name that suggest the second date: the six groups of the draft (Kai, CX-SID-94): food,
 	 * drink, cosmetics (whatever goes on the skin, hair or lips), cleaning products, toiletries and household products.
 	 * Lower case, without diacritics, matched as the start of a word.
+	 *
+	 * Drink by its kind too (CX-SID-192): Pravilnik NN 132/2026-1583, čl. 3 st. 1: »za hranu, piće, kozmetiku, sredstva za
+	 * čišćenje, toaletne potrepštine i proizvode za kućanstvo istaknuti baznu cijenu koja odgovara maloprodajnoj cijeni koju
+	 * je za navedenu robu primijenio na dan 2. svibnja 2025.« A shop of drink names its categories Whisky, Rum, Pjenušac,
+	 * Likeri, not "pića". A kind that starts other words (rum, gin, medica, porto) is in KEYWORDS_WHOLE instead.
 	 */
 	const KEYWORDS = array(
 		'hrana', 'prehran', 'namirnic', 'mlijek', 'mlijecn', 'kruh', 'pekar', 'tjestenin', 'slatkis', 'cokolad', 'grickal',
@@ -44,12 +49,28 @@ final class CX_Sidrena_Dates {
 		'wine', 'beer', 'cosmetic', 'skincare', 'shampoo', 'cream', 'soap', 'perfume', 'deodorant', 'lotion', 'makeup',
 		'toilet', 'diaper', 'nappies', 'tissue', 'toothpaste', 'shaving', 'hygiene', 'detergent', 'cleaning', 'disinfect',
 		'laundry', 'dishwash', 'household',
+		'whisk', 'viski', 'vodk', 'votk', 'liker', 'liqueur', 'liquor', 'rakij', 'konjak', 'konjac', 'cognac', 'brandy',
+		'pjenus', 'sampanj', 'champag', 'prosecc', 'tonic', 'tonik', 'tequil', 'tekil', 'mezcal', 'pelinkov', 'travaric',
+		'sljivovic', 'absint', 'vermut', 'vermouth', 'aperitiv', 'cider', 'jabukovac', 'koktel', 'cocktail', 'zestok',
+		'lozovac', 'orahovac', 'visnjevac', 'komovic', 'grapp', 'sherry',
 	);
 
-	/** The same groups, as whole words only: parts of the body (cosmetics for them), short words that start others. */
+	/**
+	 * The same groups, as whole words only: parts of the body (cosmetics for them), short words that start others. Kinds of
+	 * drink with their Croatian forms (CX-SID-192): rum not in Rumunjska or Rumenilo, gin not in Ginkgo or Origin, destilat
+	 * not in Destilatori, medica not in Medicinski, džin not in Džins; and the plural forms of piće, vino, pivo and kava,
+	 * which the start words above do not reach (Žestoka pića, Bijela vina, Craft piva, Mljevene kave).
+	 */
 	const KEYWORDS_WHOLE = array(
 		'lice', 'lica', 'tijelo', 'tijela', 'kosa', 'kose', 'kosu', 'usne', 'nokti', 'noktiju',
 		'body', 'face', 'hair', 'lips', 'skin', 'nails', 'tea',
+		'rum', 'ruma', 'rumu', 'rumom', 'rumovi', 'rumova', 'rumove', 'rumovima',
+		'gin', 'ginu', 'ginom', 'ginovi', 'ginova', 'ginove', 'ginovima',
+		'dzin', 'dzina', 'dzinu', 'dzinom', 'dzinovi', 'dzinova', 'dzinove', 'dzinovima',
+		'pica', 'picu', 'picima', 'vina', 'vinu', 'vinima', 'piva', 'pivu', 'pivima', 'kave', 'kavu', 'kavi', 'kavom',
+		'spirits', 'brendi', 'brendija', 'destilat', 'destilati', 'destilata', 'destilatu', 'destilatom', 'destilatima',
+		'medica', 'medice', 'medici', 'medicu', 'medicom', 'biska', 'biske', 'biski', 'bisku', 'biskom',
+		'prosek', 'proseka', 'proseku', 'prosekom', 'porto', 'sake', 'amaro', 'bitter', 'bitteri',
 	);
 
 	/**
@@ -63,8 +84,16 @@ final class CX_Sidrena_Dates {
 		'equipment', 'device', 'appliance', 'spare', 'accessor', 'vehicle', 'aquarium', 'pond',
 	);
 
-	/** Whole words of the same kind. */
-	const NOT_FOR_PEOPLE_WHOLE = array( 'pet', 'pets', 'dog', 'dogs', 'cat', 'cats', 'tool', 'tools', 'car', 'cars' );
+	/**
+	 * Whole words of the same kind. Glasses and stills (CX-SID-192, Rook 4475: "Čaše za whisky", "Kotlovi za rakiju") as
+	 * whole words of čaša and kotao: as starts of words they would also take Kotleti, Cashmere, Cassava or a wine named
+	 * Castello. Without "casa", which is a wine's "Casa" too.
+	 */
+	const NOT_FOR_PEOPLE_WHOLE = array(
+		'pet', 'pets', 'dog', 'dogs', 'cat', 'cats', 'tool', 'tools', 'car', 'cars',
+		'case', 'casi', 'casu', 'casom', 'casama', 'casica', 'casice', 'casicu', 'casicom', 'casicama',
+		'kotao', 'kotla', 'kotlu', 'kotlom', 'kotlovi', 'kotlova', 'kotlove', 'kotlovima',
+	);
 
 	/**
 	 * Words of a category that may hold goods of both dates (gifts, sets, sales, "other"): its date follows its parent,

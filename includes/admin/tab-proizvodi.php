@@ -7,7 +7,9 @@
 
 defined( 'ABSPATH' ) || exit;
 
-		$rows = CX_Sidrena_Catalog::instance()->all();
+		// CX-SID-139: the rows and the hash the form's Save is checked against, from one read of the table.
+		$catalog_state = CX_Sidrena_Catalog::instance()->stored_state();
+		$rows          = $catalog_state['rows'];
 		foreach ( $rows as $i => $row ) {
 			// A service that is not in the price list is marked in its row (CX-SID-130, Norman 3113 R).
 			$rows[ $i ]['neobjavljeno'] = ! CX_Sidrena_Catalog::instance()->is_public_row( $row );
@@ -86,6 +88,8 @@ defined( 'ABSPATH' ) || exit;
 				<input type="hidden" name="sidrena_cijena_action" value="save_catalog" />
 				<input type="hidden" name="sidrena_cijena_catalog_json" id="sidrena-cijena-catalog-json" value="<?php echo CX_Sidrena_Admin::json_attr( $rows ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_attr() in json_attr() ?>" />
 				<input type="hidden" name="sidrena_cijena_upit_json" id="sidrena-cijena-upit-json" value="<?php echo CX_Sidrena_Admin::json_attr( $upit_rows ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_attr() in json_attr() ?>" />
+				<?php // CX-SID-139: Save writes only while the stored catalog is still this one. The script does not touch it. ?>
+				<input type="hidden" name="sidrena_cijena_catalog_sha" value="<?php echo esc_attr( $catalog_state['sha'] ); ?>" />
 				<?php // CX-SID-142: the script sets _loaded once it has read both lists, and _cleared for a list the owner emptied. Without them the save is refused. ?>
 				<input type="hidden" name="sidrena_cijena_catalog_loaded" id="sidrena-cijena-catalog-loaded" value="" />
 				<input type="hidden" name="sidrena_cijena_catalog_cleared" id="sidrena-cijena-catalog-cleared" value="" />

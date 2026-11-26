@@ -114,9 +114,10 @@ class CX_Sidrena_Import_Excel {
 	 *
 	 * @param string $contents File bytes.
 	 * @param int    $max_rows Rows with content wanted (more are not read).
-	 * @return array{rows: array<int, array<int, string>>, sheets: array{count: int, first: string}}|WP_Error
+	 * @return array{rows: array<int, array<int, string>>, sheets: array{count: int, first: string}, more: bool}|WP_Error
 	 *         rows: row number as in Excel (1 = the first), in order => column (0 = A) => displayed text; only cells with
-	 *         text, columns not necessarily in order.
+	 *         text, columns not necessarily in order. more: the sheet has more rows with content than were read
+	 *         ($max_rows + EXTRA_ROWS); the rows are then not the whole sheet and must not be imported (CX-SID-199).
 	 */
 	public function read( $contents, $max_rows ) {
 		$this->inflated  = 0;
@@ -143,6 +144,9 @@ class CX_Sidrena_Import_Excel {
 		if ( empty( $out['rows'] ) ) {
 			return new WP_Error( 'empty', 'empty' );
 		}
+		// The sheet readers stop at the first row with content past the limit (biff_sheet(), xlsx_sheet()), so one row
+		// more than the limit means the sheet goes on (CX-SID-199: refused, never cut). Rows with no value never count.
+		$out['more'] = count( $out['rows'] ) > $max_rows;
 
 		return $out;
 	}

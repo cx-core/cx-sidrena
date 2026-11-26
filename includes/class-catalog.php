@@ -94,14 +94,19 @@ class CX_Sidrena_Catalog {
 			return $this->cached_all;
 		}
 
-		$stored = get_option( self::OPTION_KEY, array() );
-		if ( ! is_array( $stored ) ) {
-			$this->cached_all = array();
-			return $this->cached_all;
-		}
+		$this->cached_all = $this->rows_from( get_option( self::OPTION_KEY, array() ) );
+		return $this->cached_all;
+	}
 
+	/**
+	 * The rows of a stored value, as all() gives them.
+	 *
+	 * @param mixed $stored The option's value.
+	 * @return array<int, array<string, string>>
+	 */
+	private function rows_from( $stored ) {
 		$out = array();
-		foreach ( $stored as $row ) {
+		foreach ( is_array( $stored ) ? $stored : array() as $row ) {
 			if ( ! is_array( $row ) ) {
 				continue;
 			}
@@ -112,8 +117,50 @@ class CX_Sidrena_Catalog {
 			}
 		}
 
-		$this->cached_all = $out;
-		return $this->cached_all;
+		return $out;
+	}
+
+	/**
+	 * The catalog as stored in the table now, past every cache: its rows (as all() gives them) and the sha256 of the
+	 * stored value (CX-SID-139). The Products / Additional items form shows these rows and carries the hash, and its Save
+	 * writes only while the hash is still the stored one: a page loaded before an import, a save in another tab or a
+	 * removed place never writes its old list over them. Rows and hash come from one read, so the page never shows rows
+	 * of another moment than its hash. The hash is the one the import compares (CX_Sidrena_Bulk_Import::catalog_sha()).
+	 *
+	 * @return array{rows: array<int, array<string, string>>, sha: string}
+	 */
+	public function stored_state() {
+		$raw = $this->stored_raw();
+
+		return array(
+			'rows' => $this->rows_from( null === $raw ? array() : maybe_unserialize( $raw ) ),
+			'sha'  => hash( 'sha256', null === $raw ? '' : $raw ),
+		);
+	}
+
+	/**
+	 * The sha256 of the catalog as stored in the table now, past every cache (stored_state()'s hash).
+	 *
+	 * @return string
+	 */
+	public function stored_sha() {
+		$raw = $this->stored_raw();
+
+		return hash( 'sha256', null === $raw ? '' : $raw );
+	}
+
+	/**
+	 * The option's value in the table, not from the object cache (null: no row).
+	 *
+	 * @return string|null
+	 */
+	private function stored_raw() {
+		global $wpdb;
+
+		CX_Sidrena_Archive::no_db_cache();
+		$raw = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::OPTION_KEY ) ); // phpcs:ignore WordPress.DB
+
+		return is_string( $raw ) ? $raw : null;
 	}
 
 	/**

@@ -440,12 +440,26 @@ class CX_Sidrena_Admin_Save {
 		};
 		$sent_catalog = json_decode( $json, true );
 		$sent_upit    = json_decode( $upit, true );
+		// CX-SID-139: the hash of the stored catalog the page was loaded with (tab-proizvodi.php). A page from before the
+		// update has none, so it is refused as one that did not confirm it loaded.
+		$sent_sha     = isset( $_POST['sidrena_cijena_catalog_sha'] ) && is_string( $_POST['sidrena_cijena_catalog_sha'] ) ? (string) wp_unslash( $_POST['sidrena_cijena_catalog_sha'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- compared only
 		$refused      = ! $flag( 'sidrena_cijena_catalog_loaded' ) || ! is_array( $sent_catalog ) || ! is_array( $sent_upit )
+			|| 1 !== preg_match( '/^[0-9a-f]{64}$/', $sent_sha )
 			|| ( ! $flag( 'sidrena_cijena_catalog_cleared' ) && ! self::has_rows( $sent_catalog, array( 'naziv', 'sku', 'marka', 'url', 'cijena_redovna', 'cijena_akcijska', 'naziv_posebnog_oblika', 'jedinica_mjere', 'cijena_jedinice_mjere', 'sidrena_cijena', 'sidrena_datum', 'cjm_suffix' ) ) && array() !== CX_Sidrena_Catalog::instance()->all() )
 			|| ( ! $flag( 'sidrena_cijena_upit_cleared' ) && ! self::has_rows( $sent_upit, array( 'naziv', 'kriteriji' ) ) && array() !== CX_Sidrena_Upit::instance()->all() );
 		if ( $refused ) {
 			// Norman C3. What was sent is not shown again: it came from a page that did not load.
 			wp_safe_redirect( self::settings_url( 'cx-items', array( 'updated' => false, 'cx_items_error' => 'unloaded' ) ) );
+			exit;
+		}
+
+		// CX-SID-139: the page writes its whole list, so it may only replace the catalog it was loaded with. When the stored
+		// catalog changed since (an import on the same page, a save in another tab, a removed place, WP-CLI), nothing is
+		// written, neither list, and the fresh page the owner lands on shows the catalog as it is now (Norman T103).
+		// Read past every cache right before the write; the few ms between this read and the write are the same as the
+		// import's confirm (class-bulk-import.php, catalog_sha() then save()).
+		if ( ! hash_equals( CX_Sidrena_Catalog::instance()->stored_sha(), $sent_sha ) ) {
+			wp_safe_redirect( self::settings_url( 'cx-items', array( 'updated' => false, 'cx_items_error' => 'changed' ) ) );
 			exit;
 		}
 

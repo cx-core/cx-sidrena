@@ -160,12 +160,20 @@ class CX_Sidrena_Bulk_Import {
 				$code = $read->get_error_code();
 				$this->parse_fail( 'empty' === $code ? __( 'The file is empty.', 'cx-sidrena' ) : $this->excel_message( $code ), $code );
 			}
+			if ( ! empty( $read['more'] ) ) {
+				// CX-SID-199: more rows with content than the reader takes (MAX_ROWS and its EXTRA_ROWS above the names
+				// row). Refused before anything is kept, never cut.
+				$this->parse_fail( self::too_many_rows_message(), 'rows' );
+			}
 			$grid   = $read['rows'];
 			$sheets = $read['sheets'];
 			unset( $read );
 			$target = $this->shape_key( $cilj );
 			$kept   = null === $redak ? $this->kept_shape( $target ) : null;
 			$parsed = $parser->parse_grid( $grid, $redak, $this->known_name(), $kept ); // uses the grid up, row by row (memory, C195-big)
+			if ( is_wp_error( $parsed ) && 'too_many_rows' === $parsed->get_error_code() ) {
+				$this->parse_fail( $parsed->get_error_message(), 'rows' ); // more rows under the names row than MAX_ROWS (CX-SID-199)
+			}
 			if ( is_wp_error( $parsed ) ) {
 				// The chosen names row is not one (past the end, empty, nothing under it); else no two rows with content.
 				$this->parse_fail( $parsed->get_error_message(), 'bad_row' === $parsed->get_error_code() ? 'bad_row' : 'empty' );
@@ -190,6 +198,11 @@ class CX_Sidrena_Bulk_Import {
 				$parsed = $parser->parse_csv( $contents );
 			}
 
+			if ( is_wp_error( $parsed ) && 'too_many_rows' === $parsed->get_error_code() ) {
+				// CX-SID-199: more rows than MAX_ROWS (CSV, XML), refused before anything is kept, never cut. Without
+				// WooCommerce the answer has no code, as always; the bulk import shows the message.
+				$this->parse_fail( $parsed->get_error_message(), 'rows' );
+			}
 			if ( is_wp_error( $parsed ) ) {
 				// Empty: no line under the header (the parser's 'csv' error is also a file it cannot read).
 				$lines = array_filter( preg_split( '/\r\n|\r|\n/', $contents ), 'trim' );
@@ -1409,7 +1422,7 @@ class CX_Sidrena_Bulk_Import {
 	 * what it always was.
 	 *
 	 * @param string $message Message.
-	 * @param string $code    xls | empty | encoding | other.
+	 * @param string $code    xls | ods | empty | encoding | bad_row | rows (more than MAX_ROWS, CX-SID-199) | other.
 	 */
 	private function parse_fail( $message, $code ) {
 		$data = array( 'message' => $message );
@@ -1417,6 +1430,17 @@ class CX_Sidrena_Bulk_Import {
 			$data['code'] = $code;
 		}
 		wp_send_json_error( $data );
+	}
+
+	/**
+	 * T104 (Norman, CX-SID-199): a file with more rows than a price list may have. The import screen's text for the code
+	 * 'rows' is this same string (class-admin.php), and without WooCommerce the bulk import shows it as the message.
+	 *
+	 * @return string
+	 */
+	public static function too_many_rows_message() {
+		/* translators: %s: the most rows a price list may have (25,000), written as the site writes numbers */
+		return sprintf( __( 'The file has more than %s rows, and a price list can have at most that many. Export from your till only the items you offer now, and upload that file.', 'cx-sidrena' ), number_format_i18n( self::MAX_ROWS ) );
 	}
 
 	/**

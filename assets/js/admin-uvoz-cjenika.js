@@ -306,6 +306,13 @@
 		var c = counts();
 		return num(c.new) + num(c.od_danas) + num(c.changed) + num(c.same) + num(c.waits);
 	};
+	/** The rows that go into the price list, as the server counts them before it confirms (ajax_confirm's $in): a file
+	 *  with none is refused there ('nothing'), also when services wait, so Dalje and Uvezi follow this and not
+	 *  entering(). entering() stays the number on the button: the waiting services are saved with the rest (T47, T55). */
+	var importable = function () {
+		var c = counts();
+		return num(c.new) + num(c.od_danas) + num(c.changed) + num(c.same);
+	};
 	/** The server's today (198), for T88a and T88b; the page's own as a fallback. */
 	var serverToday = function () {
 		return (S.run && S.run.today) || C.today;
@@ -484,7 +491,8 @@
 			ods: T.T21o,
 			other: T.T21x,
 			empty: T.T22,
-			encoding: T.T23
+			encoding: T.T23,
+			rows: T.T104
 		}[code] || T.error;
 	};
 
@@ -959,7 +967,7 @@
 			S.seq++;
 			setStep('columns');
 		});
-		var next = el('button', { type: 'button', class: 'button button-primary', text: T.T33, disabled: !entering() });
+		var next = el('button', { type: 'button', class: 'button button-primary', text: T.T33, disabled: !importable() });
 		next.addEventListener('click', function () {
 			setStep('confirm');
 		});
@@ -979,7 +987,9 @@
 			el('p', { class: 'cx-ui__muted', 'data-state': 'list-note', hidden: true }),
 			el('table', { class: 'cx-ui__table cx-uvoz__table' }, [el('thead'), el('tbody')]),
 			el('p', { class: 'cx-uvoz__pages' }),
-			entering() ? null : el('p', { class: 'cx-ui__muted', text: T.T49 }),
+			// Nothing for the price list: T49, or T49w when services wait, as each of their rows says "saved" (T47) and
+			// they are not saved either (Norman 235efc6a).
+			importable() ? null : el('p', { class: 'cx-ui__muted', text: num(c.waits) ? T.T49w : T.T49 }),
 			el('div', { class: 'cx-ui__foot' }, [back, el('span', { class: 'cx-ui__sp' }), next])
 		];
 	}
@@ -1107,7 +1117,7 @@
 			S.by = by.value;
 			S.on = on.value;
 			S.consent = ok.checked;
-			go.disabled = S.busy || !(by.value.trim() && on.value && ok.checked);
+			go.disabled = S.busy || !importable() || !(by.value.trim() && on.value && ok.checked);
 			go.textContent = S.busy ? T.importing : sprintf(T.importN, entering());
 		};
 		[by, on, ok].forEach(function (x) {

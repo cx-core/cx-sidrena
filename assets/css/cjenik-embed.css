@@ -68,6 +68,14 @@
 	display: none !important;
 }
 
+/* A table the search finds nothing in hides its frame and its heading (CX-SID-208): no theme's display brings them back. */
+.sidrena-cjenik .cjenik-table-wrap[hidden],
+.sidrena-cjenik .cjenik-usluge-title[hidden],
+.sidrena-cjenik .cjenik-upit-title[hidden],
+.sidrena-cjenik .cjenik-upit-note[hidden] {
+	display: none !important;
+}
+
 .sidrena-cjenik .cjenik-table-wrap {
 	overflow-x: auto;
 	background: #fff;

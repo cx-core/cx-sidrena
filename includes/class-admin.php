@@ -569,6 +569,10 @@ class CX_Sidrena_Admin {
 		if ( 0 === strpos( $error, 'isti:' ) ) {
 			return CX_Sidrena_Settings::isti_cjenik_refusal( CX_Sidrena_Settings::instance()->normalize_oznaka( substr( $error, 5 ) ) );
 		}
+		// The stored items changed after the page was loaded (CX-SID-139, Norman T103). This page is already a fresh load.
+		if ( 'changed' === $error ) {
+			return __( 'Nothing was saved, because the items were changed somewhere else after this page was opened, for example by an import or in another browser tab. The page now shows them as they are saved. Make your changes again and save.', 'cx-sidrena' );
+		}
 
 		return __( 'Nothing was saved, because the page did not confirm that it had loaded all items, and saving could have deleted the ones it did not show. Your saved items and your price list have not changed. Refresh the page and make your changes again.', 'cx-sidrena' );
 	}
@@ -1282,6 +1286,8 @@ class CX_Sidrena_Admin {
 					// Its own msgid: "The file has no rows." is the bazna import's (Datoteka nema redaka.), no gettext context.
 					'T22'         => __( 'There are no rows in the file.', 'cx-sidrena' ),
 					'T23'         => __( 'Letters such as č, ć and ž can\'t be read in this file. Save it as CSV UTF-8 and upload it again.', 'cx-sidrena' ),
+					// CX-SID-199: the server's own message for the code 'rows', one string.
+					'T104'        => $bulk ? CX_Sidrena_Bulk_Import::too_many_rows_message() : '',
 					'T24'         => __( 'Which column is which?', 'cx-sidrena' ),
 					'T25'         => __( 'We picked them from the column names. Check them, then go on.', 'cx-sidrena' ),
 					'T26'         => __( '— not imported —', 'cx-sidrena' ),
@@ -1327,6 +1333,7 @@ class CX_Sidrena_Admin {
 					'T48b'        => __( 'Items removed from the price list: %d. The list is in the preview, under Will be removed.', 'cx-sidrena' ),
 					'T48c'        => __( 'Not in this file.', 'cx-sidrena' ),
 					'T49'         => __( 'No row in this file can be imported. The reasons are in the table.', 'cx-sidrena' ),
+					'T49w'        => __( 'This file is not imported: none of its rows would go into the price list, so the waiting services are not saved either. Add their date and bazna cijena to the file, then upload it again.', 'cx-sidrena' ),
 					'T52'         => __( 'The price list changed after the preview, so nothing was written. Upload the file again.', 'cx-sidrena' ),
 					'T52b'        => __( 'The places of sale changed after the preview, so nothing was written. Upload the file again.', 'cx-sidrena' ),
 					'T52c'        => __( 'The import could not be saved, so nothing was written. Upload the file again. If it happens again, tell us.', 'cx-sidrena' ),

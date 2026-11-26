@@ -58,6 +58,13 @@ class CX_Sidrena_Export {
 	private $suppress_change_queue = false;
 
 	/**
+	 * The 00:05 run clears the page caches itself, after the archive's upkeep (CX-SID-141).
+	 *
+	 * @var bool
+	 */
+	private $defer_cache_purge = false;
+
+	/**
 	 * The value of the rebuild lock row while this request holds it, else ''.
 	 *
 	 * @var string
@@ -400,10 +407,19 @@ class CX_Sidrena_Export {
 	 */
 
 	public function run_daily_regenerate() {
-		$this->regenerate_public_xml();
+		$this->defer_cache_purge = true;
+		try {
+			$result = $this->regenerate_public_xml();
+		} finally {
+			$this->defer_cache_purge = false;
+		}
 		// Also when the build failed: files no longer public (replaced more than 15 days ago) are kept, kept files past
 		// their period go.
 		CX_Sidrena_Archive::instance()->maintain();
+		// The pages with our shortcodes, once, with the archive as it is now (CX-SID-141).
+		if ( ! is_wp_error( $result ) ) {
+			CX_Sidrena_Page_Cache::purge();
+		}
 	}
 
 	/**
@@ -784,6 +800,10 @@ class CX_Sidrena_Export {
 		}
 
 		$this->after_build( $result );
+		// A page cache keeps the pages with our shortcodes: they show the new price list once cleared (CX-SID-141).
+		if ( ! is_wp_error( $result ) && ! $this->defer_cache_purge ) {
+			CX_Sidrena_Page_Cache::purge();
+		}
 
 		return $result;
 	}
@@ -990,6 +1010,7 @@ class CX_Sidrena_Export {
 			$prev['format']              = $this->export_format();
 			$prev['outlets']             = $stored;
 			update_option( self::PUBLIC_OPTION, $prev );
+			CX_Sidrena_Page_Cache::purge(); // a place's shortcode pages (CX-SID-141)
 
 			return $result;
 		} catch ( Throwable $e ) {

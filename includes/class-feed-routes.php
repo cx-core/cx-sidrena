@@ -290,6 +290,7 @@ class CX_Sidrena_Feed_Routes {
 
 		if ( '' !== $oznaka ) {
 			status_header( 404 );
+			CX_Sidrena_Page_Cache::no_cache(); // an answer that there is no file is never kept (CX-SID-141, Rook 4477)
 			header( 'Content-Type: text/plain; charset=utf-8' );
 			echo esc_html__( 'The outlet price list is not enabled.', 'cx-sidrena' );
 			exit;
@@ -506,6 +507,7 @@ class CX_Sidrena_Feed_Routes {
 	public function serve_b2b_not_published() {
 		status_header( 404 );
 		nocache_headers();
+		CX_Sidrena_Page_Cache::no_cache(); // our price list page's answer too, and no file is coming (CX-SID-141)
 		header( 'Content-Type: text/plain; charset=utf-8' );
 		echo esc_html__( 'This shop sells only to businesses and publishes no price list.', 'cx-sidrena' );
 		exit;
@@ -543,6 +545,7 @@ class CX_Sidrena_Feed_Routes {
 
 		status_header( 404 );
 		nocache_headers();
+		CX_Sidrena_Page_Cache::no_cache(); // an answer that there is no file is never kept (CX-SID-141, Rook 4477)
 		header( 'Content-Type: text/plain; charset=utf-8' );
 		echo esc_html__( 'There are no services in this price list.', 'cx-sidrena' );
 		exit;
@@ -555,6 +558,8 @@ class CX_Sidrena_Feed_Routes {
 	 * @param string $ext xml|csv.
 	 */
 	public function serve_missing_public_feed( $ext ) {
+		// Never kept by a page cache: the file comes with the first bazna or the next build (CX-SID-141, Rook 4477).
+		CX_Sidrena_Page_Cache::no_cache();
 		// Before the first bazna there is no price list, and none comes in two minutes: 404, not 503 (CX-SID-68). Nor
 		// without an OIB or MBO (CX-SID-159).
 		if ( CX_Sidrena_Export::instance()->awaiting_bazna() || CX_Sidrena_Export::instance()->waiting_for_legal_id() ) {
@@ -697,6 +702,7 @@ class CX_Sidrena_Feed_Routes {
 		$outlet = CX_Sidrena_Poslovnice::instance()->get_by_oznaka( $oznaka );
 		if ( ! is_array( $outlet ) ) {
 			status_header( 404 );
+			CX_Sidrena_Page_Cache::no_cache(); // an answer that there is no file is never kept (CX-SID-141, Rook 4477)
 			header( 'Content-Type: text/plain; charset=utf-8' );
 			echo esc_html__( 'The outlet has no published price list.', 'cx-sidrena' );
 			exit;
@@ -738,6 +744,7 @@ class CX_Sidrena_Feed_Routes {
 
 		status_header( 404 );
 		nocache_headers();
+		CX_Sidrena_Page_Cache::no_cache(); // an answer that there is no file is never kept (CX-SID-141, Rook 4477)
 		header( 'Content-Type: text/plain; charset=utf-8' );
 		echo esc_html__( 'This place of sale has no products in its price list yet.', 'cx-sidrena' );
 		exit;
@@ -924,6 +931,7 @@ class CX_Sidrena_Feed_Routes {
 		// No longer public (replaced more than 15 days ago, CX-SID-158), also before the move has put it away (CX-SID-27).
 		if ( '' === $name || ! file_exists( $path ) || ! CX_Sidrena_Archive::instance()->is_public( $name ) ) {
 			status_header( 404 );
+			CX_Sidrena_Page_Cache::no_cache(); // an answer that there is no file is never kept (CX-SID-141, Rook 4477)
 			header( 'Content-Type: text/plain; charset=utf-8' );
 			echo esc_html__( 'Archive price list not found.', 'cx-sidrena' );
 			exit;
@@ -943,6 +951,7 @@ class CX_Sidrena_Feed_Routes {
 		if ( function_exists( 'nocache_headers' ) ) {
 			nocache_headers();
 		}
+		CX_Sidrena_Page_Cache::no_cache(); // our page: never kept by a page cache (CX-SID-141)
 
 		header( 'Content-Type: text/html; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex, follow' );
@@ -1014,7 +1023,7 @@ class CX_Sidrena_Feed_Routes {
 	}
 
 	/**
-	 * Webshop object code used on buttons and archive headings.
+	 * Webshop object code: file names, the archive's headings (CX-SID-143/152), the admin.
 	 *
 	 * @return string
 	 */
@@ -1023,6 +1032,17 @@ class CX_Sidrena_Feed_Routes {
 		$oznaka   = $settings->normalize_oznaka( $settings->get( 'file_oznaka', '001' ) );
 
 		return '' !== $oznaka ? $oznaka : '001';
+	}
+
+	/**
+	 * What a visitor of the public price list sees for the webshop next to the places' names: under the title of its page,
+	 * on its download buttons and on the link back to it (CX-SID-204, Norman T100). Its code belongs in the file names,
+	 * not here: "001" told a customer nothing where a place shows "Prodavaonica Samobor".
+	 *
+	 * @return string
+	 */
+	public function webshop_label() {
+		return __( 'Online shop', 'cx-sidrena' );
 	}
 
 	/**
@@ -1221,7 +1241,7 @@ class CX_Sidrena_Feed_Routes {
 		$count     = (int) $snapshot['count'];
 		$shop      = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
 		$title     = __( 'Price list', 'cx-sidrena' );
-		$scope     = is_array( $outlet ) ? $this->outlet_label( $outlet ) : ( $settings->is_multi_poslovnica() && ! $isti ? $this->webshop_oznaka() : '' );
+		$scope     = is_array( $outlet ) ? $this->outlet_label( $outlet ) : ( $settings->is_multi_poslovnica() && ! $isti ? $this->webshop_label() : '' );
 		$format    = CX_Sidrena_Feed_Files::instance()->export_format();
 		$feed_lbl  = 'csv' === $format ? __( 'Download CSV', 'cx-sidrena' ) : __( 'Download XML', 'cx-sidrena' );
 		$generated = CX_Sidrena_Export::instance()->get_public_meta();
@@ -1237,6 +1257,8 @@ class CX_Sidrena_Feed_Routes {
 
 		header( 'Content-Type: text/html; charset=utf-8' );
 		header( 'Cache-Control: public, max-age=300' );
+		// Never kept by a page cache: the page changes at every build and nothing tells the cache (CX-SID-141).
+		CX_Sidrena_Page_Cache::no_cache();
 
 		echo '<!DOCTYPE html><html lang="hr"><head><meta charset="utf-8" />';
 		echo '<meta name="viewport" content="width=device-width, initial-scale=1" />';
@@ -1288,7 +1310,9 @@ class CX_Sidrena_Feed_Routes {
 		);
 		echo '</a></p>';
 		echo '</main>';
-		// A table where it fits, cards where it does not (CX-SID-104); without it, cjenik.css alone.
+		// The search and the pages (CX-SID-111), then a table where it fits, cards where it does not (CX-SID-104);
+		// without them, the first page of rows and cjenik.css alone.
+		CX_Sidrena_Frontend::print_cjenik_search_script();
 		CX_Sidrena_Frontend::print_cjenik_fit_script();
 		echo '</body></html>';
 		exit;
@@ -1327,7 +1351,7 @@ class CX_Sidrena_Feed_Routes {
 		}
 
 		if ( '' === $oznaka ) {
-			$this->render_scope_downloads( '', $feed_lbl, ' - ' . $this->webshop_oznaka() );
+			$this->render_scope_downloads( '', $feed_lbl, ' - ' . $this->webshop_label() );
 			foreach ( CX_Sidrena_Poslovnice::instance()->with_products() as $outlet ) {
 				$this->render_scope_downloads( $outlet['oznaka'], $feed_lbl, ' - ' . $this->outlet_label( $outlet ) );
 			}
@@ -1390,7 +1414,7 @@ class CX_Sidrena_Feed_Routes {
 
 		$files = CX_Sidrena_Feed_Files::instance();
 		if ( '' !== $current ) {
-			echo '<a class="cjenik-btn cjenik-btn--ghost" href="' . esc_url( $files->get_cjenik_url() ) . '">' . esc_html( $this->webshop_oznaka() ) . '</a>';
+			echo '<a class="cjenik-btn cjenik-btn--ghost" href="' . esc_url( $files->get_cjenik_url() ) . '">' . esc_html( $this->webshop_label() ) . '</a>';
 		}
 
 		// Every place with a page, also one with only rows by agreement (CX-SID-145).
@@ -1418,6 +1442,7 @@ class CX_Sidrena_Feed_Routes {
 		} else {
 			header( 'Cache-Control: public, max-age=300' );
 		}
+		CX_Sidrena_Page_Cache::no_cache(); // our page: never kept by a page cache (CX-SID-141)
 
 		echo '<!DOCTYPE html><html lang="hr"><head><meta charset="utf-8" />';
 		echo '<meta name="viewport" content="width=device-width, initial-scale=1" />';
@@ -1450,6 +1475,8 @@ class CX_Sidrena_Feed_Routes {
 
 		header( 'Content-Type: text/html; charset=utf-8' );
 		header( 'Cache-Control: no-store' );
+		// A page cache read no-store as nothing and kept "not published yet" after the first build (CX-SID-141).
+		CX_Sidrena_Page_Cache::no_cache();
 
 		echo '<!DOCTYPE html><html lang="hr"><head><meta charset="utf-8" />';
 		echo '<meta name="viewport" content="width=device-width, initial-scale=1" />';
