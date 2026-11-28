@@ -3,7 +3,7 @@
  * Plugin Name: CX Sidrena
  * Plugin URI: https://github.com/cx-core/cx-sidrena
  * Description: Bazna cijena (sidrena cijena) for Croatian WooCommerce shops, with the lowest price in the 30 days before a sale and a public pricelist. Based on MJDD Sidrena i bazna cijena 1.26.0 by Jure Zadravec / MJDD (GPL-2.0-or-later).
- * Version: 0.3.3
+ * Version: 0.3.4
  * Author: Hrvoje Puzin
  * Author URI: https://github.com/hpuzin
  * Text Domain: cx-sidrena
@@ -19,7 +19,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CX_SIDRENA_VERSION', '0.3.3' );
+define( 'CX_SIDRENA_VERSION', '0.3.4' );
 // Schema of our own tables (includes/class-history.php). Raise it when a table changes; plugins_loaded then upgrades.
 define( 'CX_SIDRENA_DB_VERSION', 1 );
 define( 'CX_SIDRENA_FILE', __FILE__ );
@@ -41,6 +41,10 @@ require_once CX_SIDRENA_PATH . 'includes/class-bulk.php';
 require_once CX_SIDRENA_PATH . 'includes/class-fill.php';
 require_once CX_SIDRENA_PATH . 'includes/class-import.php';
 require_once CX_SIDRENA_PATH . 'includes/class-sale-rule.php';
+
+// The owner's price list build on the shop's front, as a visitor (CX-SID-210): a request with a valid token drops its
+// cookies here, before the rest of our plugin and the plugins after it run.
+CX_Sidrena_Export::front_build_early();
 
 // Price history: hooked here, before other plugins load, so whatever they write while loading is recorded too.
 CX_Sidrena_History::register();

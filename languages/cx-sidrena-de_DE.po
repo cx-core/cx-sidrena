@@ -17,10 +17,10 @@ msgstr ""
 #: includes/class-admin.php:140
 #: includes/class-admin.php:198
 #: includes/class-admin.php:201
-#: includes/class-admin.php:843
-#: includes/class-admin.php:1006
-#: includes/class-admin.php:1251
-#: includes/class-admin.php:1261
+#: includes/class-admin.php:859
+#: includes/class-admin.php:1022
+#: includes/class-admin.php:1267
+#: includes/class-admin.php:1277
 #: includes/class-feed-files.php:1269
 #: includes/class-i18n.php:469
 #: includes/class-product-fields.php:332
@@ -30,7 +30,7 @@ msgid "Bazna cijena"
 msgstr "Basispreis"
 
 #: includes/admin/class-admin-products.php:117
-#: includes/admin/class-admin-status.php:438
+#: includes/admin/class-admin-status.php:437
 msgid "No bazna cijena"
 msgstr ""
 
@@ -51,7 +51,7 @@ msgstr ""
 msgid "Bazna cijena: needs attention"
 msgstr ""
 
-#: includes/admin/class-admin-status.php:295
+#: includes/admin/class-admin-status.php:294
 #: includes/class-archive.php:1555
 #: includes/class-import.php:1466
 #: includes/class-import.php:1718
@@ -59,83 +59,83 @@ msgstr ""
 msgid "You are not allowed to do this."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:309
+#: includes/admin/class-admin-status.php:308
 #, php-format
 msgid "Bazna cijena set from the regular price. Products and variations: %d."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:321
+#: includes/admin/class-admin-status.php:320
 #: includes/admin/tab-status.php:375
 #: includes/class-fill.php:194
 #: includes/class-sale-rule.php:80
 msgid "Save Dates in Settings first. They set each product's date."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:330
-#: includes/class-admin.php:831
-#: includes/class-admin.php:1222
+#: includes/admin/class-admin-status.php:329
+#: includes/class-admin.php:847
+#: includes/class-admin.php:1238
 #: includes/class-fill.php:105
 #: includes/class-history.php:1124
 msgid "Enter the name of who confirmed."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:333
-#: includes/class-admin.php:832
-#: includes/class-admin.php:1223
+#: includes/admin/class-admin-status.php:332
+#: includes/class-admin.php:848
+#: includes/class-admin.php:1239
 #: includes/class-bulk-import.php:2282
 #: includes/class-fill.php:113
 #: includes/class-import.php:1080
 msgid "Tick the confirmation."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:336
+#: includes/admin/class-admin-status.php:335
 #: includes/class-fill.php:145
 msgid "Nothing to fill: these products already have a bazna cijena."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:360
+#: includes/admin/class-admin-status.php:359
 msgid "This fill is not running any more. Reload the page."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:440
+#: includes/admin/class-admin-status.php:439
 msgid "Two categories, two dates: using the earlier one."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:442
+#: includes/admin/class-admin-status.php:441
 msgid "Bazna cijena date is later than expected"
 msgstr ""
 
-#: includes/admin/class-admin-status.php:444
+#: includes/admin/class-admin-status.php:443
 msgid "The sale price is not lower than the lowest price in the 30 days before the sale. Customers see it as a sale. If it is not a reduction, enter it as the regular price."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:507
+#: includes/admin/class-admin-status.php:506
 msgid "Scheduled tasks did not run."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:617
+#: includes/admin/class-admin-status.php:616
 msgid "Report a bug"
 msgstr ""
 
-#: includes/admin/class-admin-status.php:621
+#: includes/admin/class-admin-status.php:620
 msgid "Suggest a feature"
 msgstr ""
 
-#: includes/admin/class-admin-status.php:625
+#: includes/admin/class-admin-status.php:624
 msgid "Email us"
 msgstr ""
 
-#: includes/admin/class-admin-status.php:846
-#: includes/admin/class-admin-status.php:874
+#: includes/admin/class-admin-status.php:845
+#: includes/admin/class-admin-status.php:873
 msgid "Only on a phone."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:849
-#: includes/admin/class-admin-status.php:875
+#: includes/admin/class-admin-status.php:848
+#: includes/admin/class-admin-status.php:874
 msgid "Only on a computer."
 msgstr ""
 
-#: includes/admin/class-admin-status.php:889
+#: includes/admin/class-admin-status.php:888
 #: includes/admin/tab-status.php:111
 msgid "No product has a bazna cijena yet."
 msgstr ""
@@ -171,20 +171,20 @@ msgstr ""
 #: includes/admin/tab-import.php:40
 #: includes/admin/tab-import.php:195
 #: includes/admin/tab-settings.php:299
-#: includes/class-admin.php:1279
+#: includes/class-admin.php:1295
 msgid "File"
 msgstr ""
 
 #: includes/admin/tab-import.php:41
 #: includes/admin/tab-import.php:90
 #: includes/admin/tab-uvoz-izvoz.php:111
-#: includes/class-admin.php:1281
+#: includes/class-admin.php:1297
 msgid "Preview"
 msgstr "Vorschau"
 
 #: includes/admin/tab-import.php:42
 #: includes/admin/tab-import.php:118
-#: includes/class-admin.php:1282
+#: includes/class-admin.php:1298
 msgid "Confirm"
 msgstr ""
 
@@ -218,12 +218,12 @@ msgid "File (CSV)"
 msgstr ""
 
 #: includes/admin/tab-import.php:62
-#: includes/class-admin.php:1227
+#: includes/class-admin.php:1243
 msgid "Upload"
 msgstr ""
 
 #: includes/admin/tab-import.php:63
-#: includes/class-admin.php:1228
+#: includes/class-admin.php:1244
 msgid "Download template"
 msgstr ""
 
@@ -264,7 +264,7 @@ msgid "Not found"
 msgstr ""
 
 #: includes/admin/tab-import.php:100
-#: includes/class-admin.php:1267
+#: includes/class-admin.php:1283
 msgid "Unchanged"
 msgstr ""
 
@@ -273,14 +273,14 @@ msgid "Invalid"
 msgstr ""
 
 #: includes/admin/tab-import.php:119
-#: includes/class-admin.php:1238
+#: includes/class-admin.php:1254
 msgid "Who confirmed this file for the shop. Kept with the import as proof."
 msgstr ""
 
 #: includes/admin/tab-import.php:122
 #: includes/admin/tab-import.php:193
 #: includes/admin/tab-status.php:442
-#: includes/class-admin.php:1239
+#: includes/class-admin.php:1255
 msgid "Confirmed by"
 msgstr ""
 
@@ -288,7 +288,7 @@ msgstr ""
 #: includes/admin/tab-import.php:190
 #: includes/admin/tab-settings.php:71
 #: includes/admin/tab-settings.php:298
-#: includes/class-admin.php:1262
+#: includes/class-admin.php:1278
 #: includes/class-product-fields.php:343
 msgid "Date"
 msgstr ""
@@ -298,12 +298,12 @@ msgid "Choose another file"
 msgstr ""
 
 #: includes/admin/tab-import.php:141
-#: includes/class-admin.php:1021
+#: includes/class-admin.php:1037
 msgid "Import in progress…"
 msgstr "Import läuft…"
 
 #: includes/admin/tab-import.php:145
-#: includes/class-admin.php:1231
+#: includes/class-admin.php:1247
 msgid "Importing…"
 msgstr ""
 
@@ -321,13 +321,13 @@ msgid "Stop import"
 msgstr ""
 
 #: includes/admin/tab-import.php:172
-#: includes/class-admin.php:880
+#: includes/class-admin.php:896
 #: includes/class-product-fields.php:320
 msgid "Open Status"
 msgstr ""
 
 #: includes/admin/tab-import.php:173
-#: includes/class-admin.php:1237
+#: includes/class-admin.php:1253
 msgid "Import another file"
 msgstr ""
 
@@ -377,7 +377,7 @@ msgstr "Zusätzliche Einträge"
 #: includes/admin/tab-proizvodi.php:56
 #: includes/admin/tab-settings.php:70
 #: includes/admin/tab-settings.php:331
-#: includes/class-admin.php:1081
+#: includes/class-admin.php:1097
 msgid "Products"
 msgstr "Produkte"
 
@@ -397,7 +397,7 @@ msgstr ""
 #: includes/admin/tab-poslovnice.php:121
 #: includes/admin/tab-proizvodi.php:107
 #: includes/admin/tab-uvoz-izvoz.php:120
-#: includes/class-admin.php:1066
+#: includes/class-admin.php:1082
 #: includes/class-bulk-import.php:2162
 msgid "Webshop"
 msgstr "Webshop"
@@ -407,7 +407,7 @@ msgid "The webshop's price list is at the permanent address /sidrena-cijena.xml 
 msgstr "Die Preisliste des Webshops steht unter der festen Adresse /sidrena-cijena.xml (oder .csv). Sie enthält alle veröffentlichten Produkte und die manuellen Einträge, die keinem anderen Verkaufsort zugeordnet sind."
 
 #: includes/admin/tab-poslovnice.php:128
-#: includes/class-admin.php:1070
+#: includes/class-admin.php:1086
 msgid "Outlet type"
 msgstr "Art des Verkaufsorts"
 
@@ -416,7 +416,7 @@ msgid "Goes into the file name exactly as written, e.g. webshop."
 msgstr "Geht genau so in den Dateinamen ein, z. B. webshop."
 
 #: includes/admin/tab-poslovnice.php:133
-#: includes/class-admin.php:1074
+#: includes/class-admin.php:1090
 msgid "Outlet label"
 msgstr "Kennzeichnung des Verkaufsorts"
 
@@ -425,12 +425,12 @@ msgid "E.g. 001: letters without diacritics, digits and hyphens. Goes into the f
 msgstr "Z. B. 001: Buchstaben ohne diakritische Zeichen, Ziffern und Bindestriche. Geht in den Dateinamen ein."
 
 #: includes/admin/tab-poslovnice.php:139
-#: includes/class-admin.php:1079
+#: includes/class-admin.php:1095
 msgid "Next storage number"
 msgstr "Nächste Speichernummer"
 
 #: includes/admin/tab-poslovnice.php:141
-#: includes/class-admin.php:1080
+#: includes/class-admin.php:1096
 msgid "Goes up by one with each new price list file. You can raise it, but not lower it."
 msgstr ""
 
@@ -506,16 +506,16 @@ msgid "Add item"
 msgstr "Eintrag hinzufügen"
 
 #: includes/admin/tab-proizvodi.php:117
-#: includes/class-admin.php:1039
+#: includes/class-admin.php:1055
 msgid "Add product"
 msgstr "Produkt hinzufügen"
 
 #: includes/admin/tab-proizvodi.php:128
 #: includes/admin/tab-proizvodi.php:173
 #: includes/admin/tab-uvoz-izvoz.php:49
-#: includes/class-admin.php:1068
-#: includes/class-admin.php:1246
-#: includes/class-admin.php:1258
+#: includes/class-admin.php:1084
+#: includes/class-admin.php:1262
+#: includes/class-admin.php:1274
 #: includes/class-feed-files.php:1220
 #: includes/class-feed-files.php:1258
 msgid "Name"
@@ -528,8 +528,8 @@ msgstr "URL"
 
 #: includes/admin/tab-proizvodi.php:130
 #: includes/admin/tab-uvoz-izvoz.php:57
-#: includes/class-admin.php:1065
-#: includes/class-admin.php:1247
+#: includes/class-admin.php:1081
+#: includes/class-admin.php:1263
 msgid "Regular price"
 msgstr "Regulärer Preis"
 
@@ -544,23 +544,23 @@ msgstr "Shortcode"
 
 #: includes/admin/tab-proizvodi.php:134
 #: includes/admin/tab-uvoz-izvoz.php:61
-#: includes/class-admin.php:1250
+#: includes/class-admin.php:1266
 msgid "Sale price"
 msgstr "Aktionspreis"
 
 #: includes/admin/tab-proizvodi.php:135
 #: includes/admin/tab-proizvodi.php:175
 #: includes/admin/tab-uvoz-izvoz.php:73
-#: includes/class-admin.php:1249
-#: includes/class-admin.php:1260
+#: includes/class-admin.php:1265
+#: includes/class-admin.php:1276
 msgid "Type"
 msgstr "Art"
 
 #: includes/admin/tab-proizvodi.php:136
 #: includes/admin/tab-uvoz-izvoz.php:41
-#: includes/class-admin.php:838
-#: includes/class-admin.php:1248
-#: includes/class-admin.php:1259
+#: includes/class-admin.php:854
+#: includes/class-admin.php:1264
+#: includes/class-admin.php:1275
 #: includes/class-feed-files.php:1259
 msgid "SKU"
 msgstr "SKU"
@@ -568,21 +568,21 @@ msgstr "SKU"
 #: includes/admin/tab-proizvodi.php:137
 #: includes/admin/tab-settings.php:423
 #: includes/admin/tab-uvoz-izvoz.php:89
-#: includes/class-admin.php:891
-#: includes/class-admin.php:1253
+#: includes/class-admin.php:907
+#: includes/class-admin.php:1269
 #: includes/class-feed-files.php:1260
 msgid "Brand"
 msgstr "Marke"
 
 #: includes/admin/tab-proizvodi.php:138
 #: includes/admin/tab-uvoz-izvoz.php:93
-#: includes/class-admin.php:1256
+#: includes/class-admin.php:1272
 msgid "Special form"
 msgstr "Sonderformat"
 
 #: includes/admin/tab-proizvodi.php:139
 #: includes/admin/tab-uvoz-izvoz.php:81
-#: includes/class-admin.php:1254
+#: includes/class-admin.php:1270
 #: includes/class-feed-files.php:1262
 #: includes/class-import-export.php:63
 #: includes/class-import-export.php:157
@@ -595,7 +595,7 @@ msgstr "Maßeinheit"
 
 #: includes/admin/tab-proizvodi.php:140
 #: includes/admin/tab-uvoz-izvoz.php:85
-#: includes/class-admin.php:1255
+#: includes/class-admin.php:1271
 msgid "Price per unit"
 msgstr "Preis pro Einheit"
 
@@ -616,14 +616,14 @@ msgid "Actions"
 msgstr "Aktionen"
 
 #: includes/admin/tab-proizvodi.php:153
-#: includes/class-admin.php:853
-#: includes/class-admin.php:1244
+#: includes/class-admin.php:869
+#: includes/class-admin.php:1260
 msgid "Previous"
 msgstr "Zurück"
 
 #: includes/admin/tab-proizvodi.php:155
-#: includes/class-admin.php:854
-#: includes/class-admin.php:1245
+#: includes/class-admin.php:870
+#: includes/class-admin.php:1261
 msgid "Next"
 msgstr "Weiter"
 
@@ -810,7 +810,7 @@ msgid "HTML price list"
 msgstr "HTML-Preisliste"
 
 #: includes/admin/tab-settings.php:185
-#: includes/class-admin.php:1236
+#: includes/class-admin.php:1252
 msgid "Open price list"
 msgstr "Preisliste öffnen"
 
@@ -974,7 +974,7 @@ msgid "The plugin automatically shows the bazna cijena below the current price. 
 msgstr ""
 
 #: includes/admin/tab-settings.php:378
-#: includes/class-admin.php:873
+#: includes/class-admin.php:889
 msgid "Lowest price in 30 days"
 msgstr ""
 
@@ -1147,7 +1147,7 @@ msgstr ""
 
 #: includes/admin/tab-status.php:38
 #: includes/class-admin.php:274
-#: includes/class-admin.php:620
+#: includes/class-admin.php:636
 msgid "The public price list has been generated."
 msgstr "Die öffentliche Preisliste wurde generiert."
 
@@ -1156,12 +1156,12 @@ msgid "The price list is being generated right now. As soon as that is done, it 
 msgstr "Die Preisliste wird gerade generiert. Sobald dies abgeschlossen ist, wird sie noch einmal generiert."
 
 #: includes/admin/tab-status.php:51
-#: includes/class-admin.php:637
+#: includes/class-admin.php:653
 msgid "The public price list could not be generated. Check uploads folder permissions."
 msgstr "Die öffentliche Preisliste konnte nicht generiert werden. Prüfen Sie die Berechtigungen des uploads-Ordners."
 
 #: includes/admin/tab-status.php:53
-#: includes/class-admin.php:640
+#: includes/class-admin.php:656
 msgid "The public price list was not generated."
 msgstr "Die öffentliche Preisliste wurde nicht generiert."
 
@@ -1434,8 +1434,8 @@ msgstr ""
 
 #: includes/admin/tab-status.php:386
 #: includes/check.php:163
-#: includes/class-admin.php:837
-#: includes/class-admin.php:1052
+#: includes/class-admin.php:853
+#: includes/class-admin.php:1068
 #: includes/class-feed-files.php:1128
 msgid "Product"
 msgstr "Produkt"
@@ -1471,7 +1471,7 @@ msgid "Use the regular price as bazna cijena?"
 msgstr ""
 
 #: includes/admin/tab-status.php:448
-#: includes/class-admin.php:1230
+#: includes/class-admin.php:1246
 msgid "Cancel"
 msgstr ""
 
@@ -1488,12 +1488,12 @@ msgid "Upload a CSV or XML file. Rows are matched first by SKU in the selected o
 msgstr ""
 
 #: includes/admin/tab-uvoz-izvoz.php:26
-#: includes/class-admin.php:1225
+#: includes/class-admin.php:1241
 msgid "Select CSV or XML"
 msgstr "CSV oder XML auswählen"
 
 #: includes/admin/tab-uvoz-izvoz.php:27
-#: includes/class-admin.php:1226
+#: includes/class-admin.php:1242
 msgid "or drop the file here"
 msgstr "oder Datei hier ablegen"
 
@@ -1507,12 +1507,12 @@ msgstr "ID"
 
 #: includes/admin/tab-uvoz-izvoz.php:69
 #: includes/check.php:164
-#: includes/class-admin.php:1252
+#: includes/class-admin.php:1268
 msgid "Bazna cijena date"
 msgstr ""
 
 #: includes/admin/tab-uvoz-izvoz.php:97
-#: includes/class-admin.php:1047
+#: includes/class-admin.php:1063
 #: includes/class-product-fields.php:382
 #: includes/class-product-fields.php:417
 msgid "CJM"
@@ -1652,1116 +1652,1120 @@ msgid "Saved. Products in this table without a bazna cijena: %d. They are in the
 msgstr ""
 
 #: includes/class-admin.php:272
-#: includes/class-admin.php:619
+#: includes/class-admin.php:635
 msgid "Public outlet price lists have been generated."
 msgstr "Öffentliche Filial-Preislisten wurden generiert."
 
-#: includes/class-admin.php:315
+#: includes/class-admin.php:316
 msgid "Status"
 msgstr ""
 
-#: includes/class-admin.php:327
+#: includes/class-admin.php:328
 msgid "Import"
 msgstr ""
 
-#: includes/class-admin.php:333
+#: includes/class-admin.php:334
 msgid "Settings"
 msgstr "Einstellungen"
 
-#: includes/class-admin.php:531
+#: includes/class-admin.php:532
 #, php-format
 msgid "The OIB %s was not saved: its check digit does not match. Check the number."
 msgstr ""
 
-#: includes/class-admin.php:533
+#: includes/class-admin.php:534
 msgid "The OIB, MBO or MIBPG was not saved: enter digits only."
 msgstr ""
 
-#: includes/class-admin.php:536
+#: includes/class-admin.php:537
 #, php-format
 msgid "The number %s was saved, but check it: it does not look like an OIB, MBO or MIBPG."
 msgstr ""
 
-#: includes/class-admin.php:574
+#: includes/class-admin.php:575
 msgid "Nothing was saved, because the items were changed somewhere else after this page was opened, for example by an import or in another browser tab. The page now shows them as they are saved. Make your changes again and save."
 msgstr ""
 
-#: includes/class-admin.php:577
+#: includes/class-admin.php:578
 msgid "Nothing was saved, because the page did not confirm that it had loaded all items, and saving could have deleted the ones it did not show. Your saved items and your price list have not changed. Refresh the page and make your changes again."
 msgstr ""
 
-#: includes/class-admin.php:603
+#: includes/class-admin.php:604
 msgid "It will be tried again automatically in a few minutes."
 msgstr "Es wird in wenigen Minuten automatisch erneut versucht."
 
-#: includes/class-admin.php:623
+#: includes/class-admin.php:619
+msgid "The shop's public pages did not open to a visitor (because of a maintenance or security plugin, for example), so discounts that a plugin gives only to customers may be missing from the price list. If you use such a plugin, generate the price list again once the pages are open."
+msgstr ""
+
+#: includes/class-admin.php:639
 msgid "No additional outlet has products. Below, open Show advanced settings and, in Outlets, choose All published webshop products or at least one product for each outlet."
 msgstr "Kein weiterer Verkaufsort hat Produkte. Öffnen Sie unten die erweiterten Einstellungen und wählen Sie im Abschnitt „Filialen“ für jeden Verkaufsort „Alle veröffentlichten Produkte des Webshops“ oder mindestens ein Produkt."
 
-#: includes/class-admin.php:634
+#: includes/class-admin.php:650
 msgid "The price list is being generated right now. As soon as that is done, it will be generated once more, with what you just saved."
 msgstr "Die Preisliste wird gerade generiert. Sobald dies abgeschlossen ist, wird sie noch einmal generiert, mit dem, was Sie gerade gespeichert haben."
 
-#: includes/class-admin.php:677
+#: includes/class-admin.php:693
 msgid "Copy"
 msgstr "Kopieren"
 
-#: includes/class-admin.php:710
+#: includes/class-admin.php:726
 msgid "Archive shortcode"
 msgstr "Archiv-Shortcode"
 
-#: includes/class-admin.php:731
+#: includes/class-admin.php:747
 msgid "Table shortcode"
 msgstr "Tabellen-Shortcode"
 
-#: includes/class-admin.php:806
+#: includes/class-admin.php:822
 #. translators: 1: current prefix, 2: suggested prefix
 #, php-format
 msgid "The label next to the price is “%1$s”. Customers may confuse it with the price they pay. The legal name is bazna cijena. Suggested label: %2$s."
 msgstr "Die Beschriftung neben dem Preis lautet „%1$s“. Der Kunde kann sie durch den Preis ersetzen, den er zahlt. Der gesetzliche Name ist Basispreis. Vorgeschlagene Beschriftung: %2$s."
 
-#: includes/class-admin.php:811
+#: includes/class-admin.php:827
 #. translators: %s: prefix
 #, php-format
 msgid "Set “%s”"
 msgstr "„%s“ setzen"
 
-#: includes/class-admin.php:812
+#: includes/class-admin.php:828
 msgid "Keep current label"
 msgstr "Aktuelle Beschriftung beibehalten"
 
-#: includes/class-admin.php:830
-#: includes/class-admin.php:1012
-#: includes/class-admin.php:1219
+#: includes/class-admin.php:846
+#: includes/class-admin.php:1028
+#: includes/class-admin.php:1235
 msgid "An error occurred. Please try again."
 msgstr "Es ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut."
 
-#: includes/class-admin.php:833
-#: includes/class-admin.php:1221
+#: includes/class-admin.php:849
+#: includes/class-admin.php:1237
 #: includes/class-import.php:1491
 msgid "Choose a file."
 msgstr ""
 
-#: includes/class-admin.php:834
-#: includes/class-admin.php:1224
+#: includes/class-admin.php:850
+#: includes/class-admin.php:1240
 msgid "Enter the date of the confirmation."
 msgstr ""
 
-#: includes/class-admin.php:835
-#: includes/class-admin.php:1229
+#: includes/class-admin.php:851
+#: includes/class-admin.php:1245
 msgid "Reading the file…"
 msgstr ""
 
-#: includes/class-admin.php:836
-#: includes/class-admin.php:1220
+#: includes/class-admin.php:852
+#: includes/class-admin.php:1236
 msgid "Connection lost. Trying again…"
 msgstr ""
 
-#: includes/class-admin.php:839
-#: includes/class-admin.php:1257
+#: includes/class-admin.php:855
+#: includes/class-admin.php:1273
 msgid "Line"
 msgstr ""
 
-#: includes/class-admin.php:840
+#: includes/class-admin.php:856
 msgid "Name in the file"
 msgstr ""
 
-#: includes/class-admin.php:841
+#: includes/class-admin.php:857
 msgid "Now"
 msgstr ""
 
-#: includes/class-admin.php:842
-#: includes/class-admin.php:1266
+#: includes/class-admin.php:858
+#: includes/class-admin.php:1282
 msgid "New"
 msgstr ""
 
-#: includes/class-admin.php:844
-#: includes/class-admin.php:1263
+#: includes/class-admin.php:860
+#: includes/class-admin.php:1279
 msgid "Why"
 msgstr ""
 
-#: includes/class-admin.php:845
+#: includes/class-admin.php:861
 msgid "none"
 msgstr ""
 
-#: includes/class-admin.php:846
+#: includes/class-admin.php:862
 #: includes/class-product-fields.php:306
 msgid "(from category)"
 msgstr ""
 
-#: includes/class-admin.php:847
+#: includes/class-admin.php:863
 #: includes/class-product-fields.php:306
 msgid "(day added)"
 msgstr ""
 
-#: includes/class-admin.php:848
+#: includes/class-admin.php:864
 msgid "waits for Dates"
 msgstr ""
 
-#: includes/class-admin.php:849
+#: includes/class-admin.php:865
 msgid "Nothing here."
 msgstr ""
 
-#: includes/class-admin.php:850
-#: includes/class-admin.php:1240
+#: includes/class-admin.php:866
+#: includes/class-admin.php:1256
 msgid "No imports yet."
 msgstr ""
 
-#: includes/class-admin.php:852
-#: includes/class-admin.php:1018
-#: includes/class-admin.php:1243
+#: includes/class-admin.php:868
+#: includes/class-admin.php:1034
+#: includes/class-admin.php:1259
 #, php-format
 msgid "Page %1$d of %2$d"
 msgstr "Seite %1$d von %2$d"
 
-#: includes/class-admin.php:856
+#: includes/class-admin.php:872
 #, php-format
 msgid "Confirmed by %1$s on %2$s"
 msgstr ""
 
-#: includes/class-admin.php:858
+#: includes/class-admin.php:874
 #, php-format
 msgid "File fingerprint: %s"
 msgstr ""
 
-#: includes/class-admin.php:860
+#: includes/class-admin.php:876
 #, php-format
 msgid "Products and variations: %d"
 msgstr ""
 
-#: includes/class-admin.php:863
-#: includes/class-admin.php:1233
+#: includes/class-admin.php:879
+#: includes/class-admin.php:1249
 #, php-format
 msgid "Import (%d)"
 msgstr ""
 
-#: includes/class-admin.php:865
+#: includes/class-admin.php:881
 #, php-format
 msgid "Imported: %d."
 msgstr ""
 
-#: includes/class-admin.php:867
-#: includes/class-admin.php:1235
+#: includes/class-admin.php:883
+#: includes/class-admin.php:1251
 #, php-format
 msgid "Not imported: %d."
 msgstr ""
 
-#: includes/class-admin.php:869
+#: includes/class-admin.php:885
 #, php-format
 msgid "Rows that take their date from Dates: %d. They wait until Dates are saved in Settings; the other rows can be imported now."
 msgstr ""
 
-#: includes/class-admin.php:871
+#: includes/class-admin.php:887
 #, php-format
 msgid "Not imported (they wait for Dates): %d. Save Dates in Settings, then import the same file again."
 msgstr ""
 
-#: includes/class-admin.php:875
+#: includes/class-admin.php:891
 #, php-format
 msgid "Confirmed by %1$s, started %2$s."
 msgstr ""
 
-#: includes/class-admin.php:876
+#: includes/class-admin.php:892
 msgid "Stop the import? What is already imported stays; the rest is not imported."
 msgstr ""
 
-#: includes/class-admin.php:878
+#: includes/class-admin.php:894
 #, php-format
 msgid "Stopped. Not imported: %d."
 msgstr ""
 
-#: includes/class-admin.php:879
+#: includes/class-admin.php:895
 msgid "The other import has finished. You can import your file now."
 msgstr ""
 
-#: includes/class-admin.php:881
-#: includes/class-admin.php:1241
+#: includes/class-admin.php:897
+#: includes/class-admin.php:1257
 msgid "In progress"
 msgstr ""
 
-#: includes/class-admin.php:884
+#: includes/class-admin.php:900
 msgid "Another import is running"
 msgstr ""
 
-#: includes/class-admin.php:886
+#: includes/class-admin.php:902
 #, php-format
 msgid "Stop the import (confirmed by %1$s, started %2$s)? What is already imported stays; the rest is not imported."
 msgstr ""
 
-#: includes/class-admin.php:887
+#: includes/class-admin.php:903
 msgid "Not stopped yet: some rows are being saved right now. The import goes on; press Stop import again in a moment."
 msgstr ""
 
-#: includes/class-admin.php:889
+#: includes/class-admin.php:905
 msgid "Brand · EAN · Barcode"
 msgstr ""
 
-#: includes/class-admin.php:892
+#: includes/class-admin.php:908
 #: includes/class-import.php:525
 msgid "EAN"
 msgstr ""
 
-#: includes/class-admin.php:893
+#: includes/class-admin.php:909
 #: includes/class-feed-files.php:1266
 msgid "Barcode"
 msgstr "Barcode"
 
-#: includes/class-admin.php:896
+#: includes/class-admin.php:912
 #, php-format
 msgid "%1$s: %2$s → %3$s"
 msgstr ""
 
-#: includes/class-admin.php:898
+#: includes/class-admin.php:914
 #, php-format
 msgid "%1$s: %2$s from WooCommerce stays"
 msgstr ""
 
-#: includes/class-admin.php:899
+#: includes/class-admin.php:915
 msgid "no change"
 msgstr ""
 
-#: includes/class-admin.php:900
+#: includes/class-admin.php:916
 msgid "The connection to the shop was lost. The import goes on without this page. Press Continue to show its progress again, or reload the page later."
 msgstr ""
 
-#: includes/class-admin.php:902
+#: includes/class-admin.php:918
 msgid "The amounts come from your price list, with VAT, and the table shows them that way. Your shop enters prices without VAT, so the bazna cijena is saved without VAT, and the product page shows it as in this table."
 msgstr ""
 
-#: includes/class-admin.php:1007
+#: includes/class-admin.php:1023
 msgid "Your changes in Settings are not saved yet. This button saves only its own section, and those changes will be lost. Continue?"
 msgstr ""
 
-#: includes/class-admin.php:1013
+#: includes/class-admin.php:1029
 msgid "Copied"
 msgstr "Kopiert"
 
-#: includes/class-admin.php:1014
+#: includes/class-admin.php:1030
 #: includes/class-bulk-import.php:94
 msgid "Select a CSV or XML file."
 msgstr "CSV- oder XML-Datei auswählen."
 
-#: includes/class-admin.php:1015
+#: includes/class-admin.php:1031
 msgid "Reading file…"
 msgstr "Datei wird gelesen…"
 
-#: includes/class-admin.php:1016
+#: includes/class-admin.php:1032
 msgid "Select the column/node that contains SKU."
 msgstr "Spalte/Knoten auswählen, der SKU enthält."
 
-#: includes/class-admin.php:1017
+#: includes/class-admin.php:1033
 #: includes/class-bulk-import.php:641
 #: includes/class-bulk-import.php:1765
 msgid "Select the column for SKU or ID."
 msgstr "Spalte für SKU oder ID auswählen."
 
-#: includes/class-admin.php:1019
+#: includes/class-admin.php:1035
 msgid "Do not import"
 msgstr "Nicht importieren"
 
-#: includes/class-admin.php:1020
+#: includes/class-admin.php:1036
 msgid "Select SKU field"
 msgstr "SKU-Feld auswählen"
 
-#: includes/class-admin.php:1022
+#: includes/class-admin.php:1038
 msgid "Import complete."
 msgstr "Import abgeschlossen."
 
-#: includes/class-admin.php:1023
+#: includes/class-admin.php:1039
 msgid "rows"
 msgstr "Zeilen"
 
-#: includes/class-admin.php:1024
+#: includes/class-admin.php:1040
 msgid "updated"
 msgstr "aktualisiert"
 
-#: includes/class-admin.php:1025
+#: includes/class-admin.php:1041
 msgid "skipped"
 msgstr "übersprungen"
 
-#: includes/class-admin.php:1026
+#: includes/class-admin.php:1042
 msgid "SKU not found"
 msgstr "SKU nicht gefunden"
 
-#: includes/class-admin.php:1027
+#: includes/class-admin.php:1043
 msgid "added"
 msgstr "hinzugefügt"
 
-#: includes/class-admin.php:1029
+#: includes/class-admin.php:1045
 #, php-format
 msgid "Services imported but not in the price list yet, because the file has no date or bazna cijena for them: %d. Today's price would be wrong for a service you already offer. Fill in what is missing in the table above; a service goes into the price list when you save."
 msgstr ""
 
-#: includes/class-admin.php:1030
+#: includes/class-admin.php:1046
 msgid "not imported: the retail price is a special form of sale, and the file has no name of that form (column naziv_posebnog_oblika), so it is not known which price it is. Import the price list downloaded from this page."
 msgstr ""
 
-#: includes/class-admin.php:1032
+#: includes/class-admin.php:1048
 msgid "not imported: these rows belong to another price list (another outlet or the webshop) and were left as they were. To change them, import the file into that outlet."
 msgstr ""
 
-#: includes/class-admin.php:1034
+#: includes/class-admin.php:1050
 msgid "not imported: a price in the row cannot be read for sure (1.234 can be one thousand two hundred and thirty-four or one point two three four). Nothing in these rows was changed. Write the price with its decimals, e.g. 1234,00 or 1,23, and import the file again."
 msgstr ""
 
-#: includes/class-admin.php:1036
-#: includes/class-admin.php:1265
+#: includes/class-admin.php:1052
+#: includes/class-admin.php:1281
 #, php-format
 msgid "Row %d"
 msgstr ""
 
-#: includes/class-admin.php:1038
+#: includes/class-admin.php:1054
 #, php-format
 msgid "Item %d"
 msgstr ""
 
-#: includes/class-admin.php:1040
+#: includes/class-admin.php:1056
 msgid "Duplicate"
 msgstr "Duplizieren"
 
-#: includes/class-admin.php:1041
+#: includes/class-admin.php:1057
 msgid "Remove"
 msgstr "Entfernen"
 
-#: includes/class-admin.php:1042
+#: includes/class-admin.php:1058
 msgid "Add row"
 msgstr "Zeile hinzufügen"
 
-#: includes/class-admin.php:1043
+#: includes/class-admin.php:1059
 msgid "Copy shortcode"
 msgstr "Shortcode kopieren"
 
-#: includes/class-admin.php:1044
+#: includes/class-admin.php:1060
 msgid "Save price list for shortcode"
 msgstr "Preisliste für Shortcode speichern"
 
-#: includes/class-admin.php:1045
+#: includes/class-admin.php:1061
 #: includes/class-feed-files.php:1133
 msgid "In stock"
 msgstr "Verfügbar"
 
-#: includes/class-admin.php:1046
+#: includes/class-admin.php:1062
 #: includes/class-feed-files.php:1132
 msgid "Out of stock"
 msgstr "Nicht verfügbar"
 
-#: includes/class-admin.php:1048
+#: includes/class-admin.php:1064
 #: includes/class-product-fields.php:393
 #: includes/class-product-fields.php:430
 msgid "per kg/l"
 msgstr "für kg/l"
 
-#: includes/class-admin.php:1053
+#: includes/class-admin.php:1069
 #: includes/class-feed-files.php:1128
 #: includes/class-product-fields.php:492
 msgid "Service"
 msgstr "Dienstleistung"
 
-#: includes/class-admin.php:1054
+#: includes/class-admin.php:1070
 msgid "A product must have a displayed price (ZZP art. 7(1)). Enter it with its price, like your other products."
 msgstr ""
 
-#: includes/class-admin.php:1056
+#: includes/class-admin.php:1072
 msgid "Do you already offer this service?"
 msgstr ""
 
-#: includes/class-admin.php:1057
+#: includes/class-admin.php:1073
 msgid "No, it is new (from today)"
 msgstr ""
 
-#: includes/class-admin.php:1058
+#: includes/class-admin.php:1074
 msgid "Yes, I already offer it"
 msgstr ""
 
-#: includes/class-admin.php:1059
+#: includes/class-admin.php:1075
 msgid "Its date is today and its bazna cijena is today's regular price. That is right only for a new service."
 msgstr ""
 
-#: includes/class-admin.php:1060
+#: includes/class-admin.php:1076
 msgid "Enter the day you started offering it (for any day before 10.9.2026., 10.9.2026. applies) and, as the bazna cijena, its price on that day. Until both are entered, the service is not in the price list."
 msgstr ""
 
-#: includes/class-admin.php:1061
+#: includes/class-admin.php:1077
 msgid "Not in the price list: no date or bazna cijena."
 msgstr ""
 
-#: includes/class-admin.php:1062
+#: includes/class-admin.php:1078
 #: includes/class-product-fields.php:323
 msgid "No bazna cijena."
 msgstr ""
 
-#: includes/class-admin.php:1067
+#: includes/class-admin.php:1083
 #, php-format
 msgid "%d items"
 msgstr "%d Einträge"
 
-#: includes/class-admin.php:1067
+#: includes/class-admin.php:1083
 #, php-format
 msgid "%d products"
 msgstr "%d Produkte"
 
-#: includes/class-admin.php:1069
+#: includes/class-admin.php:1085
 msgid "Customers see it on this outlet's price list page and in the archive. Not included in the file name."
 msgstr "Kunden sehen ihn auf der Preislistenseite dieses Verkaufsorts und im Archiv. Geht nicht in den Dateinamen ein."
 
-#: includes/class-admin.php:1071
+#: includes/class-admin.php:1087
 msgid "Goes into the file name exactly as written, e.g. prodavaonica."
 msgstr "Geht genau so in den Dateinamen ein, z. B. prodavaonica."
 
-#: includes/class-admin.php:1072
+#: includes/class-admin.php:1088
 msgid "Outlet address"
 msgstr "Adresse des Verkaufsorts"
 
-#: includes/class-admin.php:1073
+#: includes/class-admin.php:1089
 msgid "Street, number and town, e.g. Ilica 150 Zagreb. Goes into the file name."
 msgstr "Straße, Hausnummer und Ort, z. B. Ilica 150 Zagreb. Geht in den Dateinamen ein."
 
-#: includes/class-admin.php:1075
+#: includes/class-admin.php:1091
 msgid "E.g. P-01 or 002: letters without diacritics, digits and hyphens. Goes into the price list address (/sidrena-cijena-P-01.xml) and the file name. Once the outlet publishes its first price list, the label no longer changes."
 msgstr "Z. B. P-01 oder 002: Buchstaben ohne diakritische Zeichen, Ziffern und Bindestriche. Geht in die Adresse der Preisliste (/sidrena-cijena-P-01.xml) und in den Dateinamen ein. Sobald der Verkaufsort seine erste Preisliste veröffentlicht hat, ändert sich die Kennzeichnung nicht mehr."
 
-#: includes/class-admin.php:1076
+#: includes/class-admin.php:1092
 msgid "Next free number"
 msgstr "Nächste freie Nummer"
 
-#: includes/class-admin.php:1078
+#: includes/class-admin.php:1094
 msgid "This outlet has already published a price list, so its label no longer changes: the address of its price list must stay the same."
 msgstr "Dieser Verkaufsort hat bereits eine Preisliste veröffentlicht, daher ändert sich seine Kennzeichnung nicht mehr: Die Adresse seiner Preisliste muss gleich bleiben."
 
-#: includes/class-admin.php:1082
+#: includes/class-admin.php:1098
 msgid "All published webshop products"
 msgstr "Alle veröffentlichten Produkte des Webshops"
 
-#: includes/class-admin.php:1083
+#: includes/class-admin.php:1099
 msgid "Selected products"
 msgstr "Ausgewählte Produkte"
 
-#: includes/class-admin.php:1084
+#: includes/class-admin.php:1100
 msgid "Search by name or SKU."
 msgstr "Suchen Sie nach Name oder Artikelnummer."
 
-#: includes/class-admin.php:1086
+#: includes/class-admin.php:1102
 msgid "Checked products move from the webshop's price list to this outlet's."
 msgstr "Markierte Produkte wechseln aus der Preisliste des Webshops in die Preisliste dieses Verkaufsorts."
 
-#: includes/class-admin.php:1088
+#: includes/class-admin.php:1104
 msgid "This outlet's price list uses the webshop's prices. If prices at this outlet are different, the price list does not show them correctly."
 msgstr "Die Preisliste dieses Verkaufsorts verwendet die Preise des Webshops. Wenn die Preise an diesem Verkaufsort anders sind, zeigt die Preisliste sie nicht richtig an."
 
-#: includes/class-admin.php:1090
+#: includes/class-admin.php:1106
 msgid "No webshop products"
 msgstr ""
 
-#: includes/class-admin.php:1091
+#: includes/class-admin.php:1107
 msgid "Its price list is only its own items: imported from a file or entered under Additional items."
 msgstr ""
 
-#: includes/class-admin.php:1092
+#: includes/class-admin.php:1108
 msgid "Available once this place has its own price list. Import it first: after the import the place shows only its own items."
 msgstr ""
 
-#: includes/class-admin.php:1093
+#: includes/class-admin.php:1109
 msgid "Available once this place has its own price list. Save the place, then import its price list on the Import tab."
 msgstr ""
 
-#: includes/class-admin.php:1094
+#: includes/class-admin.php:1110
 msgid "This place's price list uses the webshop's prices. If prices here are different, import this place's price list from a file."
 msgstr ""
 
-#: includes/class-admin.php:1096
+#: includes/class-admin.php:1112
 #, php-format
 msgid "This place's price list was imported from a file on %1$s (items: %2$d). The webshop's prices are not used for it."
 msgstr ""
 
-#: includes/class-admin.php:1097
+#: includes/class-admin.php:1113
 msgid "Import this place's price list"
 msgstr ""
 
-#: includes/class-admin.php:1098
+#: includes/class-admin.php:1114
 msgid "Enter the address. It goes into the official name of this outlet's price list file."
 msgstr "Geben Sie die Adresse ein. Sie geht in den offiziellen Namen der Preislistendatei dieses Verkaufsorts ein."
 
-#: includes/class-admin.php:1099
+#: includes/class-admin.php:1115
 msgid "Enter the type, e.g. prodavaonica. It goes into the official name of this outlet's price list file."
 msgstr "Geben Sie die Art ein, z. B. prodavaonica. Sie geht in den offiziellen Namen der Preislistendatei dieses Verkaufsorts ein."
 
-#: includes/class-admin.php:1100
+#: includes/class-admin.php:1116
 #. translators: %s: the label as it would be saved
 #, php-format
 msgid "The webshop already has the label %s. Enter another one, or leave the field empty for the next free number."
 msgstr "Der Webshop hat bereits die Kennzeichnung %s. Geben Sie eine andere ein oder lassen Sie das Feld leer für die nächste freie Nummer."
 
-#: includes/class-admin.php:1101
+#: includes/class-admin.php:1117
 #. translators: 1: the label as it would be saved, 2: the name of the outlet that has it
 #, php-format
 msgid "The outlet %2$s already has the label %1$s. Enter another one, or leave the field empty for the next free number."
 msgstr "Der Verkaufsort %2$s hat bereits die Kennzeichnung %1$s. Geben Sie eine andere ein oder lassen Sie das Feld leer für die nächste freie Nummer."
 
-#: includes/class-admin.php:1102
+#: includes/class-admin.php:1118
 #. translators: %s: the label as it would be saved
 #, php-format
 msgid "Another outlet already has the label %s. Enter another one, or leave the field empty for the next free number."
 msgstr "Ein anderer Verkaufsort hat bereits die Kennzeichnung %s. Geben Sie eine andere ein oder lassen Sie das Feld leer für die nächste freie Nummer."
 
-#: includes/class-admin.php:1103
+#: includes/class-admin.php:1119
 msgid "Choose at least one product, or All published webshop products."
 msgstr "Wählen Sie mindestens ein Produkt oder „Alle veröffentlichten Produkte des Webshops“."
 
-#: includes/class-admin.php:1105
+#: includes/class-admin.php:1121
 msgid "The outlets are not saved. The reason is next to the outlet below."
 msgstr "Die Verkaufsorte wurden nicht gespeichert. Der Grund steht unten beim Verkaufsort."
 
-#: includes/class-admin.php:1106
+#: includes/class-admin.php:1122
 #. translators: %s: the reason
 #, php-format
 msgid "The outlets are not saved, so you see the state before your changes. Reason: %s"
 msgstr "Die Verkaufsorte wurden nicht gespeichert, daher sehen Sie den Stand vor Ihren Änderungen. Grund: %s"
 
-#: includes/class-admin.php:1108
+#: includes/class-admin.php:1124
 msgid "An outlet without an address can't be saved, because the address goes into the official name of its price list file."
 msgstr "Ein Verkaufsort ohne Adresse kann nicht gespeichert werden, weil die Adresse in den offiziellen Namen seiner Preislistendatei eingeht."
 
-#: includes/class-admin.php:1109
+#: includes/class-admin.php:1125
 msgid "An outlet without a type can't be saved, because the type goes into the official name of its price list file."
 msgstr "Ein Verkaufsort ohne Art kann nicht gespeichert werden, weil die Art in den offiziellen Namen seiner Preislistendatei eingeht."
 
-#: includes/class-admin.php:1110
+#: includes/class-admin.php:1126
 msgid "The webshop or another outlet already has the label you entered, or the outlet has published a price list in the meantime, so its label no longer changes."
 msgstr "Die eingegebene Kennzeichnung hat bereits der Webshop oder ein anderer Verkaufsort, oder der Verkaufsort hat inzwischen eine Preisliste veröffentlicht, daher ändert sich seine Kennzeichnung nicht mehr."
 
-#: includes/class-admin.php:1112
+#: includes/class-admin.php:1128
 #. translators: 1: the label as it would be saved, 2: the name of the outlet that has it
 #, php-format
 msgid "The outlet %2$s already has the label %1$s. Enter another label for the webshop: the address of the webshop's price list has no label, so it stays the same."
 msgstr "Der Verkaufsort %2$s hat bereits die Kennzeichnung %1$s. Geben Sie dem Webshop eine andere Kennzeichnung: Die Adresse der Preisliste des Webshops hat keine Kennzeichnung und bleibt daher gleich."
 
-#: includes/class-admin.php:1113
+#: includes/class-admin.php:1129
 #. translators: %s: the label as it would be saved
 #, php-format
 msgid "Another outlet already has the label %s. Enter another label for the webshop: the address of the webshop's price list has no label, so it stays the same."
 msgstr "Ein anderer Verkaufsort hat bereits die Kennzeichnung %s. Geben Sie dem Webshop eine andere Kennzeichnung: Die Adresse der Preisliste des Webshops hat keine Kennzeichnung und bleibt daher gleich."
 
-#: includes/class-admin.php:1114
+#: includes/class-admin.php:1130
 msgid "An empty field means the label 001."
 msgstr "Ein leeres Feld bedeutet die Kennzeichnung 001."
 
-#: includes/class-admin.php:1115
+#: includes/class-admin.php:1131
 msgid "The outlets are not saved. The reason is next to the marked fields below."
 msgstr "Die Verkaufsorte wurden nicht gespeichert. Der Grund steht unten bei den markierten Feldern."
 
-#: includes/class-admin.php:1116
+#: includes/class-admin.php:1132
 msgid "The label you entered for the webshop is already the label of an outlet."
 msgstr "Die Kennzeichnung, die Sie für den Webshop eingegeben haben, hat bereits ein Verkaufsort."
 
-#: includes/class-admin.php:1118
+#: includes/class-admin.php:1134
 msgid "The outlets are not saved, because the page did not confirm that it had loaded all outlets, and saving could have deleted the ones it did not show. Your saved outlets have not changed. Refresh the page and make your changes again."
 msgstr "Die Verkaufsorte wurden nicht gespeichert, weil die Seite nicht bestätigt hat, dass sie alle Verkaufsorte geladen hat, und das Speichern die nicht angezeigten hätte löschen können. Ihre gespeicherten Verkaufsorte sind unverändert. Laden Sie die Seite neu und nehmen Sie Ihre Änderungen erneut vor."
 
-#: includes/class-admin.php:1121
+#: includes/class-admin.php:1137
 #, php-format
 msgid "Not saved: %s has its own price list, so the same price list for all places of sale can't be turned on. Turn it off and save again."
 msgstr ""
 
-#: includes/class-admin.php:1122
+#: includes/class-admin.php:1138
 msgid "The outlets are not saved, because they were also being saved somewhere else at the same moment, for example in another browser tab. Your changes are still here. Click Save outlets again."
 msgstr "Die Verkaufsorte wurden nicht gespeichert, weil sie im selben Moment auch anderswo gespeichert wurden, zum Beispiel in einem anderen Browser-Tab. Ihre Änderungen sind noch hier. Klicken Sie erneut auf „Filialen speichern“."
 
-#: includes/class-admin.php:1123
+#: includes/class-admin.php:1139
 msgid "Search product…"
 msgstr "Produkt suchen…"
 
-#: includes/class-admin.php:1124
+#: includes/class-admin.php:1140
 msgid "First add products on the Products tab."
 msgstr "Fügen Sie zuerst Produkte auf der Registerkarte Produkte hinzu."
 
-#: includes/class-admin.php:1125
+#: includes/class-admin.php:1141
 #: includes/class-bulk-import.php:646
 msgid "Select the outlet to import into."
 msgstr "Wählen Sie die Filiale, in die importiert wird."
 
-#: includes/class-admin.php:1126
+#: includes/class-admin.php:1142
 msgid "Remove outlet"
 msgstr "Filiale entfernen"
 
-#: includes/class-admin.php:1268
+#: includes/class-admin.php:1284
 msgid "The webshop's price list of services that are not products in WooCommerce, for example fitting or engraving."
 msgstr ""
 
-#: includes/class-admin.php:1270
+#: includes/class-admin.php:1286
 #, php-format
 msgid "%1$s (%2$s)"
 msgstr ""
 
-#: includes/class-admin.php:1271
+#: includes/class-admin.php:1287
 msgid "This place has no imported price list yet."
 msgstr ""
 
-#: includes/class-admin.php:1273
+#: includes/class-admin.php:1289
 #, php-format
 msgid "This place's price list was imported on %1$s (items: %2$d). A new import replaces it."
 msgstr ""
 
-#: includes/class-admin.php:1275
+#: includes/class-admin.php:1291
 #, php-format
 msgid "The webshop's price list has services: %d. A new import replaces them."
 msgstr ""
 
-#: includes/class-admin.php:1276
+#: includes/class-admin.php:1292
 msgid "Price list for"
 msgstr ""
 
-#: includes/class-admin.php:1277
+#: includes/class-admin.php:1293
 msgid "Webshop (services only)"
 msgstr ""
 
-#: includes/class-admin.php:1278
+#: includes/class-admin.php:1294
 msgid "Leave this import? Nothing has been written yet."
 msgstr ""
 
-#: includes/class-admin.php:1280
+#: includes/class-admin.php:1296
 msgid "Columns"
 msgstr ""
 
-#: includes/class-admin.php:1283
+#: includes/class-admin.php:1299
 msgid "You have no place of sale yet. For a shop's price list, add one in Settings, under Places of sale."
 msgstr ""
 
-#: includes/class-admin.php:1284
+#: includes/class-admin.php:1300
 msgid "Open Places of sale"
 msgstr ""
 
-#: includes/class-admin.php:1285
+#: includes/class-admin.php:1301
 msgid "The same price list for all places of sale is turned on, so no place has its own price list. If this place has its own prices, turn it off in Settings, under Places of sale."
 msgstr ""
 
-#: includes/class-admin.php:1287
+#: includes/class-admin.php:1303
 msgid "There are no rows in the file."
 msgstr ""
 
-#: includes/class-admin.php:1288
+#: includes/class-admin.php:1304
 #: includes/class-bulk-import.php:185
 msgid "Letters such as č, ć and ž can't be read in this file. Save it as CSV UTF-8 and upload it again."
 msgstr ""
 
-#: includes/class-admin.php:1291
+#: includes/class-admin.php:1307
 msgid "Which column is which?"
 msgstr ""
 
-#: includes/class-admin.php:1292
+#: includes/class-admin.php:1308
 msgid "We picked them from the column names. Check them, then go on."
 msgstr ""
 
-#: includes/class-admin.php:1293
+#: includes/class-admin.php:1309
 msgid "— not imported —"
 msgstr ""
 
-#: includes/class-admin.php:1295
+#: includes/class-admin.php:1311
 #, php-format
 msgid "e.g. %s"
 msgstr ""
 
-#: includes/class-admin.php:1296
+#: includes/class-admin.php:1312
 msgid "required"
 msgstr ""
 
-#: includes/class-admin.php:1297
+#: includes/class-admin.php:1313
 msgid "SKU or row ID required"
 msgstr ""
 
-#: includes/class-admin.php:1298
+#: includes/class-admin.php:1314
 msgid "More columns"
 msgstr ""
 
-#: includes/class-admin.php:1299
+#: includes/class-admin.php:1315
 msgid "Row ID (d1, d2 …)"
 msgstr ""
 
-#: includes/class-admin.php:1301
+#: includes/class-admin.php:1317
 #, php-format
 msgid "Goods: %1$d · Services: %2$d"
 msgstr ""
 
-#: includes/class-admin.php:1302
+#: includes/class-admin.php:1318
 msgid "Without a Type column every row is goods."
 msgstr ""
 
-#: includes/class-admin.php:1303
+#: includes/class-admin.php:1319
 msgid "Every row is imported as a service, except those marked as goods in the Type column."
 msgstr ""
 
-#: includes/class-admin.php:1305
+#: includes/class-admin.php:1321
 msgid "Next step"
 msgstr ""
 
-#: includes/class-admin.php:1306
+#: includes/class-admin.php:1322
 msgid "Choose a column for Name, for Regular price, and for SKU or Row ID."
 msgstr ""
 
-#: includes/class-admin.php:1307
-msgid "Back"
-msgstr ""
-
-#: includes/class-admin.php:1309
-#, php-format
-msgid "%1$s · rows: %2$d"
-msgstr ""
-
-#: includes/class-admin.php:1310
-msgid "Changed"
-msgstr ""
-
-#: includes/class-admin.php:1311
-msgid "Waits"
-msgstr ""
-
-#: includes/class-admin.php:1312
-msgid "Won't be imported"
-msgstr ""
-
-#: includes/class-admin.php:1313
-msgid "Price"
-msgstr ""
-
-#: includes/class-admin.php:1314
-msgid "Only the webshop's services are imported here. Goods from WooCommerce have their own import (Bazna cijene of products); goods in Additional items are edited there."
-msgstr ""
-
-#: includes/class-admin.php:1315
-msgid "No name."
-msgstr ""
-
-#: includes/class-admin.php:1316
-msgid "No price."
-msgstr ""
-
-#: includes/class-admin.php:1318
-#, php-format
-msgid "The amount is not clear: %s"
-msgstr ""
-
-#: includes/class-admin.php:1319
-msgid "goods"
-msgstr ""
-
-#: includes/class-admin.php:1320
-msgid "service"
-msgstr ""
-
-#: includes/class-admin.php:1322
-#, php-format
-msgid "%s (default)"
-msgstr ""
-
 #: includes/class-admin.php:1323
-msgid "A service without a date or bazna cijena: saved, but not in the price list until it has both."
+msgid "Back"
 msgstr ""
 
 #: includes/class-admin.php:1325
 #, php-format
-msgid "Belongs to another place of sale (%s)."
+msgid "%1$s · rows: %2$d"
 msgstr ""
 
 #: includes/class-admin.php:1326
-msgid "No SKU or row ID: without it, every new import would add this row again."
+msgid "Changed"
+msgstr ""
+
+#: includes/class-admin.php:1327
+msgid "Waits"
 msgstr ""
 
 #: includes/class-admin.php:1328
-#, php-format
-msgid "The same SKU or row ID as row %d. Only that row is imported."
+msgid "Won't be imported"
 msgstr ""
 
 #: includes/class-admin.php:1329
-msgid "The price is a special form of sale (DA), but the row has no name of that form, so it is not known which price it is. If the file has a column with that name, choose it under More columns."
+msgid "Price"
 msgstr ""
 
 #: includes/class-admin.php:1330
-msgid "Goods without a bazna cijena are not imported. Add the bazna cijena and its date to the file."
+msgid "Only the webshop's services are imported here. Goods from WooCommerce have their own import (Bazna cijene of products); goods in Additional items are edited there."
 msgstr ""
 
 #: includes/class-admin.php:1331
-msgid "Will be removed"
+msgid "No name."
 msgstr ""
 
-#: includes/class-admin.php:1333
-#, php-format
-msgid "Items removed from the price list: %d. The list is in the preview, under Will be removed."
+#: includes/class-admin.php:1332
+msgid "No price."
 msgstr ""
 
 #: includes/class-admin.php:1334
-msgid "Not in this file."
+#, php-format
+msgid "The amount is not clear: %s"
 msgstr ""
 
 #: includes/class-admin.php:1335
-#: includes/class-bulk-import.php:2298
-msgid "No row in this file can be imported. The reasons are in the table."
+msgid "goods"
 msgstr ""
 
 #: includes/class-admin.php:1336
-msgid "This file is not imported: none of its rows would go into the price list, so the waiting services are not saved either. Add their date and bazna cijena to the file, then upload it again."
-msgstr ""
-
-#: includes/class-admin.php:1337
-#: includes/class-bulk-import.php:2311
-msgid "The price list changed after the preview, so nothing was written. Upload the file again."
+msgid "service"
 msgstr ""
 
 #: includes/class-admin.php:1338
-#: includes/class-bulk-import.php:2312
-msgid "The places of sale changed after the preview, so nothing was written. Upload the file again."
+#, php-format
+msgid "%s (default)"
 msgstr ""
 
 #: includes/class-admin.php:1339
-msgid "The import could not be saved, so nothing was written. Upload the file again. If it happens again, tell us."
+msgid "A service without a date or bazna cijena: saved, but not in the price list until it has both."
 msgstr ""
 
 #: includes/class-admin.php:1341
 #, php-format
-msgid "Imported into the price list of %1$s: %2$d (goods %3$d, services %4$d)."
+msgid "Belongs to another place of sale (%s)."
 msgstr ""
 
-#: includes/class-admin.php:1343
+#: includes/class-admin.php:1342
+msgid "No SKU or row ID: without it, every new import would add this row again."
+msgstr ""
+
+#: includes/class-admin.php:1344
 #, php-format
-msgid "Removed from the price list: %d."
+msgid "The same SKU or row ID as row %d. Only that row is imported."
 msgstr ""
 
 #: includes/class-admin.php:1345
-#, php-format
-msgid "%s now shows only the items from the file. You can give it the webshop's products back in Settings, under Places of sale."
+msgid "The price is a special form of sale (DA), but the row has no name of that form, so it is not known which price it is. If the file has a column with that name, choose it under More columns."
+msgstr ""
+
+#: includes/class-admin.php:1346
+msgid "Goods without a bazna cijena are not imported. Add the bazna cijena and its date to the file."
 msgstr ""
 
 #: includes/class-admin.php:1347
-#, php-format
-msgid "Imported into the webshop's price list of services: %d."
+msgid "Will be removed"
 msgstr ""
 
 #: includes/class-admin.php:1349
 #, php-format
-msgid "Services waiting for a date or bazna cijena: %d. They are not in the price list until they have both: import a file with them, or enter them in Settings, under Additional items."
+msgid "Items removed from the price list: %d. The list is in the preview, under Will be removed."
 msgstr ""
 
 #: includes/class-admin.php:1350
-msgid "The price list is published within a few minutes."
+msgid "Not in this file."
+msgstr ""
+
+#: includes/class-admin.php:1351
+#: includes/class-bulk-import.php:2298
+msgid "No row in this file can be imported. The reasons are in the table."
 msgstr ""
 
 #: includes/class-admin.php:1352
-#, php-format
-msgid "%1$d of %2$d rows"
+msgid "This file is not imported: none of its rows would go into the price list, so the waiting services are not saved either. Add their date and bazna cijena to the file, then upload it again."
 msgstr ""
 
 #: includes/class-admin.php:1353
-msgid "Keep this page open while the file is read. Nothing has been written yet."
+#: includes/class-bulk-import.php:2311
+msgid "The price list changed after the preview, so nothing was written. Upload the file again."
 msgstr ""
 
 #: includes/class-admin.php:1354
-msgid "Bazna cijene (webshop)"
+#: includes/class-bulk-import.php:2312
+msgid "The places of sale changed after the preview, so nothing was written. Upload the file again."
 msgstr ""
 
-#: includes/class-admin.php:1356
-#, php-format
-msgid "Price list: %s"
+#: includes/class-admin.php:1355
+msgid "The import could not be saved, so nothing was written. Upload the file again. If it happens again, tell us."
 msgstr ""
 
 #: includes/class-admin.php:1357
-msgid "Services (webshop)"
+#, php-format
+msgid "Imported into the price list of %1$s: %2$d (goods %3$d, services %4$d)."
 msgstr ""
 
 #: includes/class-admin.php:1359
 #, php-format
-msgid "%1$s shows the webshop's products (%2$d)."
+msgid "Removed from the price list: %d."
 msgstr ""
 
 #: includes/class-admin.php:1361
 #, php-format
-msgid "This place shows %d webshop products today. After the import it will show only the items from this file. You can give it the webshop's products back in Settings, under Places of sale."
+msgid "%s now shows only the items from the file. You can give it the webshop's products back in Settings, under Places of sale."
 msgstr ""
 
 #: includes/class-admin.php:1363
 #, php-format
-msgid "When you confirm, %1$s stops showing the webshop's products (%2$d) and shows only the items from this file."
+msgid "Imported into the webshop's price list of services: %d."
+msgstr ""
+
+#: includes/class-admin.php:1365
+#, php-format
+msgid "Services waiting for a date or bazna cijena: %d. They are not in the price list until they have both: import a file with them, or enter them in Settings, under Additional items."
 msgstr ""
 
 #: includes/class-admin.php:1366
+msgid "The price list is published within a few minutes."
+msgstr ""
+
+#: includes/class-admin.php:1368
+#, php-format
+msgid "%1$d of %2$d rows"
+msgstr ""
+
+#: includes/class-admin.php:1369
+msgid "Keep this page open while the file is read. Nothing has been written yet."
+msgstr ""
+
+#: includes/class-admin.php:1370
+msgid "Bazna cijene (webshop)"
+msgstr ""
+
+#: includes/class-admin.php:1372
+#, php-format
+msgid "Price list: %s"
+msgstr ""
+
+#: includes/class-admin.php:1373
+msgid "Services (webshop)"
+msgstr ""
+
+#: includes/class-admin.php:1375
+#, php-format
+msgid "%1$s shows the webshop's products (%2$d)."
+msgstr ""
+
+#: includes/class-admin.php:1377
+#, php-format
+msgid "This place shows %d webshop products today. After the import it will show only the items from this file. You can give it the webshop's products back in Settings, under Places of sale."
+msgstr ""
+
+#: includes/class-admin.php:1379
+#, php-format
+msgid "When you confirm, %1$s stops showing the webshop's products (%2$d) and shows only the items from this file."
+msgstr ""
+
+#: includes/class-admin.php:1382
 #, php-format
 msgid "%s is set to show the webshop's products."
 msgstr ""
 
-#: includes/class-admin.php:1367
-msgid "This place is set to show the webshop's products. After the import it will show only the items from this file. You can give it the webshop's products back in Settings, under Places of sale."
-msgstr ""
-
-#: includes/class-admin.php:1369
-#, php-format
-msgid "When you confirm, %s stops showing the webshop's products and shows only the items from this file."
-msgstr ""
-
-#: includes/class-admin.php:1371
-msgid "Select Excel, CSV or XML"
-msgstr ""
-
-#: includes/class-admin.php:1372
-msgid "Upload the export from your till as it is: Excel, CSV or XML. You choose the columns in the next step."
-msgstr ""
-
-#: includes/class-admin.php:1373
-#: includes/class-bulk-import.php:1461
-msgid "This Excel file can't be read. Open it in Excel, save it as CSV UTF-8 and upload that file."
-msgstr ""
-
-#: includes/class-admin.php:1374
-#: includes/class-bulk-import.php:1455
-msgid "This is an OpenDocument (.ods) file, which can't be read here. Save it as Excel (.xlsx) or CSV and upload that file."
-msgstr ""
-
-#: includes/class-admin.php:1375
-#: includes/class-bulk-import.php:1458
-msgid "Upload an Excel, CSV or XML file."
-msgstr ""
-
-#: includes/class-admin.php:1376
-msgid "We couldn't tell the columns from their names. Choose each one by the examples in its list."
-msgstr ""
-
-#: includes/class-admin.php:1377
-msgid "The columns are set as in the last import of this price list. Check them, then go on."
-msgstr ""
-
-#: includes/class-admin.php:1378
-msgid "This file doesn't have the same columns as the last import of this price list, so we picked them again. Check them, then go on."
-msgstr ""
-
-#: includes/class-admin.php:1379
-msgid "Column names"
-msgstr ""
-
-#: includes/class-admin.php:1381
-#, php-format
-msgid "in row %1$d: %2$s"
-msgstr ""
-
-#: includes/class-admin.php:1382
-msgid "the file has none"
-msgstr ""
-
 #: includes/class-admin.php:1383
-msgid "The rows above the names are skipped and not saved."
+msgid "This place is set to show the webshop's products. After the import it will show only the items from this file. You can give it the webshop's products back in Settings, under Places of sale."
 msgstr ""
 
 #: includes/class-admin.php:1385
 #, php-format
-msgid "Column %d"
+msgid "When you confirm, %s stops showing the webshop's products and shows only the items from this file."
 msgstr ""
 
 #: includes/class-admin.php:1387
+msgid "Select Excel, CSV or XML"
+msgstr ""
+
+#: includes/class-admin.php:1388
+msgid "Upload the export from your till as it is: Excel, CSV or XML. You choose the columns in the next step."
+msgstr ""
+
+#: includes/class-admin.php:1389
+#: includes/class-bulk-import.php:1461
+msgid "This Excel file can't be read. Open it in Excel, save it as CSV UTF-8 and upload that file."
+msgstr ""
+
+#: includes/class-admin.php:1390
+#: includes/class-bulk-import.php:1455
+msgid "This is an OpenDocument (.ods) file, which can't be read here. Save it as Excel (.xlsx) or CSV and upload that file."
+msgstr ""
+
+#: includes/class-admin.php:1391
+#: includes/class-bulk-import.php:1458
+msgid "Upload an Excel, CSV or XML file."
+msgstr ""
+
+#: includes/class-admin.php:1392
+msgid "We couldn't tell the columns from their names. Choose each one by the examples in its list."
+msgstr ""
+
+#: includes/class-admin.php:1393
+msgid "The columns are set as in the last import of this price list. Check them, then go on."
+msgstr ""
+
+#: includes/class-admin.php:1394
+msgid "This file doesn't have the same columns as the last import of this price list, so we picked them again. Check them, then go on."
+msgstr ""
+
+#: includes/class-admin.php:1395
+msgid "Column names"
+msgstr ""
+
+#: includes/class-admin.php:1397
+#, php-format
+msgid "in row %1$d: %2$s"
+msgstr ""
+
+#: includes/class-admin.php:1398
+msgid "the file has none"
+msgstr ""
+
+#: includes/class-admin.php:1399
+msgid "The rows above the names are skipped and not saved."
+msgstr ""
+
+#: includes/class-admin.php:1401
+#, php-format
+msgid "Column %d"
+msgstr ""
+
+#: includes/class-admin.php:1403
 #, php-format
 msgid "%1$s · e.g. %2$s"
 msgstr ""
 
-#: includes/class-admin.php:1388
+#: includes/class-admin.php:1404
 msgid "Start of the file"
 msgstr ""
 
-#: includes/class-admin.php:1390
+#: includes/class-admin.php:1406
 msgid "is skipped"
 msgstr ""
 
-#: includes/class-admin.php:1391
+#: includes/class-admin.php:1407
 msgid "column names"
 msgstr ""
 
-#: includes/class-admin.php:1392
-msgid "group heading"
-msgstr ""
-
-#: includes/class-admin.php:1394
-#, php-format
-msgid "Only the first sheet is read: %s."
-msgstr ""
-
-#: includes/class-admin.php:1396
-#, php-format
-msgid "Without a Type column, the items under the heading “%s” are services and the others are goods."
-msgstr ""
-
-#: includes/class-admin.php:1398
-#, php-format
-msgid "Without a Type column, the items under the heading “%s” are services. The others are goods and are not imported here."
-msgstr ""
-
-#: includes/class-admin.php:1399
-msgid "Without a bazna cijena, goods are not imported. If the bazna cijena is the same as the price, choose the same column as for Regular price."
-msgstr ""
-
-#: includes/class-admin.php:1400
-msgid "Without a bazna cijena, new items take their price as the bazna cijena."
-msgstr ""
-
-#: includes/class-admin.php:1402
-msgid "Without a bazna cijena, new goods with a date in the file are not imported. New items without a date take their price as the bazna cijena and today's date."
-msgstr ""
-
-#: includes/class-admin.php:1404
-#, php-format
-msgid "Without a date column, services wait for their date, and goods take the default date from Settings: %s."
-msgstr ""
-
-#: includes/class-admin.php:1405
-msgid "Without a date column, new items are dated today."
-msgstr ""
-
-#: includes/class-admin.php:1407
-#, php-format
-msgid "Group headings (%1$d) are not items and are not imported: %2$s."
-msgstr ""
-
 #: includes/class-admin.php:1408
-msgid "New, dated today"
+msgid "group heading"
 msgstr ""
 
 #: includes/class-admin.php:1410
 #, php-format
-msgid "This place has never had these items, and the file has no date for their bazna cijena. Their date is today, %s, and their bazna cijena is the one in the file or, if it has none, the price."
+msgid "Only the first sheet is read: %s."
 msgstr ""
 
 #: includes/class-admin.php:1412
 #, php-format
-msgid "%s (from before)"
+msgid "Without a Type column, the items under the heading “%s” are services and the others are goods."
 msgstr ""
 
 #: includes/class-admin.php:1414
 #, php-format
-msgid "%s (today)"
+msgid "Without a Type column, the items under the heading “%s” are services. The others are goods and are not imported here."
+msgstr ""
+
+#: includes/class-admin.php:1415
+msgid "Without a bazna cijena, goods are not imported. If the bazna cijena is the same as the price, choose the same column as for Regular price."
 msgstr ""
 
 #: includes/class-admin.php:1416
-#, php-format
-msgid "Back in the price list: %d. They keep their earlier bazna cijena and its date."
+msgid "Without a bazna cijena, new items take their price as the bazna cijena."
 msgstr ""
 
-#: includes/class-admin.php:1417
-msgid "Like an existing SKU"
+#: includes/class-admin.php:1418
+msgid "Without a bazna cijena, new goods with a date in the file are not imported. New items without a date take their price as the bazna cijena and today's date."
 msgstr ""
 
-#: includes/class-admin.php:1419
+#: includes/class-admin.php:1420
 #, php-format
-msgid "The same as the existing SKU %s, apart from a dot, leading zeros, spaces or letter case. To import it as an item of its own, add its bazna cijena and date to the file."
+msgid "Without a date column, services wait for their date, and goods take the default date from Settings: %s."
 msgstr ""
 
 #: includes/class-admin.php:1421
-#, php-format
-msgid "SKUs that match existing ones apart from a dot, leading zeros or spaces: %d. These are not imported. If they are the same items, their SKUs were probably changed when the file was saved again in Excel (12.050 → 12050, 0345 → 345): upload the file as your till gave it. If they are different items, add their bazna cijena and date to the file."
+msgid "Without a date column, new items are dated today."
 msgstr ""
 
 #: includes/class-admin.php:1423
 #, php-format
+msgid "Group headings (%1$d) are not items and are not imported: %2$s."
+msgstr ""
+
+#: includes/class-admin.php:1424
+msgid "New, dated today"
+msgstr ""
+
+#: includes/class-admin.php:1426
+#, php-format
+msgid "This place has never had these items, and the file has no date for their bazna cijena. Their date is today, %s, and their bazna cijena is the one in the file or, if it has none, the price."
+msgstr ""
+
+#: includes/class-admin.php:1428
+#, php-format
+msgid "%s (from before)"
+msgstr ""
+
+#: includes/class-admin.php:1430
+#, php-format
+msgid "%s (today)"
+msgstr ""
+
+#: includes/class-admin.php:1432
+#, php-format
+msgid "Back in the price list: %d. They keep their earlier bazna cijena and its date."
+msgstr ""
+
+#: includes/class-admin.php:1433
+msgid "Like an existing SKU"
+msgstr ""
+
+#: includes/class-admin.php:1435
+#, php-format
+msgid "The same as the existing SKU %s, apart from a dot, leading zeros, spaces or letter case. To import it as an item of its own, add its bazna cijena and date to the file."
+msgstr ""
+
+#: includes/class-admin.php:1437
+#, php-format
+msgid "SKUs that match existing ones apart from a dot, leading zeros or spaces: %d. These are not imported. If they are the same items, their SKUs were probably changed when the file was saved again in Excel (12.050 → 12050, 0345 → 345): upload the file as your till gave it. If they are different items, add their bazna cijena and date to the file."
+msgstr ""
+
+#: includes/class-admin.php:1439
+#, php-format
 msgid "New items dated today: %1$d. Their bazna cijena is dated %2$s, the day they were first offered. If any of them was offered before, add its bazna cijena and date to the file and upload it again."
 msgstr ""
 
-#: includes/class-admin.php:1425
+#: includes/class-admin.php:1441
 #, php-format
 msgid "New, dated today: %d."
 msgstr ""
 
-#: includes/class-admin.php:1427
+#: includes/class-admin.php:1443
 #, php-format
 msgid "SKUs like existing ones are not imported: %d. If they are the same items under a changed SKU, their old SKUs are under Will be removed, and confirming removes them from the price list."
 msgstr ""
@@ -2976,39 +2980,39 @@ msgstr "WooCommerce Lowest Price"
 msgid "The date must be a real date, e.g. 10.9.2026."
 msgstr ""
 
-#: includes/class-export.php:644
+#: includes/class-export.php:949
 msgid "The public price list is already being generated."
 msgstr "Die öffentliche Preisliste wird bereits generiert."
 
-#: includes/class-export.php:825
-#: includes/class-export.php:861
-#: includes/class-export.php:896
+#: includes/class-export.php:1130
+#: includes/class-export.php:1166
+#: includes/class-export.php:1201
 msgid "WooCommerce is not ready to generate the price list."
 msgstr "WooCommerce ist nicht bereit zur Generierung der Preisliste."
 
-#: includes/class-export.php:988
+#: includes/class-export.php:1293
 #: includes/class-feed-files.php:726
 #: includes/class-feed-routes.php:707
 msgid "The outlet has no published price list."
 msgstr "Die Filiale hat keine veröffentlichte Preisliste."
 
-#: includes/class-export.php:1042
+#: includes/class-export.php:1347
 msgid "Your shop sells only to businesses (B2B), so no public price list is made. The archive stays as it is."
 msgstr ""
 
-#: includes/class-export.php:1142
+#: includes/class-export.php:1447
 msgid "The price list was not generated because the OIB, MBO or MIBPG is missing."
 msgstr ""
 
-#: includes/class-export.php:1152
+#: includes/class-export.php:1457
 msgid "The price list has not been published yet because no bazna cijena has been entered. The obligation to publish applies from 17.11.2026."
 msgstr ""
 
-#: includes/class-export.php:1161
+#: includes/class-export.php:1466
 msgid "The price list has not been published yet."
 msgstr ""
 
-#: includes/class-export.php:1213
+#: includes/class-export.php:1518
 msgid "The public price list could not be generated."
 msgstr "Die öffentliche Preisliste konnte nicht generiert werden."
 

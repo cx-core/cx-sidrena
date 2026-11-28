@@ -35,7 +35,7 @@ $fmt_time  = function ( $ts ) {
 
 	<?php if ( isset( $_GET['cx_updated'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 		<?php if ( '1' === $_GET['cx_updated'] ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
-			<div class="notice notice-success is-dismissible"><p><?php echo esc_html__( 'The public price list has been generated.', 'cx-sidrena' ); ?></p></div>
+			<div class="notice notice-success is-dismissible"><p><?php echo esc_html( __( 'The public price list has been generated.', 'cx-sidrena' ) . CX_Sidrena_Admin::fallback_text() ); ?></p></div>
 		<?php elseif ( 'b2b' === $_GET['cx_updated'] ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 			<div class="notice notice-info is-dismissible"><p><?php echo esc_html( CX_Sidrena_Export::b2b_message() ); ?></p></div>
 		<?php elseif ( 'nobazna' === $_GET['cx_updated'] ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>

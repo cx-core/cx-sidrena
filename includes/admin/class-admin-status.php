@@ -109,18 +109,17 @@ class CX_Sidrena_Admin_Status {
 
 		if ( isset( $_POST['cx_sidrena_status_action'] ) && 'update_now' === $_POST['cx_sidrena_status_action'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			check_admin_referer( 'cx_sidrena_update_now', 'cx_sidrena_status_nonce' );
-			// Only the price list: never the settings (the old "Generate" button also saved the daily switch).
-			$result = CX_Sidrena_Export::instance()->regenerate_public_xml();
-			if ( ! is_wp_error( $result ) ) {
-				CX_Sidrena_Export::instance()->archive_public_xml();
+			// Only the price list: never the settings (the old "Generate" button also saved the daily switch). It is built
+			// on the shop's front, as a visitor, and comes back here with cx_updated (CX-SID-210,
+			// CX_Sidrena_Export::front_build_url()); in admin only when the token could not be stored. b2b: not a failure,
+			// a B2B shop publishes no price list (CX-SID-28); busy: another build was running and this one comes after it
+			// (CX-SID-119).
+			$front = CX_Sidrena_Export::front_build_url( self::url(), 'cx_updated' );
+			if ( '' !== $front ) {
+				wp_safe_redirect( $front );
+				exit;
 			}
-			// b2b: not a failure, a B2B shop publishes no price list (CX-SID-28); busy: another build was running and
-			// this one comes after it (CX-SID-119).
-			$flag = CX_Sidrena_Export::result_flag( $result );
-			if ( in_array( $flag, array( '0', 'fail' ), true ) ) {
-				CX_Sidrena_Export::instance()->retry_soon();
-			}
-			wp_safe_redirect( self::url( array( 'cx_updated' => $flag ) ) );
+			wp_safe_redirect( add_query_arg( 'cx_updated', CX_Sidrena_Export::instance()->owner_build(), self::url() ) );
 			exit;
 		}
 
@@ -175,7 +174,7 @@ class CX_Sidrena_Admin_Status {
 		$out = array( 'total' => 0, 'with' => 0, 'missing' => array(), 'late' => array(), 'n30_reminder' => array(), 'on_sale' => 0, 'rows' => array() );
 		// With CX-SID-21's dates, "later than expected" is judged against each product's own rule date, exactly as
 		// wp cx-sidrena check does (includes/check.php): its category's date, or the day it was added when later.
-		$by_rule = class_exists( 'CX_Sidrena_Dates' ) && method_exists( 'CX_Sidrena_Dates', 'date_for' );
+		$by_rule = class_exists( 'CX_Sidrena_Dates' ) && method_exists( 'CX_Sidrena_Dates', 'rule_date' );
 		$dated   = array();
 		foreach ( (array) $rows as $r ) {
 			if ( '' !== trim( (string) $r->redovna ) && '' !== trim( (string) $r->bazna ) && '' !== trim( (string) $r->datum ) ) {
@@ -183,14 +182,14 @@ class CX_Sidrena_Admin_Status {
 			}
 		}
 		if ( $by_rule && $dated ) {
-			// The rule reads each product's post, categories and meta, and a variation its parent's categories: load
-			// them for the whole list at once, not one query per product (CX-SID-21 reads categories with get_the_terms,
-			// which takes them from this cache; Tux's test D-list-no-queries).
+			// The rule reads each product's post and categories, and a variation its parent's: load them for the whole
+			// list at once, not one query per product (CX-SID-21 reads categories with get_the_terms, which takes them
+			// from this cache; Tux's test D-list-no-queries). Never the meta (CX-SID-215): the rule does not read it, the
+			// own date is in the row above, and the meta of every product (S14: 329,000 rows) ran PHP out of memory.
 			$ids = array_map( 'intval', wp_list_pluck( $dated, 'ID' ) );
 			$all = array_values( array_unique( array_merge( $ids, array_map( 'intval', array_filter( wp_list_pluck( $dated, 'post_parent' ) ) ) ) ) );
 			_prime_post_caches( $all, false, false );
 			update_object_term_cache( $all, array( 'product', 'product_variation' ) );
-			update_meta_cache( 'post', $ids );
 		}
 		foreach ( (array) $rows as $r ) {
 			// No price = cannot be bought, so it needs no bazna either (cx_sidrena_check does the same).
@@ -210,7 +209,7 @@ class CX_Sidrena_Admin_Status {
 			$own = trim( (string) $r->datum );
 			if ( '' !== $own && $by_rule && function_exists( 'cx_sidrena_check_parse_date' ) ) {
 				$own_date  = cx_sidrena_check_parse_date( $own );
-				$rule_date = cx_sidrena_check_parse_date( (string) CX_Sidrena_Dates::date_for( $id )['rule_date'] );
+				$rule_date = cx_sidrena_check_parse_date( (string) CX_Sidrena_Dates::rule_date( $id ) );
 				if ( null === $own_date || ( null !== $rule_date && $own_date > $rule_date ) ) {
 					$out['late'][] = $id;
 				}

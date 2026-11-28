@@ -32,6 +32,11 @@ class CX_Sidrena_Export {
 	// older than REBUILD_STALE was left by a build that died, and exactly one request takes it over.
 	const REBUILD_LOCK_ROW = 'cx_sidrena_rebuild.lock';
 	const REBUILD_STALE    = 900; // 15 minutes, as the transient's expiry was
+	// CX-SID-210: the owner's build runs in a request of the shop's front (front_build_url()).
+	const FRONT_PARAM      = 'cx_sidrena_build'; // the one-off token on the front request
+	const FRONT_FALLBACK   = 'cx_sidrena_front'; // 0: the front did not let the build through, it ran in admin
+	const FRONT_ROW        = 'cx_sidrena_bt_'; // one options row per token: cx_sidrena_bt_<sha256 of the token, 40>
+	const FRONT_TTL        = 120; // seconds a token is good for
 	const BUSY_DELAY       = 60;  // a build that found another one running comes again after this many seconds
 	const RETRY_OPTION     = 'cx_sidrena_rebuild_fails'; // failed builds in a row; deleted by a build that succeeds
 	const RETRY_DELAYS     = array( 300, 900, 3600 );    // after the 1st, 2nd, and every later failure
@@ -462,6 +467,306 @@ class CX_Sidrena_Export {
 		}
 
 		$this->queue_build( self::RETRY_DELAYS[0], self::RETRY_DELAYS[0] );
+	}
+
+	/**
+	 * The token of this request's front build, set when the plugin loaded with a valid one; '' otherwise.
+	 *
+	 * @var string
+	 */
+	private static $front_token = '';
+
+	/**
+	 * The owner's build ("Save and generate now", "Update now"; CX-SID-210): the build itself, the archive, the flag,
+	 * a retry soon after a failure. The same wherever it runs (the front request, or admin when the front did not let it
+	 * through).
+	 *
+	 * @return string The flag (result_flag()).
+	 */
+	public function owner_build() {
+		$result = $this->regenerate_public_xml();
+		if ( ! is_wp_error( $result ) ) {
+			$this->archive_public_xml();
+		}
+		// Busy is not a failure: the build that was running is followed by one with what was just saved (CX-SID-119).
+		$flag = self::result_flag( $result );
+		if ( in_array( $flag, array( '0', 'fail' ), true ) ) {
+			$this->retry_soon();
+		}
+
+		return $flag;
+	}
+
+	/**
+	 * Where the owner's browser goes to build the price list (CX-SID-210): the shop's home page with a one-off token.
+	 *
+	 * A price list shows what a customer pays. Some discount plugins add their price filters only when the request is
+	 * not an admin one, decided when they load (WooCommerce Advanced Discounts, class-wad.php:76-80), or only for a
+	 * visitor who is not logged in. Inside the admin request those filters do not exist, so nothing done there (a user
+	 * of 0, a front "screen") gives the customer's price, while cron's builds did: the file depended on who built it.
+	 * So the owner's own browser makes one request to the front, as a visitor: no cron and no request from the site to
+	 * itself (both fail on hosts that block them). The token is one row of its own, good for FRONT_TTL seconds, for this
+	 * user, with the admin address to return to (never taken from the request) and the name of its flag.
+	 *
+	 * @param string $return_url The admin page the owner returns to (its flag is added to it).
+	 * @param string $flag_key   sidrena_xml (Settings) or cx_updated (Status).
+	 * @return string The URL, or '' when the token could not be stored (then the build runs in admin, as before).
+	 */
+	public static function front_build_url( $return_url, $flag_key ) {
+		global $wpdb;
+
+		self::front_forget_expired();
+		$token = wp_generate_password( 32, false );
+		$value = ( time() + self::FRONT_TTL ) . '|' . get_current_user_id() . '|' . $flag_key . '|' . $return_url;
+		$saved = $wpdb->insert( $wpdb->options, array( 'option_name' => self::front_row_name( $token ), 'option_value' => $value, 'autoload' => 'no' ) ); // phpcs:ignore WordPress.DB
+		if ( 1 !== (int) $saved ) {
+			return '';
+		}
+
+		return add_query_arg( self::FRONT_PARAM, $token, home_url( '/' ) );
+	}
+
+	/**
+	 * At the plugin's load (cx-sidrena.php), before any other plugin of ours runs: a front request with a valid token
+	 * becomes a visitor's. Its cookies are emptied for this request only (the browser keeps them), so nobody is logged
+	 * in, no cart or currency of the owner's is read, and plugins decide as for any customer. Plugins loaded before ours
+	 * (must-use plugins, and plugins before it in the list) may already have read them. The build runs on wp_loaded
+	 * (front_build_run()); if the request ends before it, the owner goes back to admin (front_build_shutdown()).
+	 * In admin, the address it comes back to: front_fallback().
+	 */
+	public static function front_build_early() {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- a one-off token, checked against its row
+		if ( ! isset( $_GET[ self::FRONT_PARAM ] ) || ! is_string( $_GET[ self::FRONT_PARAM ] ) ) {
+			return;
+		}
+		$token = $_GET[ self::FRONT_PARAM ]; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- checked by its form below
+		if ( is_admin() ) {
+			if ( isset( $_GET[ self::FRONT_FALLBACK ] ) ) {
+				add_action( 'admin_init', array( __CLASS__, 'front_fallback' ), 1 );
+			}
+			return;
+		}
+		// phpcs:enable
+		if ( ! self::front_token_form( $token ) || ! self::front_request_ok() ) {
+			return;
+		}
+		$row = self::front_row( $token );
+		if ( null === $row || $row['exp'] < time() ) {
+			return; // used, expired or unknown: the page as for anyone, nothing built
+		}
+
+		self::$front_token = $token;
+		$_COOKIE           = array();
+		unset( $_SERVER['HTTP_COOKIE'] );
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true );
+		}
+		ob_start();
+		// After init (WooCommerce's post types on 5, a guard's checks on 10) and wp_loaded's own work (a discount plugin
+		// sets itself up there), before parse_request, wp and template_redirect: WooCommerce's "Coming soon" and the
+		// "under construction" plugins stop a visitor only there, after the build.
+		add_action( 'wp_loaded', array( __CLASS__, 'front_build_run' ), 1000 );
+		// Priority 0: before WordPress flushes the output buffers (wp_ob_end_flush_all, priority 1).
+		add_action( 'shutdown', array( __CLASS__, 'front_build_shutdown' ), 0 );
+	}
+
+	/**
+	 * wp_loaded, on the front request with a valid token: the build, then back to the admin page with its flag.
+	 */
+	public static function front_build_run() {
+		if ( '' === self::$front_token || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
+			return;
+		}
+		$row = self::front_take( self::$front_token );
+		if ( null === $row ) {
+			return; // another request with the same token took it: it builds, this one does not
+		}
+
+		wp_raise_memory_limit( 'admin' ); // the limit the build had in admin
+		$flag = self::instance()->owner_build();
+		self::front_leave();
+		wp_safe_redirect( add_query_arg( $row['key'], $flag, $row['url'] ) );
+		exit;
+	}
+
+	/**
+	 * At the end of the front request: the token was not used, so something stopped a visitor before the build (a
+	 * maintenance or security plugin). Its page is dropped and the owner goes back to the admin page, where the build
+	 * runs as before 0.3.4, and the notice says the customers' discounts may be missing (front_fallback()). Not when the
+	 * output was already sent, or the token was used (built, or taken by another request).
+	 */
+	public static function front_build_shutdown() {
+		if ( '' === self::$front_token ) {
+			return;
+		}
+		$token             = self::$front_token;
+		self::$front_token = '';
+		$row               = self::front_row( $token );
+		if ( null === $row || headers_sent() ) {
+			return;
+		}
+
+		$back = add_query_arg(
+			array(
+				self::FRONT_FALLBACK => '0',
+				self::FRONT_PARAM    => $token,
+			),
+			$row['url']
+		);
+		self::front_leave();
+		header_remove();
+		header( 'Cache-Control: no-cache, must-revalidate, max-age=0, no-store, private' );
+		header( 'Location: ' . $back, true, 302 );
+	}
+
+	/**
+	 * Before the front request's redirect: nothing of its own output, and no cookie set for the visitor it was (the
+	 * owner's browser keeps its own session and cart).
+	 */
+	private static function front_leave() {
+		while ( ob_get_level() > 0 ) {
+			ob_end_clean();
+		}
+		if ( ! headers_sent() ) {
+			header_remove( 'Set-Cookie' );
+			if ( function_exists( 'nocache_headers' ) ) {
+				nocache_headers();
+			}
+		}
+	}
+
+	/**
+	 * admin_init, the address the front request came back to (cx_sidrena_front=0 and the token): the token is this
+	 * user's and unused, so the build runs here, as before 0.3.4, and the page says so (CX_Sidrena_Admin::fallback_text()).
+	 * Any other token: the page as it is, nothing built.
+	 */
+	public static function front_fallback() {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- the token is the check
+		$token = isset( $_GET[ self::FRONT_PARAM ] ) && is_string( $_GET[ self::FRONT_PARAM ] ) ? $_GET[ self::FRONT_PARAM ] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		// phpcs:enable
+		if ( wp_doing_ajax() || ! self::front_token_form( $token ) || ! CX_Sidrena_Plugin::current_user_can_manage() ) {
+			return;
+		}
+		$row = self::front_row( $token );
+		if ( null === $row || (int) $row['user'] !== get_current_user_id() || $row['exp'] < time() ) {
+			return;
+		}
+		$row = self::front_take( $token );
+		if ( null === $row ) {
+			return;
+		}
+
+		$flag = self::instance()->owner_build();
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					$row['key']          => $flag,
+					self::FRONT_FALLBACK => '0',
+				),
+				$row['url']
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * A plain front page request: not admin, AJAX, cron, WP-CLI, XML-RPC or REST, and a GET of index.php.
+	 *
+	 * @return bool
+	 */
+	private static function front_request_ok() {
+		if ( is_admin() || wp_doing_ajax() || wp_doing_cron() || ( defined( 'WP_CLI' ) && WP_CLI ) || ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
+			return false;
+		}
+		if ( 'GET' !== ( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : '' ) || isset( $_GET['rest_route'] ) ) { // phpcs:ignore WordPress.Security
+			return false;
+		}
+		if ( isset( $GLOBALS['pagenow'] ) && 'index.php' !== $GLOBALS['pagenow'] ) {
+			return false;
+		}
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : ''; // phpcs:ignore WordPress.Security
+		$path = (string) strtok( $uri, '?' );
+		$rest = '/' . ( function_exists( 'rest_get_url_prefix' ) ? rest_get_url_prefix() : 'wp-json' );
+
+		return false === strpos( $path . '/', $rest . '/' );
+	}
+
+	/**
+	 * @param mixed $token From the request.
+	 * @return bool 32 letters and digits, as front_build_url() makes them.
+	 */
+	private static function front_token_form( $token ) {
+		return is_string( $token ) && 1 === preg_match( '/\A[A-Za-z0-9]{32}\z/', $token );
+	}
+
+	/**
+	 * @param string $token Token.
+	 * @return string Its options row.
+	 */
+	private static function front_row_name( $token ) {
+		return self::FRONT_ROW . substr( hash( 'sha256', $token ), 0, 40 );
+	}
+
+	/**
+	 * The token's row, read without taking it.
+	 *
+	 * @param string $token Token.
+	 * @return array{exp:int, user:int, key:string, url:string}|null
+	 */
+	private static function front_row( $token ) {
+		global $wpdb;
+
+		$value = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::front_row_name( $token ) ) ); // phpcs:ignore WordPress.DB
+		if ( ! is_string( $value ) ) {
+			return null;
+		}
+		$parts = explode( '|', $value, 4 );
+		if ( 4 !== count( $parts ) || ! in_array( $parts[2], array( 'sidrena_xml', 'cx_updated' ), true ) ) {
+			return null;
+		}
+
+		return array(
+			'exp'  => (int) $parts[0],
+			'user' => (int) $parts[1],
+			'key'  => $parts[2],
+			'url'  => $parts[3],
+		);
+	}
+
+	/**
+	 * Take the token: its row is deleted, and only the request whose DELETE removed it gets it (one token, one build,
+	 * also for two requests at the same time). An expired one is deleted and given to nobody.
+	 *
+	 * @param string $token Token.
+	 * @return array{exp:int, user:int, key:string, url:string}|null
+	 */
+	private static function front_take( $token ) {
+		global $wpdb;
+
+		$row = self::front_row( $token );
+		if ( null === $row ) {
+			return null;
+		}
+		$gone = $wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name = %s", self::front_row_name( $token ) ) ); // phpcs:ignore WordPress.DB
+		if ( 1 !== (int) $gone || $row['exp'] < time() ) {
+			return null;
+		}
+
+		return $row;
+	}
+
+	/**
+	 * Tokens never used (the owner closed the tab) go when a new one is made.
+	 */
+	private static function front_forget_expired() {
+		global $wpdb;
+
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( self::FRONT_ROW ) . '%' ) ); // phpcs:ignore WordPress.DB
+		foreach ( (array) $rows as $r ) {
+			if ( (int) strtok( (string) $r->option_value, '|' ) < time() ) {
+				$wpdb->delete( $wpdb->options, array( 'option_name' => $r->option_name ) ); // phpcs:ignore WordPress.DB
+			}
+		}
 	}
 
 	/**

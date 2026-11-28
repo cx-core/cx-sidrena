@@ -1203,6 +1203,20 @@ final class CX_Sidrena_Dates {
 	}
 
 	/**
+	 * The date the rule gives a product or variation, without its own date: the same as date_for( $id )['rule_date'],
+	 * but it reads no post meta (CX-SID-215). The rule needs only the post, its categories and the Dates, so a list
+	 * that primed posts and categories (Status) asks the database nothing here and loads no product's meta. date_for()
+	 * reads the own date and its source from the meta, and on a big shop loading the meta of every product for that
+	 * ran PHP out of memory (S14: 329,000 meta rows, about 580 MB).
+	 *
+	 * @param int $id Product or variation.
+	 * @return string "10.09.2026.".
+	 */
+	public static function rule_date( $id ) {
+		return self::rule_for( (int) $id )['date'];
+	}
+
+	/**
 	 * The rule alone (spec §1.3).
 	 *
 	 * @param int $id Product or variation.

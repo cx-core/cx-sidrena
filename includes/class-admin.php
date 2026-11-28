@@ -274,6 +274,7 @@ class CX_Sidrena_Admin {
 						echo esc_html__( 'The public price list has been generated.', 'cx-sidrena' );
 						echo ' <a href="' . esc_url( $xml_url ) . '" target="_blank" rel="noopener noreferrer">' . esc_html( $xml_url ) . '</a>';
 					}
+					echo esc_html( self::fallback_text() ); // CX-SID-210: built in admin, the front did not let it through
 					?>
 				</p></div>
 			<?php endif; ?>
@@ -604,6 +605,21 @@ class CX_Sidrena_Admin {
 	}
 
 	/**
+	 * After a build with result 1 that ran in admin because the shop's front did not let it through (CX-SID-210,
+	 * cx_sidrena_front=0): ' ' and T105 (Norman, ux/work/cx-sid-210/TEXTS.md), to follow the result in the same
+	 * paragraph, as retry_text(); '' otherwise.
+	 *
+	 * @return string
+	 */
+	public static function fallback_text() {
+		if ( ! isset( $_GET[ CX_Sidrena_Export::FRONT_FALLBACK ] ) || '0' !== $_GET[ CX_Sidrena_Export::FRONT_FALLBACK ] ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return '';
+		}
+
+		return ' ' . __( "The shop's public pages did not open to a visitor (because of a maintenance or security plugin, for example), so discounts that a plugin gives only to customers may be missing from the price list. If you use such a plugin, generate the price list again once the pages are open.", 'cx-sidrena' );
+	}
+
+	/**
 	 * After "Save and generate now" (sidrena_xml): the notice's kind and its text, without the link; else null. Next to
 	 * the OIB field when the save landed there (Argus 110-C), the same words as at the top of the page.
 	 *
@@ -615,9 +631,9 @@ class CX_Sidrena_Admin {
 			case '1':
 				return array(
 					'success',
-					CX_Sidrena_Settings::instance()->is_multi_poslovnica()
+					( CX_Sidrena_Settings::instance()->is_multi_poslovnica()
 						? __( 'Public outlet price lists have been generated.', 'cx-sidrena' )
-						: __( 'The public price list has been generated.', 'cx-sidrena' ),
+						: __( 'The public price list has been generated.', 'cx-sidrena' ) ) . self::fallback_text(),
 				);
 			case '2':
 				return array( 'warning', __( 'No additional outlet has products. Below, open Show advanced settings and, in Outlets, choose All published webshop products or at least one product for each outlet.', 'cx-sidrena' ) );

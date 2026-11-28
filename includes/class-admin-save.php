@@ -272,36 +272,30 @@ class CX_Sidrena_Admin_Save {
 			exit;
 		}
 
-		// "Save and generate now": the price list is built before any return to the page, also when the OIB was refused or
-		// saved with a warning (Argus 110-C: the OIB's return came first, so with a warned MIBPG or MBO the button
-		// never built anything and said nothing). Its result goes with whichever return follows.
-		$xml_flag = '';
-		if ( isset( $_POST['cx_regenerate'] ) ) {
-			$result = CX_Sidrena_Export::instance()->regenerate_public_xml();
-			if ( ! is_wp_error( $result ) ) {
-				CX_Sidrena_Export::instance()->archive_public_xml();
-			}
-			// Busy is not a failure: the build that was running is followed by one with what was just saved (CX-SID-119).
-			$xml_flag = CX_Sidrena_Export::result_flag( $result );
-			if ( in_array( $xml_flag, array( '0', 'fail' ), true ) ) {
-				CX_Sidrena_Export::instance()->retry_soon();
-			}
-		}
-		$xml_arg = '' !== $xml_flag ? array( 'sidrena_xml' => $xml_flag ) : array();
-
+		// Where the save returns: the OIB field's row when the OIB was refused or saved with a warning (Norman 110-1: at the
+		// section, the notice at the top was out of view), else Settings.
+		$back = self::settings_url();
 		if ( '' !== $oib_flag ) {
 			$typed = function_exists( 'mb_substr' ) ? mb_substr( $oib_typed, 0, 40, 'UTF-8' ) : substr( $oib_typed, 0, 40 );
-			// To the field's row, where the reason is shown (Norman 110-1: at the section, the notice at the top was out of view).
-			wp_safe_redirect( self::settings_url( 'cx-oib-row', array_merge( array( 'updated' => '1', 'cx_oib' => $oib_flag, 'cx_oib_typed' => rawurlencode( $typed ) ), $xml_arg ) ) );
-			exit;
+			$back  = self::settings_url( 'cx-oib-row', array( 'updated' => '1', 'cx_oib' => $oib_flag, 'cx_oib_typed' => rawurlencode( $typed ) ) );
+		} elseif ( isset( $_POST['cx_regenerate'] ) ) {
+			$back = self::settings_url( 'cx-options' );
 		}
 
-		if ( '' !== $xml_flag ) {
-			wp_safe_redirect( self::settings_url( 'cx-options', $xml_arg ) );
-			exit;
+		// "Save and generate now": the price list is built before the owner is back on the page, also when the OIB was
+		// refused or saved with a warning (Argus 110-C), and its result goes with that return. The build runs on the
+		// shop's front, as a visitor (CX-SID-210, CX_Sidrena_Export::front_build_url()), and comes back here with
+		// sidrena_xml; in admin only when the token could not be stored.
+		if ( isset( $_POST['cx_regenerate'] ) ) {
+			$front = CX_Sidrena_Export::front_build_url( $back, 'sidrena_xml' );
+			if ( '' !== $front ) {
+				wp_safe_redirect( $front );
+				exit;
+			}
+			$back = add_query_arg( 'sidrena_xml', CX_Sidrena_Export::instance()->owner_build(), $back );
 		}
 
-		wp_safe_redirect( self::settings_url() );
+		wp_safe_redirect( $back );
 		exit;
 	}
 

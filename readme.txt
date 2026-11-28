@@ -3,7 +3,7 @@ Tags: woocommerce, croatia, sidrena cijena, bazna cijena, consumer protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.3.3
+Stable tag: 0.3.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -148,6 +148,10 @@ CX Sidrena updates itself from the published releases at https://github.com/cx-c
 Deleting CX Sidrena in Plugins removes its settings (including Dates, outlets and the rows entered by hand), the live price lists and its scheduled tasks. `wp cx-sidrena purge` does the same, after asking, and deactivates the plugin. Neither ever removes the bazna prices, dates and sources on products, the lowest price data, the price history and confirmations, or the archive of published price lists: they are your record of the prices you published, and MJDD Sidrena i bazna cijena reads the same product fields.
 
 == Changelog ==
+
+= 0.3.4 =
+* Status (Stanje) and the filter "Bazna cijena: needs attention" in Products open on a big shop. On a shop with many products and a lot of stored data on each (1,300 products were enough), they loaded all of it at once, ran out of PHP memory and showed an empty error page (HTTP 500). They now read only what the dates need; the lists, the counts and the screen are the same as before. Works at once.
+* "Save and generate the price list now" (Spremi i odmah izradi cjenik, in Settings) and "Update now" (Osvježi sada, on Status) build the price list as a visitor of the shop, so it has the prices a customer pays. Until now a discount plugin that gives its prices only outside the admin, only when nobody is logged in, or by a cookie, counted only in the automatic builds (at 00:05 and after a change), and the owner's click published the price without that discount until the next one. After the click the browser passes through the shop's home page for a moment and comes back to the same page with the same message as before. If a maintenance or security plugin stops visitors before the build, the price list is built in the admin as before, and the message says that a discount given only to customers may be missing. If the home page does not open at all (an error page, a firewall), nothing is built and the published price list stays as it was. WooCommerce Advanced Discounts is still in no build, before or after: it gives its discount only to the products a shop page is showing, so in the price list its products keep the regular price. Without such plugins the price list is the same as before. Works from the first click after the update.
 
 = 0.3.3 =
 * The public price list of a shop with places of sale names the webshop "Web trgovina" (Online shop) where it showed the webshop's code (001 by default): in the line under the title, on the webshop's download buttons and on the link back from each place's page. File names, the files themselves and the archive keep the code. Shows at once.
